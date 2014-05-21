@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+	<specVersion>
+		<major>1</major>
+		<minor>0</minor>
+	</specVersion>
+	<device>
+		<deviceType>urn:abused-com:device:SyncServer:1</deviceType>
+		<friendlyName>ABUSED-TEST</friendlyName>
+		<manufacturer>AndreasBank-Electronics</manufacturer>
+		<manufacturerURL>http://www.andreasbank.com</manufacturerURL>
+		<modelDescription>Abused UPnP scanner</modelDescription>
+		<modelName>ABUSED</modelName>
+		<modelNumber>0.1</modelNumber>
+		<modelURL>http://www.andreasbank.com/abused</modelURL>
+		<UDN>uuid:6c70db20-2476-45ca-b158-efe5dd3c473f</UDN>
+		<serviceList>
+			<service>
+				<serviceType>urn:abused-com:service:SyncManager:1</serviceType>
+				<serviceId>urn:abused-com:serviceId:SyncManager</serviceId>
+				<controlURL>/udhisapi.xml?control=uuid:6c70db20-2476-45ca-b158-efe5dd3c473f+urn:abused-com:serviceId:SyncManager</controlURL>
+				<eventSubURL>/udhisapi.xml?event=uuid:6c70db20-2476-45ca-b158-efe5dd3c473f+urn:abused-com:serviceId:SyncManager</eventSubURL>
+				<SCPDURL>/udhisapi.xml?content=uuid:28996da8-c99c-4e0b-b863-40eb81d72896</SCPDURL>
+			</service>
+		</serviceList>
+	</device>
+</root>
