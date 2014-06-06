@@ -1090,7 +1090,7 @@ inet_pton(AF_INET, SSDP_ADDR, &sa.sin_addr);
     exit(EXIT_SUCCESS);
   } // scan_for_upnp_devices end
 
-  if(!conf->listen_for_upnp_notif && !conf->scan_for_upnp_notif) {
+  if(!conf->listen_for_upnp_notif) {
     usage();
   }
 
