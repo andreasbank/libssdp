@@ -2402,7 +2402,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
       PRINT_DEBUG("  bind() to: saddr->sin_family: %d(%d)", ((struct sockaddr_in *)saddr)->sin_family, AF_INET);
       PRINT_DEBUG("  bind() to: saddr->sin_addr: %s (port %d)", a, ntohs(((struct sockaddr_in *)saddr)->sin_port));
 
-      //TODO: BIND TO INADDR_ANY IF sa and interface is NULL !!!!!!!
+      // TODO: BIND TO INADDR_ANY if sa and interface is NULL !!!!!!!
 
       if(bind(sock, (struct sockaddr *)saddr, (saddr->ss_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) < 0) {
         perror("bind() server");
@@ -2429,6 +2429,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
     }
 
     /* Join the multicast group */
+    // TODO: FAIL SCENARIO FIX: Join on each interface when listening for multicast!!!!
     if(is_multicast) {
       PRINT_DEBUG("  is_multicast == TRUE");
       if(is_ipv6) {
