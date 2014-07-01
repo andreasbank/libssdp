@@ -115,7 +115,6 @@
   #define PRINT_DEBUG(...) do { } while (false)
 #endif
 
-#define MALLOC_MULTIPLIER   10000   // for finding memleaks
 #define DAEMON_PORT         43210   // port the daemon will listen on
 #define RESULT_SIZE         1048576 // 1MB for the scan results
 #define SSDP_ADDR           "239.255.255.250" // SSDP address
@@ -129,6 +128,7 @@
 #define PORT_MAX_NUMBER     65535
 #define LISTEN_QUEUE_LENGTH 2
 #define DEVICE_INFO_SIZE    16384
+#define MULTICAST_TIMEOUT   2
 
 #define ANSI_COLOR_GREEN   "\x1b[1;32m"
 #define ANSI_COLOR_RED     "\x1b[1;31m"
@@ -408,7 +408,7 @@ int main(int argc, char **argv) {
   conf->use_ipv4 =              FALSE;
   conf->use_ipv6 =              FALSE;
   conf->quiet_mode =            FALSE;
-  conf->upnp_timeout =          2;
+  conf->upnp_timeout =          MULTICAST_TIMEOUT;
   conf->enable_loopback =       FALSE;
 
   signal(SIGTERM, &exitSig);
@@ -915,13 +915,13 @@ int main(int argc, char **argv) {
 
     /* Send the UPnP request */
     PRINT_DEBUG("sending request");
-/*****************/
-struct sockaddr_in sa;
-sa.sin_family = AF_INET;
-sa.sin_port = htons(SSDP_PORT);
-inet_pton(AF_INET, SSDP_ADDR, &sa.sin_addr);
-/*****************/
-//    recvLen = sendto(notif_client_sock, request, strlen(request), 0, (struct sockaddr *)&addri->ai_addr, addri->ai_addrlen);
+    /*****************/
+    struct sockaddr_in sa;
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(SSDP_PORT);
+    inet_pton(AF_INET, SSDP_ADDR, &sa.sin_addr);
+    /*****************/
+  //recvLen = sendto(notif_client_sock, request, strlen(request), 0, (struct sockaddr *)&addri->ai_addr, addri->ai_addrlen);
     recvLen = sendto(notif_client_sock, request, strlen(request), 0, (struct sockaddr *)&sa, sizeof(sa));
     size_t sento_addr_len = sizeof(struct sockaddr_storage);
     struct sockaddr_storage *sendto_addr = (struct sockaddr_storage *)malloc(sento_addr_len);
