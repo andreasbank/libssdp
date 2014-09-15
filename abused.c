@@ -100,6 +100,8 @@
 #ifdef BSD
 #include <sys/ioctl.h>
 #include <sys/file.h>
+#define IPV6_ADD_MEMBERSHIP IPV6_JOIN_GROUP
+#define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
 #endif
 
 #ifdef DEBUG___
@@ -605,7 +607,7 @@ int main(int argc, char **argv) {
     }
 
     #ifdef BSD
-    setpgrp(0, getpid());
+    setpgrp();
     
     if((fd = open("/dev/tty", O_RDWR)) >= 0) {
 
