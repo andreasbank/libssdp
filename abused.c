@@ -1270,6 +1270,12 @@ static BOOL build_ssdp_message(ssdp_message_s *message, const char *ip, int mess
   last_newline += 2;
 
   /* save request string and protocol */
+  /* TODO: make it search and save
+   * http-answer if present too
+   * eg. in "HTTP/1.1 200 OK",
+   * see if next is not newline and space
+   * and then save all the way to newline.
+   */
   newline = strpos(raw_message, "HTTP");
   if(newline < 0) {
     free(message->datetime);
