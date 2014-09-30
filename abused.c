@@ -188,11 +188,12 @@ typedef struct ssdp_header_struct {
 } ssdp_header_s;
 
 typedef struct ssdp_message_struct {
-  char ip[16];
+  char *ip;
   int  message_length;
   char *datetime;
   char *request;
   char *protocol;
+  char *answer;
   char *info;
   unsigned char header_count;
   struct ssdp_header_struct *headers;
@@ -757,10 +758,14 @@ int main(int argc, char **argv) {
       #endif
 
       /* init ssdp_message */
+      ssdp_message.ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+      memset(ssdp_message.ip, '\0', IPv6_STR_MAX_SIZE);
       ssdp_message.request = (char *)malloc(sizeof(char) * 1024);
       memset(ssdp_message.request, '\0', 1024);
       ssdp_message.protocol = (char *)malloc(sizeof(char) * 48);
       memset(ssdp_message.protocol, '\0', sizeof(char) * 48);
+      ssdp_message.answer = (char *)malloc(sizeof(char) * 1024);
+      memset(ssdp_message.answer, '\0', sizeof(char) * 1024);
       ssdp_message.header_count = 0;
 
       char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
@@ -978,7 +983,7 @@ int main(int argc, char **argv) {
     }
     PRINT_DEBUG("reciving responses");
     do {
-      /* Wait for a answer */
+      /* Wait for an answer */
       memset(response, '\0', NOTIF_RECV_BUFFER);
       recvLen = recvfrom(notif_server_sock, response, NOTIF_RECV_BUFFER, 0,
                        (struct sockaddr *) &notif_client_addr, (socklen_t *)&size);
@@ -989,13 +994,20 @@ int main(int argc, char **argv) {
       }
 
       /* init ssdp_message */
+      ssdp_message.ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+      memset(ssdp_message.ip, '\0', IPv6_STR_MAX_SIZE);
       ssdp_message.request = (char *)malloc(sizeof(char) * 1024);
       memset(ssdp_message.request, '\0', 1024);
       ssdp_message.protocol = (char *)malloc(sizeof(char) * 48);
       memset(ssdp_message.protocol, '\0', sizeof(char) * 48);
+      ssdp_message.answer = (char *)malloc(sizeof(char) * 1024);
+      memset(ssdp_message.answer, '\0', 1024);
       ssdp_message.header_count = 0;
 
       /* Extract IP */
+      /* TODO: Make it extract MAC address
+       * and save it to the field ssdp_message.mac
+       */
       char *tmp_ip = (char*)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
       memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
       struct sockaddr_storage *paddr = &notif_client_addr;
@@ -1399,6 +1411,10 @@ static void free_ssdp_message(ssdp_message_s *message) {
     return;
   }
 
+  if(message->ip != NULL) {
+    free(message->ip);
+    message->ip = NULL;
+  }
   if(message->request != NULL) {
     free(message->request);
     message->request = NULL;
@@ -1406,6 +1422,10 @@ static void free_ssdp_message(ssdp_message_s *message) {
   if(message->protocol != NULL) {
     free(message->protocol);
     message->protocol = NULL;
+  }
+  if(message->answer != NULL) {
+    free(message->answer);
+    message->answer = NULL;
   }
   if(message->datetime != NULL) {
     free(message->datetime);
