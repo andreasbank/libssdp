@@ -122,6 +122,10 @@
 #define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
 #endif
 
+#ifndef SIOCGARP
+    #define SIOCGARP SIOCARPIPLL
+#endif
+
 #ifdef DEBUG___
   #define DEBUG_PRINT(...) printf(__VA_ARGS__)
 #else
@@ -1666,7 +1670,9 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   }
 
   /* TODO: Make it find device name by itself*/
+  #ifndef BSD
   strncpy(arp.arp_dev, "eth0", 15);
+  #endif
   ((struct sockaddr_in *)&arp.arp_ha)->sin_family = ARPHRD_ETHER;
 
   if((n = ioctl(sock, SIOCGARP, &arp)) < 0){
@@ -2203,7 +2209,7 @@ static int findInterface(struct sockaddr_storage *saddr, const char *address) {
   }
 
   /* If address not set or is bind-on-all */
-  if(address == NULL || (strlen(address) < 0) || (strcmp(address, "0.0.0.0") == 0)) {
+  if(address == NULL || (strlen(address) == 0) || (strcmp(address, "0.0.0.0") == 0)) {
     if(conf->use_ipv6) {
       if(saddr != NULL) {
         saddr->ss_family = AF_INET6;
@@ -2295,7 +2301,7 @@ static int findInterface(struct sockaddr_storage *saddr, const char *address) {
 }
 
 static configuration_s *parseConfigurationFile(const char *file_location) {
-  configuration_s *conf;
+  configuration_s *conf = NULL;
   /*if(file_location == NULL || file_exists(file_location)) {
     perror("File '%s' does not exist!\n", file_location);
     free_stuff();
