@@ -51,6 +51,23 @@
  * Update 2014-02-27:
  *  by Andreas Bank
  *   Added parsing of device info
+ *
+ * Update 2014-10-XX:
+ *  by Andreas Bank
+ *   Working on MAC retrieval
+ */
+
+/*
+ *  ████████╗ ██████╗ ██████╗  ██████╗
+ *  ╚══██╔══╝██╔═══██╗██╔══██╗██╔═══██╗██╗
+ *     ██║   ██║   ██║██║  ██║██║   ██║╚═╝
+ *     ██║   ██║   ██║██║  ██║██║   ██║██╗
+ *     ██║   ╚██████╔╝██████╔╝╚██████╔╝╚═╝
+ *     ╚═╝    ╚═════╝ ╚═════╝  ╚═════╝
+ *  01010100 01001111 01000100 01001111 00111010
+ *
+ *  When listening on "all" interfaces (0.0.0.0)
+ *  make it join the multicast group on each one.
  */
 
 #define ABUSED_VERSION "BETA-1"
@@ -86,6 +103,7 @@
 #include <netdb.h>
 
 #include <netinet/in.h>
+#include <netinet/if_ether.h>
 #include <arpa/nameser.h>
 #include <arpa/inet.h>
 #include <resolv.h>
@@ -117,20 +135,21 @@
   #define PRINT_DEBUG(...) do { } while (false)
 #endif
 
-#define DAEMON_PORT         43210   // port the daemon will listen on
-#define RESULT_SIZE         1048576 // 1MB for the scan results
-#define SSDP_ADDR           "239.255.255.250" // SSDP address
-#define SSDP_ADDR6_LL       "ff02::c" // SSDP IPv6 link-local address
-#define SSDP_ADDR6_SL       "ff05::c" // SSDP IPv6 site-local address
-#define SSDP_PORT           1900 // SSDP port
-#define NOTIF_RECV_BUFFER   2048 // notification receive-buffer
-#define XML_BUFFER_SIZE     20480 // XML buffer/container string
-#define IPv4_STR_MAX_SIZE   16 // aaa.bbb.ccc.ddd
-#define IPv6_STR_MAX_SIZE   46 // xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:aaa.bbb.ccc.ddd
-#define PORT_MAX_NUMBER     65535
-#define LISTEN_QUEUE_LENGTH 2
-#define DEVICE_INFO_SIZE    16384
-#define MULTICAST_TIMEOUT   2
+#define DAEMON_PORT           43210   // port the daemon will listen on
+#define RESULT_SIZE           1048576 // 1MB for the scan results
+#define SSDP_ADDR             "239.255.255.250" // SSDP address
+#define SSDP_ADDR6_LL         "ff02::c" // SSDP IPv6 link-local address
+#define SSDP_ADDR6_SL         "ff05::c" // SSDP IPv6 site-local address
+#define SSDP_PORT             1900 // SSDP port
+#define NOTIF_RECV_BUFFER     2048 // notification receive-buffer
+#define XML_BUFFER_SIZE       20480 // XML buffer/container string
+#define IPv4_STR_MAX_SIZE     16 // aaa.bbb.ccc.ddd
+#define IPv6_STR_MAX_SIZE     46 // xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:aaa.bbb.ccc.ddd
+#define MAC_STR_MAX_SIZE  18 // 00:40:8C:1A:2B:3C + '\0'
+#define PORT_MAX_NUMBER       65535
+#define LISTEN_QUEUE_LENGTH   2
+#define DEVICE_INFO_SIZE      16384
+#define MULTICAST_TIMEOUT     2
 
 #define ANSI_COLOR_GREEN   "\x1b[1;32m"
 #define ANSI_COLOR_RED     "\x1b[1;31m"
@@ -188,6 +207,7 @@ typedef struct ssdp_header_struct {
 } ssdp_header_s;
 
 typedef struct ssdp_message_struct {
+  char *mac;
   char *ip;
   int  message_length;
   char *datetime;
@@ -220,6 +240,8 @@ typedef struct configuration_struct {
   BOOL                forward_enabled;       /* Switch to enable forwarding of the scan results */
   BOOL                raw_output;            /* Use raw input instead of parsing it when displaying or forwarding */
   BOOL                fetch_info;            /* Don't try to fetch device info from the url in the "Location" header */
+  BOOL                gather;                /* Gather and display discoveries in a table (usable with -a) */
+  BOOL                gather_silent;         /* Gather discoveries, do not display anything */
   BOOL                xml_output;            /* Use raw input instead of parsing it when displaying or forwarding */
   unsigned char       ttl;                   /* Time-To-Live value, how many routers the multicast shall propagate through */
   unsigned char       show_interfaces;       /* Show interfaces at start */
@@ -251,7 +273,7 @@ char                       *time_string = NULL;
 
 /* Functions */
 static void exitSig(int);
-static BOOL build_ssdp_message(ssdp_message_s *, const char *, int, const char *);
+static BOOL build_ssdp_message(ssdp_message_s *, char *, char *, int, const char *);
 static unsigned char get_header_type(const char *);
 static const char *get_header_string(const unsigned int, const ssdp_header_s *);
 static int strpos(const char*, const char *);
@@ -260,10 +282,13 @@ static int fetch_upnp_device_info(const ssdp_message_s *, char *, int);
 static void to_xml(const ssdp_message_s *, BOOL, BOOL, char *, int);
 static BOOL parse_url(const char *, char *, int, int *, char *, int);
 static void parse_filters(char *, filters_factory_s **, BOOL);
+static char *get_ip_address_from_socket(const SOCKET);
+static char *get_mac_address_from_socket(const SOCKET, struct sockaddr_storage *, char *);
 static BOOL parse_address(const char *, struct sockaddr_storage *, BOOL);
 static int findInterface(struct sockaddr_storage *, const char *);
 static SOCKET setupSocket(BOOL, BOOL, BOOL, char *, struct sockaddr_storage *, const char *, int, BOOL, BOOL);
 static BOOL isMulticastAddress(const char *);
+static void init_ssdp_message(ssdp_message_s *);
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
@@ -398,6 +423,8 @@ int main(int argc, char **argv) {
   conf->scan_for_upnp_devices = FALSE;
   conf->forward_enabled =       FALSE;
   conf->raw_output =            FALSE;
+  conf->gather =                FALSE;
+  conf->gather_silent =         FALSE;
   conf->fetch_info =            TRUE;
   conf->xml_output =            FALSE;
   conf->ttl =                   1;
@@ -424,7 +451,7 @@ int main(int argc, char **argv) {
   #endif
 
   /* parse arguments */
-  while ((opt = getopt(argc, argv, "i:t:slcrbof:SduUma:RFx64qT:L")) > 0) {
+  while ((opt = getopt(argc, argv, "i:t:slcrbof:SduUmgGa:RFx64qT:L")) > 0) {
     char *pend = NULL;
 
     switch (opt) {
@@ -505,6 +532,14 @@ int main(int argc, char **argv) {
         printf("         {\n      {   }\n       }_{ __{\n    .-{   }   }-.\n   (   }     {   )\n   |`-.._____..-'|\n   |             ;--.\n   |            (__  \\\n   |             | )  )\n   |   ABUSED    |/  /\n   |             /  /\n   |            (  /\n   \\             y'\n    `-.._____..-'\n");
         free_stuff();
         exit(EXIT_SUCCESS);
+
+      case 'g':
+        conf->gather = TRUE;
+        break;
+
+      case 'G':
+        conf->gather_silent = TRUE;
+        break;
 
       case 'R':
         conf->raw_output = TRUE;
@@ -758,29 +793,30 @@ int main(int argc, char **argv) {
       #endif
 
       /* init ssdp_message */
-      ssdp_message.ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-      memset(ssdp_message.ip, '\0', IPv6_STR_MAX_SIZE);
-      ssdp_message.request = (char *)malloc(sizeof(char) * 1024);
-      memset(ssdp_message.request, '\0', 1024);
-      ssdp_message.protocol = (char *)malloc(sizeof(char) * 48);
-      memset(ssdp_message.protocol, '\0', sizeof(char) * 48);
-      ssdp_message.answer = (char *)malloc(sizeof(char) * 1024);
-      memset(ssdp_message.answer, '\0', sizeof(char) * 1024);
-      ssdp_message.header_count = 0;
+      init_ssdp_message(&ssdp_message);
 
+      /* Get IP, MAC and build message */
       char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
       memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
       if(!inet_ntop(notif_client_addr.ss_family, (notif_client_addr.ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr : (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
         PRINT_ERROR("Erroneous IP from sender");
+        free_ssdp_message(&ssdp_message);
+        continue;
       }
-      BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, recvLen, notif_string);
-      free(tmp_ip);
+
+      char *tmp_mac = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
+      memset(tmp_mac, '\0', MAC_STR_MAX_SIZE);
+      tmp_mac = get_mac_address_from_socket(notif_server_sock, (struct sockaddr_storage *)&notif_client_addr, NULL);
+
+      BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
       if(!build_success) {
+        free_ssdp_message(&ssdp_message);
         continue;
       }
 
       // TODO: Make it recognize both AND and OR (search for ; inside a ,)!!!
       // TODO: add "request" string filtering
+
       /* Check if notification should be used (to print and possibly send to the given destination) */
       ssdp_header_s *ssdp_headers = ssdp_message.headers;
       if(filters_factory != NULL) {
@@ -809,8 +845,14 @@ int main(int argc, char **argv) {
 
       if(filters_factory == NULL || !drop_message) {
 
-        /* Print the messages */
-        if(conf->raw_output) {
+        /* Handle the messages */
+        if(conf->gather) {
+          PRINT_DEBUG("Gathering mode is not coded yet!\n");
+        }
+        else if(conf->gather_silent) {
+          PRINT_DEBUG("Silent gathering mode is not coded yet!\n");
+        }
+        else if(conf->raw_output) {
           printf("\n\n\n%s\n", notif_string);
         }
         else if(conf->xml_output) {
@@ -822,6 +864,7 @@ int main(int argc, char **argv) {
         else {
           printf("\n\n\n----------BEGIN NOTIFICATION------------\n");
           printf("Time received: %s\n", ssdp_message.datetime);
+          printf("Origin-MAC: %s\n", ssdp_message.mac);
           printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message.ip, ssdp_message.message_length);
           printf("Request: %s\nProtocol: %s\n", ssdp_message.request, ssdp_message.protocol);
           if(conf->fetch_info) {
@@ -994,32 +1037,23 @@ int main(int argc, char **argv) {
       }
 
       /* init ssdp_message */
-      ssdp_message.ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-      memset(ssdp_message.ip, '\0', IPv6_STR_MAX_SIZE);
-      ssdp_message.request = (char *)malloc(sizeof(char) * 1024);
-      memset(ssdp_message.request, '\0', 1024);
-      ssdp_message.protocol = (char *)malloc(sizeof(char) * 48);
-      memset(ssdp_message.protocol, '\0', sizeof(char) * 48);
-      ssdp_message.answer = (char *)malloc(sizeof(char) * 1024);
-      memset(ssdp_message.answer, '\0', 1024);
-      ssdp_message.header_count = 0;
+      init_ssdp_message(&ssdp_message);
 
       /* Extract IP */
-      /* TODO: Make it extract MAC address
-       * and save it to the field ssdp_message.mac
-       */
       char *tmp_ip = (char*)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
       memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
-      struct sockaddr_storage *paddr = &notif_client_addr;
-      if(!inet_ntop(paddr->ss_family, (paddr->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)paddr)->sin_addr : (void *)&((struct sockaddr_in6 *)paddr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
+      if(!inet_ntop(notif_client_addr.ss_family, (notif_client_addr.ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr : (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
         perror("inet_ntop()");
-        free(tmp_ip);
         free_ssdp_message(&ssdp_message);
         free_stuff();
         exit(EXIT_FAILURE);
       }
-      BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, recvLen, response);
-      free(tmp_ip);
+
+      char *tmp_mac = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
+      memset(tmp_mac, '\0', MAC_STR_MAX_SIZE);
+      tmp_mac = get_mac_address_from_socket(notif_server_sock, &notif_client_addr, NULL);
+
+      BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, response);
       if(!build_success) {
         if(conf->raw_output) {
           printf("\n\n\n%s\n", response);
@@ -1057,7 +1091,13 @@ int main(int argc, char **argv) {
       if(filters_factory == NULL || !drop_message) {
 
         /* Print the message */
-        if(conf->raw_output) {
+        if(conf->gather) {
+          PRINT_DEBUG("Gathering mode is not coded yet!\n");
+        }
+        else if(conf->gather_silent) {
+          PRINT_DEBUG("Silent gathering mode is not coded yet!\n");
+        }
+        else if(conf->raw_output) {
           printf("\n\n\n%s\n", response);
         }
         else if(conf->xml_output) {
@@ -1069,6 +1109,7 @@ int main(int argc, char **argv) {
         else {
           printf("\n\n\n----------BEGIN NOTIFICATION------------\n");
           printf("Time received: %s\n", ssdp_message.datetime);
+          printf("Origin-MAC: %s\n", ssdp_message.mac);
           printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message.ip, ssdp_message.message_length);
           printf("Request: %s\nProtocol: %s\n", ssdp_message.request, ssdp_message.protocol);
           if(conf->fetch_info) {
@@ -1253,21 +1294,21 @@ USN: uuid:Upnp-BasicDevice-1_0-00408C184D0E::urn:axis-com:service:BasicService:1
  *
  * @param ssdp_message_s *message The location where the parsed result should be stored
  * @param const char *ip The IP address of the sender
+ * @param const char *mac The MAC address of the sender
  * @param const const int *message_length The message length
  * @param const char *raw_message The message string to be parsed
  */
-static BOOL build_ssdp_message(ssdp_message_s *message, const char *ip, int message_length, const char *raw_message) {
+static BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac, int message_length, const char *raw_message) {
   char *raw_header;
   int newline = 0, last_newline = 0;
   int raw_message_left = strlen(raw_message);
   time_t t;
 
-  message->datetime = (char *)malloc(sizeof(char) * 20);
-  memset(message->datetime, '\0', 20);
   t = time(NULL);
   strftime(message->datetime, 20, "%Y-%m-%d %H:%M:%S", localtime(&t));
 
-  strcpy(message->ip, ip);
+  message->mac = mac;
+  message->ip = ip;
   message->message_length = message_length;
 
   /* find end of request string */
@@ -1411,6 +1452,10 @@ static void free_ssdp_message(ssdp_message_s *message) {
     return;
   }
 
+  if(message->mac != NULL) {
+    free(message->mac);
+    message->mac = NULL;
+  }
   if(message->ip != NULL) {
     free(message->ip);
     message->ip = NULL;
@@ -1527,7 +1572,14 @@ static void parse_filters(char *raw_filter, filters_factory_s **filters_factory,
   }
 }
 
-static char *get_ip_address_from_socket(SOCKET *sock) {
+/**
+ * Get the remote IP address from a given sock
+ *
+ * @param sock The socket to extract the IP address from
+ *
+ * @return char The IP address as a string
+ */
+static char *get_ip_address_from_socket(const SOCKET sock) {
   // maybe needs a PF_INET type of socket?
   struct ifreq ifr[10];
   struct ifconf ifc;
@@ -1536,7 +1588,7 @@ static char *get_ip_address_from_socket(SOCKET *sock) {
   ifc.ifc_req = ifr;
   char *result = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
 
-  if(ioctl(*sock, SIOCGIFCONF, &ifc) == -1) {
+  if(ioctl(sock, SIOCGIFCONF, &ifc) == -1) {
       perror("get_ip_address_from_socket(); ioctl() SIOCGIFCONF");
       free(result);
       free_stuff();
@@ -1549,7 +1601,7 @@ static char *get_ip_address_from_socket(SOCKET *sock) {
       if((conf->use_ipv4 && ifr[i].ifr_addr.sa_family == AF_INET) ||
          (conf->use_ipv6 && ifr[i].ifr_addr.sa_family == AF_INET6) ||
          (!conf->use_ipv4 && !conf->use_ipv6)) {
-        if (ioctl(*sock, SIOCGIFADDR, &ifr[i]) == 0) {
+        if (ioctl(sock, SIOCGIFADDR, &ifr[i]) == 0) {
           int sa_fam = ifr[i].ifr_addr.sa_family;
           if(sa_fam == AF_INET && inet_ntop(sa_fam, &((struct sockaddr_in *)(&ifr[i].ifr_addr))->sin_addr.s_addr, result, IPv6_STR_MAX_SIZE)) {
             if(strcmp(result, "127.0.0.1") == 0) {
@@ -1573,6 +1625,60 @@ static char *get_ip_address_from_socket(SOCKET *sock) {
   }
   free(result);
   return NULL;
+}
+
+
+/**
+ * Get the remote MAC address from a given sock
+ *
+ * @param sock The socket to extract the MAC address from
+ *
+ * @return int The remote MAC address as a string
+ */
+ // TODO: fix for IPv6
+static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_storage *sa_ip, char *ip) {
+  struct arpreq arp;
+  int n = 0;
+  unsigned char *mac;
+  struct sockaddr_in *sin;
+  struct sockaddr_in6 *sin6;
+  char *mac_string = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
+  memset(&arp, '\0', sizeof(struct arpreq));
+  sin = (struct sockaddr_in *)&arp.arp_pa;
+  sin6 = (struct sockaddr_in6 *)&arp.arp_pa;
+  ((struct sockaddr_storage *)&arp.arp_pa)->ss_family = AF_INET;
+  if(sa_ip != NULL) {
+    if(sa_ip->ss_family == AF_INET) {
+      sin->sin_addr = ((struct sockaddr_in *)sa_ip)->sin_addr;
+    }
+    else {
+      sin6->sin6_addr = ((struct sockaddr_in6 *)sa_ip)->sin6_addr;
+    }
+  }
+  else if(ip != NULL) {
+    if(!inet_pton(((struct sockaddr_storage *)&arp.arp_pa)->ss_family, ip, (((struct sockaddr_storage *)&arp.arp_pa)->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&arp.arp_pa)->sin_addr : (void *)&((struct sockaddr_in6 *)&arp.arp_pa)->sin6_addr))) {
+      PRINT_ERROR("Failed to get MAC from given IP (%s)", ip);
+    }
+  }
+  else {
+    PRINT_ERROR("Neither IP nor SOCKADDR given, MAC not fetched");
+    return NULL;
+  }
+
+  /* TODO: Make it find device name by itself*/
+  strncpy(arp.arp_dev, "eth0", 15);
+  ((struct sockaddr_in *)&arp.arp_ha)->sin_family = ARPHRD_ETHER;
+
+  if((n = ioctl(sock, SIOCGARP, &arp)) < 0){
+    PRINT_ERROR("get_mac_address_from_socket(): ioctl(): %d", n);
+    perror("Error info:");
+  }
+
+  mac = (unsigned char *)&arp.arp_ha.sa_data[0];
+  sprintf(mac_string, "%x:%x:%x:%x:%x:%x", *mac, *(mac + 1), *(mac + 2), *(mac + 3), *(mac + 4), *(mac + 5));
+  PRINT_DEBUG("MAC string: %s", mac_string);
+  
+  return mac_string;
 }
 
 /**
@@ -1820,6 +1926,8 @@ static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hid
     "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n");
   usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
     "\t<message length=\"%d\">\n", ssdp_message->message_length);
+  usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+    "\t\t<mac>\n\t\t\t%s\n\t\t</mac>\n", ssdp_message->mac);
   usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
     "\t\t<ip>\n\t\t\t%s\n\t\t</ip>\n", ssdp_message->ip);
   usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
@@ -2562,6 +2670,27 @@ static BOOL isMulticastAddress(const char *address) {
   free_stuff();
   exit(EXIT_FAILURE);
   return FALSE;
+}
+
+/**
+ * Initializes (allocates neccessary memory) for a SSDP message
+ *
+ * @param message The message to initialize
+ */
+static void init_ssdp_message(ssdp_message_s *message) {
+      message->mac = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
+      memset(message->mac, '\0', MAC_STR_MAX_SIZE);
+      message->ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+      memset(message->ip, '\0', IPv6_STR_MAX_SIZE);
+      message->datetime = (char *)malloc(sizeof(char) * 20);
+      memset(message->datetime, '\0', 20);
+      message->request = (char *)malloc(sizeof(char) * 1024);
+      memset(message->request, '\0', 1024);
+      message->protocol = (char *)malloc(sizeof(char) * 48);
+      memset(message->protocol, '\0', sizeof(char) * 48);
+      message->answer = (char *)malloc(sizeof(char) * 1024);
+      memset(message->answer, '\0', sizeof(char) * 1024);
+      message->header_count = 0;
 }
 
 #ifdef DEBUG___
