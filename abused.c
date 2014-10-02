@@ -1671,13 +1671,14 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
 
   /* TODO: Make it find device name by itself*/
   #ifndef BSD
+  // BSD does not define the arp_dev member!!! I mean... WTF!
   strncpy(arp.arp_dev, "eth0", 15);
   #endif
   ((struct sockaddr_in *)&arp.arp_ha)->sin_family = ARPHRD_ETHER;
 
   if((n = ioctl(sock, SIOCGARP, &arp)) < 0){
     PRINT_ERROR("get_mac_address_from_socket(): ioctl(): %d", n);
-    perror("Error info:");
+    perror("Error info");
   }
 
   mac = (unsigned char *)&arp.arp_ha.sa_data[0];
