@@ -1661,11 +1661,12 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   struct sockaddr_dl *sdl = NULL;
   size_t arp_buffer_size;
   BOOL found_arp = FALSE;
-  struct sockaddr_in *tmp_sin = NULL;
+  struct sockaddr_storage *tmp_sin = NULL;
 
   /* Sanity check, choose IP source */
   if(NULL == sa_ip && NULL != ip) {
-    tmp_sin = (sockaddr_in *)malloc(sizeof(sockaddr_in));
+    tmp_sin = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
+      memset(tmp_sin, '\0', sizeof(struct sockaddr_storage));
     if(!inet_pton(sa_ip->ss_family, ip, (sa_ip->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)sa_ip)->sin_addr : (void *)&((struct sockaddr_in6 *)sa_ip)->sin6_addr))) {
       PRINT_ERROR("get_mac_address_from_socket(): Failed to get MAC from given IP (%s)", ip);
       free(mac_string);
@@ -1712,8 +1713,8 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   }
 
   /* Loop through the arp table/list */
-  arp_buffer_end = arp_bufer + arp_buffer_size;
-  for(arp_buffer_next = buf; arp_buffer_next < arp_buffer_end; arp_buffer_next += rtm->rtm_msglen) {
+  arp_buffer_end = arp_buffer + arp_buffer_size;
+  for(arp_buffer_next = arp_buffer; arp_buffer_next < arp_buffer_end; arp_buffer_next += rtm->rtm_msglen) {
 
     /* See it through another perspective */
     rtm = (struct rt_msghdr *)arp_buffer_next;
@@ -1723,7 +1724,7 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
     sdl = (struct sockaddr_dl *)(sin_arp + 1);
 
     /* Check if address is the one we are looking for */
-    if(sa_ip.s_addr != sin_arp->sin_addr.s_addr) {
+    if(((struct sockaddr_in *)sa_ip)->sin_addr.s_addr != sin_arp->sin_addr.s_addr) {
       continue;
     }
     found_arp = TRUE;
@@ -1734,10 +1735,10 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
       sprintf(mac_string, "%x:%x:%x:%x:%x:%x", cp[0], cp[1], cp[2], cp[3], cp[4], cp[5]);
     }
     free(arp_buffer);
-    free(mac_string);
     if(NULL != tmp_sin) {
       free(tmp_sin);
     }
+  }
   #else
   /* Linux (and rest) solution */
   PRINT_DEBUG("Using Linux style MAC discovery (ioctl SIOCGARP)");
@@ -1760,7 +1761,8 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
     }
   }
   else if(ip != NULL) {
-    if(!inet_pton(((struct sockaddr_storage *)&arp.arp_pa)->ss_family, ip, (((struct sockaddr_storage *)&arp.arp_pa)->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&arp.arp_pa)->sin_addr : (void *)&((struct sockaddr_in6 *)&arp.arp_pa)->sin6_addr))) {
+    if(!inet_pton(((struct sockaddr_storage *)&arp.arp_pa)->ss_family, ip,
+                  (((struct sockaddr_storage *)&arp.arp_pa)->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&arp.arp_pa)->sin_addr : (void *)&((struct sockaddr_in6 *)&arp.arp_pa)->sin6_addr))) {
       PRINT_ERROR("Failed to get MAC from given IP (%s)", ip);
       free(mac_string);
       return NULL;
@@ -1776,7 +1778,7 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   strncpy(arp.arp_dev, "eth0", 15);
   ((struct sockaddr_storage *)&arp.arp_ha)->ss_family = ARPHRD_ETHER;
 
-  if(ioctl(sock, SIOCGARP, &arp) < 0){
+  if(ioctl(sock, SIOCGARP, &arp) < 0) {
     if(errno == 6) {
       PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
     }
