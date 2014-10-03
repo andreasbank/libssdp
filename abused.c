@@ -115,8 +115,12 @@
 #include <errno.h>
 #include <signal.h>
 #include <time.h>
+
 #ifdef BSD
-#include <sys/ioctl.h>
+#include <sys/sysctl.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
+#include <net/route.h> //test if needed?
 #include <sys/file.h>
 #define IPV6_ADD_MEMBERSHIP IPV6_JOIN_GROUP
 #define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
