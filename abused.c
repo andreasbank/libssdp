@@ -297,6 +297,7 @@ static void init_ssdp_message(ssdp_message_s *);
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
 #endif
+static char *get_err_msg(int);
 
 static void free_stuff() {
 
@@ -851,10 +852,10 @@ int main(int argc, char **argv) {
 
         /* Handle the messages */
         if(conf->gather) {
-          PRINT_DEBUG("Gathering mode is not coded yet!\n");
+          PRINT_DEBUG("Gathering mode has not been coded yet!\n");
         }
         else if(conf->gather_silent) {
-          PRINT_DEBUG("Silent gathering mode is not coded yet!\n");
+          PRINT_DEBUG("Silent gathering mode has not been coded yet!\n");
         }
         else if(conf->raw_output) {
           printf("\n\n\n%s\n", notif_string);
@@ -868,7 +869,7 @@ int main(int argc, char **argv) {
         else {
           printf("\n\n\n----------BEGIN NOTIFICATION------------\n");
           printf("Time received: %s\n", ssdp_message.datetime);
-          printf("Origin-MAC: %s\n", ssdp_message.mac);
+          printf("Origin-MAC: %s\n", (ssdp_message.mac != NULL ? ssdp_message.mac : "(Could not be determined)"));
           printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message.ip, ssdp_message.message_length);
           printf("Request: %s\nProtocol: %s\n", ssdp_message.request, ssdp_message.protocol);
           if(conf->fetch_info) {
@@ -1662,29 +1663,38 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   else if(ip != NULL) {
     if(!inet_pton(((struct sockaddr_storage *)&arp.arp_pa)->ss_family, ip, (((struct sockaddr_storage *)&arp.arp_pa)->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&arp.arp_pa)->sin_addr : (void *)&((struct sockaddr_in6 *)&arp.arp_pa)->sin6_addr))) {
       PRINT_ERROR("Failed to get MAC from given IP (%s)", ip);
+      free(mac_string);
+      return NULL;
     }
   }
   else {
     PRINT_ERROR("Neither IP nor SOCKADDR given, MAC not fetched");
+    free(mac_string);
     return NULL;
   }
 
   /* TODO: Make it find device name by itself*/
   #ifndef BSD
   // BSD does not define the arp_dev member!!! I mean... WTF!
-  strncpy(arp.arp_dev, "eth0", 15);
+  strncpy(arp.arp_dev, "eth1", 15);
   #endif
-  ((struct sockaddr_in *)&arp.arp_ha)->sin_family = ARPHRD_ETHER;
+  ((struct sockaddr_storage *)&arp.arp_ha)->ss_family = ARPHRD_ETHER;
 
   if((n = ioctl(sock, SIOCGARP, &arp)) < 0){
-    PRINT_ERROR("get_mac_address_from_socket(): ioctl(): %d", n);
-    perror("Error info");
+    if(errno == 6) {
+      PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
+    }
+    else {
+      PRINT_ERROR("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
+      //perror("Error info");
+    }
+    free(mac_string);
+    return NULL;
   }
 
   mac = (unsigned char *)&arp.arp_ha.sa_data[0];
   sprintf(mac_string, "%x:%x:%x:%x:%x:%x", *mac, *(mac + 1), *(mac + 2), *(mac + 3), *(mac + 4), *(mac + 5));
-  PRINT_DEBUG("MAC string: %s", mac_string);
-  
+  PRINT_DEBUG("Determined MAC string: %s", mac_string);
   return mac_string;
 }
 
@@ -2845,3 +2855,16 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
   free(message);
 }
 #endif
+
+static char *get_err_msg(int errornumber) {
+  char *errormessage = (char *)malloc(sizeof(char) * 512);
+  switch(errornumber) {
+  case 6:
+    strncpy(errormessage, "No such device or address (device might not be in your subnet)\0", 512);
+    break;
+  default:
+    strncpy(errormessage, "Unknown error", 512);
+    break;
+  }
+  return errormessage;
+}
