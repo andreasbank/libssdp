@@ -1799,15 +1799,15 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
 
       /* Handle failure */
       if(errno == 6) {
-        /* if error is "Unknown device or address" then continue*/
+        /* if error is "Unknown device or address" then continue/try next interface */
         PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
         continue;
       }
       else {
         PRINT_ERROR("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
+        free(mac_string);
+        return NULL;
       }
-      free(mac_string);
-      return NULL;
     }
     mac = (unsigned char *)&arp.arp_ha.sa_data[0];
   }
