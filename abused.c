@@ -52,9 +52,13 @@
  *  by Andreas Bank
  *   Added parsing of device info
  *
- * Update 2014-10-XX:
+ * Update 2014-10-03:
  *  by Andreas Bank
- *   Working on MAC retrieval
+ *   MAC retrieval for BSD systems
+ *
+ * Update 2014-10-03:
+ *  by Andreas Bank
+ *   MAC retrieval on linux
  */
 
 /*
@@ -70,7 +74,7 @@
  *  make it join the multicast group on each one.
  */
 
-#define ABUSED_VERSION "BETA-1"
+#define ABUSED_VERSION "0.0"
 
 /* Uncomment the line below to enable simulating notifs */
 //#define DEBUG_MSG___
@@ -2355,10 +2359,10 @@ static int findInterface(struct sockaddr_storage *saddr, const char *address) {
 
     memset(paddr, '\0', sizeof(char) * 46);
     if(!conf->use_ipv6 && ifa->ifa_addr->sa_family == AF_INET) {
-      inet_ntop(AF_INET, (void *)&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr, paddr, 46);
+      inet_ntop(AF_INET, (void *)&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr, paddr, IPv6_STR_MAX_SIZE);
     }
     else if(!conf->use_ipv4 && ifa->ifa_addr->sa_family == AF_INET6) {
-      inet_ntop(AF_INET6, (void *)&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr, paddr, 46);
+      inet_ntop(AF_INET6, (void *)&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr, paddr, IPv6_STR_MAX_SIZE);
     }
     else {
       continue;
