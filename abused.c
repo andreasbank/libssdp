@@ -1778,21 +1778,39 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
     return NULL;
   }
 
-  /* TODO: Make it find device name by itself*/
-  strncpy(arp.arp_dev, "eth0", 15);
-  ((struct sockaddr_storage *)&arp.arp_ha)->ss_family = ARPHRD_ETHER;
-
-  if(ioctl(sock, SIOCGARP, &arp) < 0) {
-    if(errno == 6) {
-      PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
-    }
-    else {
-      PRINT_ERROR("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
-    }
+  /* Go through all interfaces' arp-tables and search for the MAC */
+  /* Possible explanation: Linux arp-tables are if-name specific */
+  struct ifaddrs *interfaces = NULL, *ifa = NULL;
+  if(getifaddrs(&interfaces) < 0) {
+    PRINT_ERROR("get_mac_address_from_socket(): getifaddrs():Could not retrieve interfaces");
     free(mac_string);
     return NULL;
   }
-  mac = (unsigned char *)&arp.arp_ha.sa_data[0];
+
+  /* Start looping through the interfaces*/
+  for(ifa = interfaces; ifa && ifa->ifa_next; ifa = ifa->ifa_next) {
+
+    /* Copy current interface name into the arpreq structure */
+    strncpy(arp.arp_dev, ifa->ifa_name, 15);
+    ((struct sockaddr_storage *)&arp.arp_ha)->ss_family = ARPHRD_ETHER;
+
+    /* Ask for the arp-table */
+    if(ioctl(sock, SIOCGARP, &arp) < 0) {
+
+      /* Handle failure */
+      if(errno == 6) {
+        /* if error is "Unknown device or address" then continue*/
+        PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
+        continue;
+      }
+      else {
+        PRINT_ERROR("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
+      }
+      free(mac_string);
+      return NULL;
+    }
+    mac = (unsigned char *)&arp.arp_ha.sa_data[0];
+  }
   sprintf(mac_string, "%x:%x:%x:%x:%x:%x", *mac, *(mac + 1), *(mac + 2), *(mac + 3), *(mac + 4), *(mac + 5));
   #endif
 
