@@ -305,7 +305,6 @@ static void init_ssdp_message(ssdp_message_s *);
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
 #endif
-static char *get_err_msg(int);
 
 static void free_stuff() {
 
@@ -1747,35 +1746,62 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   /* Linux (and rest) solution */
   PRINT_DEBUG("Using Linux style MAC discovery (ioctl SIOCGARP)");
   struct arpreq arp;
-  unsigned char *mac;
-  struct sockaddr_in *sin;
-  struct sockaddr_in6 *sin6;
+  unsigned char *mac = NULL;
 
   memset(&arp, '\0', sizeof(struct arpreq));
-  sin = (struct sockaddr_in *)&arp.arp_pa;
-  sin6 = (struct sockaddr_in6 *)&arp.arp_pa;
+  sa_family_t ss_fam = ((struct sockaddr_storage *)&arp.arp_pa)->ss_family;
+  struct in_addr *sin_a = NULL;
+  struct in6_addr *sin6_a = NULL;
+  BOOL is_ipv6 = FALSE;
 
-  ((struct sockaddr_storage *)&arp.arp_pa)->ss_family = AF_INET;
+  /* Sanity check */
+  if(sa_ip == NULL && ip == NULL){
+    PRINT_ERROR("Neither IP string nor sockaddr given, MAC not fetched");
+    free(mac_string);
+    return NULL;
+  }
+
+  /* Check if IPv6 */
+  struct sockaddr_in6 *tmp = (struct sockaddr_in6 *)malloc(sizeof(struct sockaddr_in6));
+  if((sa_ip != NULL && sa_ip->ss_family == AF_INET6)
+     || (ip != NULL && inet_pton(AF_INET6, ip, tmp))) {
+    is_ipv6 = TRUE;
+    ss_fam = AF_INET6;
+    PRINT_DEBUG("Looking for IPv6-MAC association");
+  }
+  else {
+    ss_fam = AF_INET;
+    PRINT_DEBUG("Looking for IPv4-MAC association");
+  }
+  free(tmp);
+  tmp = NULL;
+
+  /* Point the needed pointer */
+  if(!is_ipv6){
+    sin_a = &((struct sockaddr_in *)&arp.arp_pa)->sin_addr;
+  }
+  else if(is_ipv6){
+    sin6_a = &((struct sockaddr_in6 *)&arp.arp_pa)->sin6_addr;
+  }
+
+  /* Fill the fields */
   if(sa_ip != NULL) {
-    if(sa_ip->ss_family == AF_INET) {
-      sin->sin_addr = ((struct sockaddr_in *)sa_ip)->sin_addr;
+    if(ss_fam == AF_INET) {
+      sin_a = &((struct sockaddr_in *)sa_ip)->sin_addr;
     }
     else {
-      sin6->sin6_addr = ((struct sockaddr_in6 *)sa_ip)->sin6_addr;
+      sin6_a = &((struct sockaddr_in6 *)sa_ip)->sin6_addr;
     }
   }
   else if(ip != NULL) {
-    if(!inet_pton(((struct sockaddr_storage *)&arp.arp_pa)->ss_family, ip,
-                  (((struct sockaddr_storage *)&arp.arp_pa)->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&arp.arp_pa)->sin_addr : (void *)&((struct sockaddr_in6 *)&arp.arp_pa)->sin6_addr))) {
+
+    if(!inet_pton(ss_fam,
+                  ip,
+                  (ss_fam == AF_INET ? (void *)sin_a: (void *)sin6_a))) {
       PRINT_ERROR("Failed to get MAC from given IP (%s)", ip);
       free(mac_string);
       return NULL;
     }
-  }
-  else {
-    PRINT_ERROR("Neither IP nor SOCKADDR given, MAC not fetched");
-    free(mac_string);
-    return NULL;
   }
 
   /* Go through all interfaces' arp-tables and search for the MAC */
@@ -1790,7 +1816,13 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   /* Start looping through the interfaces*/
   for(ifa = interfaces; ifa && ifa->ifa_next; ifa = ifa->ifa_next) {
 
+    /* Skip the loopback interface */
+    if(strcmp(ifa->ifa_name, "lo") == 0) {
+      continue;
+    }
+
     /* Copy current interface name into the arpreq structure */
+    PRINT_DEBUG("Trying interface '%s'", ifa->ifa_name);
     strncpy(arp.arp_dev, ifa->ifa_name, 15);
     ((struct sockaddr_storage *)&arp.arp_ha)->ss_family = ARPHRD_ETHER;
 
@@ -1800,17 +1832,25 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
       /* Handle failure */
       if(errno == 6) {
         /* if error is "Unknown device or address" then continue/try next interface */
-        PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
+        PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): (%d) %s", errno, strerror(errno));
         continue;
       }
       else {
-        PRINT_ERROR("get_mac_address_from_socket(): ioctl(): %s", get_err_msg(errno));
+        PRINT_ERROR("get_mac_address_from_socket(): ioctl(): (%d) %s", errno, strerror(errno));
         free(mac_string);
         return NULL;
       }
     }
+
     mac = (unsigned char *)&arp.arp_ha.sa_data[0];
   }
+
+  if(!mac) {
+    PRINT_DEBUG("mac is NULL");
+    free(mac_string);
+    return NULL;
+  }
+  PRINT_DEBUG("sprintf()");
   sprintf(mac_string, "%x:%x:%x:%x:%x:%x", *mac, *(mac + 1), *(mac + 2), *(mac + 3), *(mac + 4), *(mac + 5));
   #endif
 
@@ -2976,15 +3016,3 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
 }
 #endif
 
-static char *get_err_msg(int errornumber) {
-  char *errormessage = (char *)malloc(sizeof(char) * 512);
-  switch(errornumber) {
-  case 6:
-    strncpy(errormessage, "No such device or address (device might not be in your subnet)\0", 512);
-    break;
-  default:
-    strncpy(errormessage, "Unknown error", 512);
-    break;
-  }
-  return errormessage;
-}
