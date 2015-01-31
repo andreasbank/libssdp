@@ -1652,7 +1652,7 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   char *mac_string = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
   memset(mac_string, '\0', MAC_STR_MAX_SIZE);
 
-  #ifdef BSD
+  #if defined BSD || defined APPLE
   /* xxxBSD or MacOS solution */
   PRINT_DEBUG("Using BSD style MAC discovery (sysctl)");
   int sysctl_flags[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_LLINFO };
@@ -1749,7 +1749,7 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   unsigned char *mac = NULL;
 
   memset(&arp, '\0', sizeof(struct arpreq));
-  sa_family_t ss_fam = ((struct sockaddr_storage *)&arp.arp_pa)->ss_family;
+  sa_family_t ss_fam = AF_INET;
   struct in_addr *sin_a = NULL;
   struct in6_addr *sin6_a = NULL;
   BOOL is_ipv6 = FALSE;
@@ -1769,10 +1769,16 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
     ss_fam = AF_INET6;
     PRINT_DEBUG("Looking for IPv6-MAC association");
   }
-  else {
-    ss_fam = AF_INET;
+  else if((sa_ip != NULL && sa_ip->ss_family == AF_INET)
+    || (ip != NULL && inet_pton(AF_INET, ip, tmp))) {
     PRINT_DEBUG("Looking for IPv4-MAC association");
   }
+  else {
+    PRINT_ERROR("sa_ip or ip variable error");
+  }
+
+  /* Assign address family for arpreq */
+  ((struct sockaddr_storage *)&arp.arp_pa)->ss_family = ss_fam;
   free(tmp);
   tmp = NULL;
 
@@ -1787,10 +1793,10 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
   /* Fill the fields */
   if(sa_ip != NULL) {
     if(ss_fam == AF_INET) {
-      sin_a = &((struct sockaddr_in *)sa_ip)->sin_addr;
+      *sin_a = ((struct sockaddr_in *)sa_ip)->sin_addr;
     }
     else {
-      sin6_a = &((struct sockaddr_in6 *)sa_ip)->sin6_addr;
+      *sin6_a = ((struct sockaddr_in6 *)sa_ip)->sin6_addr;
     }
   }
   else if(ip != NULL) {
@@ -1799,6 +1805,7 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
                   ip,
                   (ss_fam == AF_INET ? (void *)sin_a: (void *)sin6_a))) {
       PRINT_ERROR("Failed to get MAC from given IP (%s)", ip);
+      PRINT_ERROR("Error %d: %s", errno, strerror(errno));
       free(mac_string);
       return NULL;
     }
@@ -1818,15 +1825,17 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
 
     /* Skip the loopback interface */
     if(strcmp(ifa->ifa_name, "lo") == 0) {
+      PRINT_DEBUG("Skipping interface 'lo'");
       continue;
     }
 
     /* Copy current interface name into the arpreq structure */
     PRINT_DEBUG("Trying interface '%s'", ifa->ifa_name);
     strncpy(arp.arp_dev, ifa->ifa_name, 15);
+
     ((struct sockaddr_storage *)&arp.arp_ha)->ss_family = ARPHRD_ETHER;
 
-    /* Ask for the arp-table */
+    /* Ask for thE arp-table */
     if(ioctl(sock, SIOCGARP, &arp) < 0) {
 
       /* Handle failure */
@@ -1837,12 +1846,14 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
       }
       else {
         PRINT_ERROR("get_mac_address_from_socket(): ioctl(): (%d) %s", errno, strerror(errno));
-        free(mac_string);
-        return NULL;
+        //free(mac_string);
+        //return NULL;
+        continue;
       }
     }
 
-    mac = (unsigned char *)&arp.arp_ha.sa_data[0];
+  mac = (unsigned char *)&arp.arp_ha.sa_data[0];
+
   }
 
   if(!mac) {
@@ -1850,8 +1861,10 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
     free(mac_string);
     return NULL;
   }
+
   PRINT_DEBUG("sprintf()");
   sprintf(mac_string, "%x:%x:%x:%x:%x:%x", *mac, *(mac + 1), *(mac + 2), *(mac + 3), *(mac + 4), *(mac + 5));
+  mac = NULL;
   #endif
 
   PRINT_DEBUG("Determined MAC string: %s", mac_string);
