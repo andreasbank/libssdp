@@ -289,6 +289,7 @@ static BOOL build_ssdp_message(ssdp_message_s *, char *, char *, int, const char
 static unsigned char get_header_type(const char *);
 static const char *get_header_string(const unsigned int, const ssdp_header_s *);
 static int strpos(const char*, const char *);
+static int send_stuff(const char *, const char *, const struct sockaddr_storage *, int, int);
 static void free_ssdp_message(ssdp_message_s *);
 static int fetch_upnp_device_info(const ssdp_message_s *, char *, int);
 static void to_xml(const ssdp_message_s *, BOOL, BOOL, char *, int);
@@ -296,7 +297,7 @@ static BOOL parse_url(const char *, char *, int, int *, char *, int);
 static void parse_filters(char *, filters_factory_s **, BOOL);
 static char *get_ip_address_from_socket(const SOCKET);
 static char *get_mac_address_from_socket(const SOCKET, struct sockaddr_storage *, char *);
-static BOOL parse_address(const char *, struct sockaddr_storage *, BOOL);
+static BOOL parse_address(const char *, struct sockaddr_storage **, BOOL);
 static int findInterface(struct sockaddr_storage *, const char *);
 static SOCKET setupSocket(BOOL, BOOL, BOOL, char *, struct sockaddr_storage *, const char *, int, BOOL, BOOL);
 static BOOL isMulticastAddress(const char *);
@@ -530,8 +531,7 @@ int main(int argc, char **argv) {
       case 'a':
         if(optarg != NULL && strlen(optarg) > 0) {
           PRINT_DEBUG("parse_address()");
-          notif_recipient_addr = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
-          if(!parse_address(optarg, notif_recipient_addr, TRUE)) {
+          if(!parse_address(optarg, &notif_recipient_addr, TRUE)) {
             usage();
             free_stuff();
             exit(EXIT_FAILURE);
@@ -857,6 +857,8 @@ int main(int argc, char **argv) {
 
       if(filters_factory == NULL || !drop_message) {
 
+        char *results = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
+
         /* Handle the messages */
         if(conf->gather) {
           PRINT_DEBUG("Gathering mode has not been coded yet!\n");
@@ -865,15 +867,13 @@ int main(int argc, char **argv) {
           PRINT_DEBUG("Silent gathering mode has not been coded yet!\n");
         }
         else if(conf->raw_output) {
-          printf("\n\n\n%s\n", notif_string);
+          snprintf(results, strlen(notif_string), "\n\n\n%s\n", notif_string);
         }
         else if(conf->xml_output) {
-          char *xml_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
-          to_xml(&ssdp_message, conf->fetch_info, FALSE, xml_string, XML_BUFFER_SIZE);
-          printf("%s\n", xml_string);
-          free(xml_string);
+          to_xml(&ssdp_message, conf->fetch_info, FALSE, results, XML_BUFFER_SIZE);
         }
         else {
+          // TODO: Accumulate string then printf
           printf("\n\n\n----------BEGIN NOTIFICATION------------\n");
           printf("Time received: %s\n", ssdp_message.datetime);
           printf("Origin-MAC: %s\n", (ssdp_message.mac != NULL ? ssdp_message.mac : "(Could not be determined)"));
@@ -900,10 +900,21 @@ int main(int argc, char **argv) {
           ssdp_headers = NULL;
           printf("-----------END NOTIFICATION-------------\n");
         }
-        /* TODO: Send the message back to -a */
+
+
+
+        if(conf->forward_enabled) {
+          PRINT_DEBUG("setupSocket() for forwarding");
+          // TODO: Make it not send M*SEARCH uPnP packets
+          send_stuff("/abused/index.php", results, notif_recipient_addr, 80, 1);
+        }
+        else {
+          printf("%s", results);
+        }
+
       }
 
-        PRINT_DEBUG("loop done");
+      PRINT_DEBUG("loop done");
 
       free_ssdp_message(&ssdp_message);
     }
@@ -1452,6 +1463,129 @@ static unsigned char strcount(const char *haystack, const char *needle) {
 
 }
 
+// TODO: remove port, it is contained in **pp_address
+static int send_stuff(const char *url, const char *data, const struct sockaddr_storage *da, int port, int timeout) {
+
+  if(url == NULL || strlen(url) < 1) {
+    PRINT_ERROR("send_stuff(): url not set");
+    return FALSE;
+  }
+
+  /* Create socket */
+  PRINT_DEBUG("send_stuff(): creating socket");
+  SOCKET send_sock = setupSocket(conf->use_ipv6,
+                                    FALSE,
+                                    FALSE,
+                                    conf->interface,
+                                    NULL,
+                                    NULL,
+                                    0,
+                                    FALSE,
+                                    FALSE);
+
+      if(send_sock == SOCKET_ERROR) {
+        PRINT_ERROR("send_stuff(): %d, %s", errno, strerror(errno));
+        return 0;
+      }
+
+      struct timeval stimeout, rtimeout;
+      stimeout.tv_sec = 1;
+      stimeout.tv_usec = 0;
+      rtimeout.tv_sec = timeout;
+      rtimeout.tv_usec = 0;
+
+      PRINT_DEBUG("send_stuff(): setting socket receive-timeout to %d", (int)rtimeout.tv_sec);
+      if (setsockopt(send_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout, sizeof(rtimeout)) < 0) {
+        PRINT_ERROR("send_stuff(): setsockopt() SO_RCVTIMEO: %d, %s", errno, strerror(errno));
+        return 0;
+      }
+
+      PRINT_DEBUG("setting socket send-timeout to %d", (int)stimeout.tv_sec);
+      if(setsockopt (send_sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&stimeout, sizeof(stimeout)) < 0) {
+        PRINT_ERROR("send_stuff(); setsockopt() SO_SNDTIMEO, %d, %s", errno, strerror(errno));
+        return 0;
+      }
+
+      /* Setup socket destination address */
+      PRINT_DEBUG("send_stuff(): setting up socket addresses");
+
+      if(da->ss_family == AF_INET) {
+        struct sockaddr_in *da_ipv4 = (struct sockaddr_in *)da;
+        da_ipv4->sin_port = htons(port);
+      }
+      else {
+        struct sockaddr_in6 *da_ipv6 = (struct sockaddr_in6 *)da;
+        da_ipv6->sin6_port = htons(port);
+      }
+
+      /* Connect socket to destination */
+      #ifdef DEBUG___
+      char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+      memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
+      inet_ntop(da->ss_family, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE);
+      PRINT_DEBUG("send_stuff(): connecting to destination (%s; ss_family = %s [%d])", tmp_ip, (da->ss_family == AF_INET ? "AF_INET" : "AF_INET6"), da->ss_family);
+      free(tmp_ip);
+      tmp_ip = NULL;
+      #endif
+      if(connect(send_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) == SOCKET_ERROR) {
+        PRINT_ERROR("send_stuff(): connect(): %d, %s", errno, strerror(errno));
+        return 0;
+      }
+
+      /*
+        POST </path/file.html> HTTP/1.0\r\n
+        Host: <own_ip>\r\n
+        User-Agent: abused-<X>\r\n
+        \r\n
+      */
+      char *ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+      memset(ip, '\0', IPv6_STR_MAX_SIZE);
+      inet_ntop(da->ss_family, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr), ip, IPv6_STR_MAX_SIZE);
+      int request_size = 5096;
+      char *request = (char *)malloc(sizeof(char) * request_size);
+      memset(request, '\0', request_size);
+      int used_length = 0;
+      used_length = snprintf(request + used_length,
+                             request_size - used_length,
+                             "POST %s HTTP/1.1\r\n", url);
+      used_length += snprintf(request + used_length,
+                              request_size - used_length,
+                              "Host: %s\r\n", ip);
+      used_length += snprintf(request + used_length,
+                              request_size - used_length,
+                              "Connection: close\r\n");
+      used_length += snprintf(request + used_length,
+                              request_size - used_length,
+                              "User-Agent: abused-%s\r\n", ABUSED_VERSION);
+      used_length += snprintf(request + used_length,
+                              request_size - used_length,
+                              "Content-type: text/xml\r\n");
+      used_length += snprintf(request + used_length,
+                              request_size - used_length,
+                              "Content-length: %d\r\n\r\n", (int)strlen(data));
+      used_length += snprintf(request + used_length,
+                              request_size - used_length,
+                              "%s\r\n\r\n", data);
+      PRINT_DEBUG("send_stuff(): sending string:\n%s", request);
+      int bytes = send(send_sock, request, strlen(request), 0);
+      PRINT_DEBUG("send_stuff(): sent %d bytes", bytes);
+      free(request);
+      char *response = (char *)malloc(sizeof(char) * 5096);
+      memset(response, '\0', 5096);
+      int all_bytes = 0;
+      do {
+        bytes = recv(send_sock, response + all_bytes, 5096 - all_bytes, 0);
+        all_bytes += bytes;
+      } while(bytes > 0);
+      free(ip);
+      PRINT_DEBUG("send_stuff(): received %d bytes", all_bytes);
+      PRINT_DEBUG("send_stuff(): received:\n%s", response);
+      free(response);
+      PRINT_DEBUG("send_stuff(): closing socket");
+      close(send_sock);
+      return all_bytes;
+}
+
 /**
  * Frees all neccessary allocations in a ssdp_message_s
  *
@@ -1852,7 +1986,7 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
       }
     }
 
-  mac = (unsigned char *)&arp.arp_ha.sa_data[0];
+    mac = (unsigned char *)&arp.arp_ha.sa_data[0];
 
   }
 
@@ -2305,31 +2439,42 @@ static BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *r
 /**
  * Parse a given ip:port combination into an internet address structure
  *
- * @param char *addresd The <ip>:<port> string combination to be parsed
- * @param sockaddr_in * The IPv4 internet address structute to be filled
- * @param sockaddr_in6 * The IPv6 internet address structute to be filled
+ * @param char *raw_address The <ip>:<port> string combination to be parsed
+ * @param sockaddr_storage ** The IP internet address structute to be allocated and filled
  *
  * @return BOOL TRUE on success
  */
-static BOOL parse_address(const char *raw_address, struct sockaddr_storage *address, BOOL print_results) {
+static BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address, BOOL print_results) {
     char *ip;
-    unsigned char colon_pos = 0;
+    struct sockaddr_storage *address = NULL;
+    int colon_pos = 0;
     int port = 0;
     BOOL is_ipv6;
+
+    if(strlen(raw_address) < 1) {
+      PRINT_DEBUG("parse_address(): No valid IP address specified");
+      return FALSE;
+    }
+
+    /* Allocate the input address */
+    *pp_address = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
+    /* Get rid of the "pointer to a pointer" */
+    address = *pp_address;
+    memset(address, 0, sizeof(struct sockaddr_storage));
+
+    colon_pos = strpos(raw_address, ":");
+    PRINT_DEBUG("COLON IS: %d", colon_pos);
+
+    if(colon_pos < 1) {
+      PRINT_DEBUG("parse_address(): No valid port specified (%s)\n", raw_address);
+      return FALSE;
+    }
 
     ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
     memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
 
-    colon_pos = strpos(raw_address, ":");
-
-    if(!colon_pos) {
-      printf("No valid IP address specified (%s)\n", raw_address);
-      return FALSE;
-    }
-
+    /* Get rid of [] if IPv6 */
     strncpy(ip, strchr(raw_address, '[') + 1, strchr(raw_address, '[') - strchr(raw_address, ']'));
-
-    memset(address, 0, sizeof(struct sockaddr_storage));
 
     is_ipv6 = inet_pton(AF_INET6, ip, address);
     PRINT_DEBUG("is_ipv6 = %s", is_ipv6 ? "TRUE" : "FALSE");
