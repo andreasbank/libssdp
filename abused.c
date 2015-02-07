@@ -74,7 +74,7 @@
  *  make it join the multicast group on each one.
  */
 
-#define ABUSED_VERSION "0.0"
+#define ABUSED_VERSION "0.0.1"
 
 /* Uncomment the line below to enable simulating notifs */
 //#define DEBUG_MSG___
@@ -88,7 +88,7 @@
 #define DEBUG_MSG_LOCATION_HEADER "http://10.83.14.2:80/udhisapi.xml"
 
 /* Uncomment the line below to enable detailed debug information */
-#define DEBUG___
+//#define DEBUG___
 
 #define DEBUG_COLOR_BEGIN "\x1b[0;32m"
 #define ERROR_COLOR_BEGIN "\x1b[0;31m"
@@ -130,6 +130,12 @@
 #define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
 #endif
 
+/* PORTABILITY */
+#define TRUE              1
+#define FALSE             0
+#define INVALID_SOCKET   -1
+#define SOCKET_ERROR     -1
+
 #ifndef SIOCGARP
     #define SIOCGARP SIOCARPIPLL
 #endif
@@ -144,7 +150,8 @@
   #define PRINT_DEBUG(...) print_debug(NULL, DEBUG_COLOR_BEGIN, __FILE__, __LINE__, __VA_ARGS__)
   #define PRINT_ERROR(...) print_debug(stderr, ERROR_COLOR_BEGIN, __FILE__, __LINE__, __VA_ARGS__)
 #else
-  #define PRINT_DEBUG(...) do { } while (false)
+  #define PRINT_DEBUG(...) do { } while (FALSE)
+  #define PRINT_ERROR(...) printf(__VA_ARGS__)
 #endif
 
 #define DAEMON_PORT           43210   // port the daemon will listen on
@@ -166,12 +173,6 @@
 #define ANSI_COLOR_GREEN   "\x1b[1;32m"
 #define ANSI_COLOR_RED     "\x1b[1;31m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
-
-/* PORTABILITY */
-#define TRUE              1
-#define FALSE             0
-#define INVALID_SOCKET   -1
-#define SOCKET_ERROR     -1
 
 /* SSDP header types string representations */
 #define SSDP_HEADER_HOST_STR        "host"
@@ -602,7 +603,7 @@ int main(int argc, char **argv) {
   /* If missconfigured, stop and notify the user */
   if(conf->run_as_daemon && !(conf->run_as_server || conf->listen_for_upnp_notif || conf->scan_for_upnp_devices)) {
 
-    perror("I refuse to run as daemon if I won't be servin anything.\nUse -d in combination with -S, -a or with both.\n");
+    PRINT_ERROR("Cannot start as daemon.\nUse -d in combination with -S, -a or with both.\n");
     exit(EXIT_FAILURE);
 
   }
@@ -666,7 +667,7 @@ int main(int argc, char **argv) {
     }
     else {
 
-      perror("Could not dissassociate from controlling terminal: openning /dev/tty failed.");
+      PRINT_ERROR("Could not dissassociate from controlling terminal: openning /dev/tty failed.");
       free_stuff();
       exit(EXIT_FAILURE);
 
@@ -761,10 +762,6 @@ int main(int argc, char **argv) {
                                     TRUE,       // BOOL is_server
                                     FALSE);     // BOOL keepalive
 
-    if(conf->forward_enabled) {
-      //notif_recipient_sock = setupSocket(...);
-    }
-
     /* Parse the filters */
     PRINT_DEBUG("parse_filters()");
     parse_filters(conf->filter, &filters_factory, TRUE);
@@ -782,7 +779,7 @@ int main(int argc, char **argv) {
                          (struct sockaddr *) &notif_client_addr, (socklen_t *)&size);
       if(recvLen < 0) {
         free_stuff();
-        perror("recvfrom()");
+        PRINT_ERROR("recvfrom(): Failed to receive any data");
         exit(EXIT_FAILURE);
       }
       #else
@@ -857,35 +854,53 @@ int main(int argc, char **argv) {
 
       if(filters_factory == NULL || !drop_message) {
 
-        char *results = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
+        char *results = (char *)malloc(XML_BUFFER_SIZE);
+        memset(results, '\0', XML_BUFFER_SIZE);
 
         /* Handle the messages */
         if(conf->gather) {
-          PRINT_DEBUG("Gathering mode has not been coded yet!\n");
+          PRINT_DEBUG("Gathering mode is not supported yet!");
         }
         else if(conf->gather_silent) {
-          PRINT_DEBUG("Silent gathering mode has not been coded yet!\n");
+          PRINT_DEBUG("Silent gathering mode is not supported yet!");
         }
         else if(conf->raw_output) {
-          snprintf(results, strlen(notif_string), "\n\n\n%s\n", notif_string);
+          snprintf(results, strlen(notif_string), "\n\n%s\n\n", notif_string);
         }
         else if(conf->xml_output) {
           to_xml(&ssdp_message, conf->fetch_info, FALSE, results, XML_BUFFER_SIZE);
         }
+//*********************************
         else {
-          // TODO: Accumulate string then printf
-          printf("\n\n\n----------BEGIN NOTIFICATION------------\n");
-          printf("Time received: %s\n", ssdp_message.datetime);
-          printf("Origin-MAC: %s\n", (ssdp_message.mac != NULL ? ssdp_message.mac : "(Could not be determined)"));
-          printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message.ip, ssdp_message.message_length);
-          printf("Request: %s\nProtocol: %s\n", ssdp_message.request, ssdp_message.protocol);
+          int buffer_used = 0;
+          buffer_used += snprintf(results + buffer_used,
+                                  XML_BUFFER_SIZE - buffer_used,
+                                  "Time received: %s\n",
+                                  ssdp_message.datetime);
+          buffer_used += snprintf(results + buffer_used,
+                                  XML_BUFFER_SIZE - buffer_used,
+                                  "Origin-MAC: %s\n",
+                                  (ssdp_message.mac != NULL ? ssdp_message.mac : "(Could not be determined)"));
+          buffer_used += snprintf(results + buffer_used,
+                                  XML_BUFFER_SIZE - buffer_used,
+                                  "Origin-IP: %s\nMessage length: %d Bytes\n",
+                                  ssdp_message.ip,
+                                  ssdp_message.message_length);
+          buffer_used += snprintf(results + buffer_used,
+                                  XML_BUFFER_SIZE - buffer_used,
+                                  "Request: %s\nProtocol: %s\n",
+                                  ssdp_message.request,
+                                  ssdp_message.protocol);
           if(conf->fetch_info) {
             int bytes_fetched = 0;
             char *fetched_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
             memset(fetched_string, '\0', XML_BUFFER_SIZE);
             bytes_fetched = fetch_upnp_device_info(&ssdp_message, fetched_string, XML_BUFFER_SIZE);
             if(bytes_fetched > 0) {
-              printf("%s", fetched_string);
+              buffer_used += snprintf(results + buffer_used,
+                                      XML_BUFFER_SIZE - buffer_used,
+                                      "%s",
+                                      fetched_string);
             }
             free(fetched_string);
           }
@@ -893,15 +908,17 @@ int main(int argc, char **argv) {
           int hc = 0;
 
           while(ssdp_headers) {
-            printf("Header[%d][type:%d;%s]: %s\n", hc, ssdp_headers->type, get_header_string(ssdp_headers->type, ssdp_headers), ssdp_headers->contents);
+            buffer_used += snprintf(results + buffer_used,
+                                    XML_BUFFER_SIZE - buffer_used,
+                                    "Header[%d][type:%d;%s]: %s\n",
+                                    hc, ssdp_headers->type,
+                                    get_header_string(ssdp_headers->type, ssdp_headers),
+                                    ssdp_headers->contents);
             ssdp_headers = ssdp_headers->next;
             hc++;
           }
           ssdp_headers = NULL;
-          printf("-----------END NOTIFICATION-------------\n");
         }
-
-
 
         if(conf->forward_enabled) {
           PRINT_DEBUG("setupSocket() for forwarding");
@@ -909,8 +926,10 @@ int main(int argc, char **argv) {
           send_stuff("/abused/index.php", results, notif_recipient_addr, 80, 1);
         }
         else {
-          printf("%s", results);
+          printf("\n\n%s", results);
         }
+
+        free(results);
 
       }
 
@@ -939,10 +958,6 @@ int main(int argc, char **argv) {
                                     SSDP_PORT,  // int port
                                     FALSE,      // BOOL is_server
                                     FALSE);     // BOOL keepalive
-
-    if(conf->forward_enabled) {
-      //notif_recipient_sock = setupSocket();
-    }
 
     /* Parse the filters */
     PRINT_DEBUG("parse_filters()");
@@ -989,6 +1004,8 @@ int main(int argc, char **argv) {
     /* Send the UPnP request */
     PRINT_DEBUG("sending request");
     /*****************/
+    // This is the temp solution untill the
+    // commented-out sendto() code below is fixed
     struct sockaddr_in sa;
     sa.sin_family = AF_INET;
     sa.sin_port = htons(SSDP_PORT);
@@ -1015,7 +1032,7 @@ int main(int argc, char **argv) {
     freeaddrinfo(addri);
     if(recvLen < 0) {
       free_stuff();
-      perror("sendto()");
+      PRINT_ERROR("sendto(): Failed sending any data");
       exit(EXIT_FAILURE);
     }
 
@@ -1042,7 +1059,7 @@ int main(int argc, char **argv) {
 
     PRINT_DEBUG("setting socket receive-timeout to %d", (int)rtimeout.tv_sec);
     if(setsockopt(notif_server_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout, sizeof(rtimeout)) < 0) {
-      perror("setsockopt() SO_RCVTIMEO");
+      PRINT_ERROR("setsockopt() SO_RCVTIMEO: (%d) %s", errno, strerror(errno));
       free(response);
       free_stuff();
       exit(EXIT_FAILURE);
@@ -1066,7 +1083,7 @@ int main(int argc, char **argv) {
       char *tmp_ip = (char*)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
       memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
       if(!inet_ntop(notif_client_addr.ss_family, (notif_client_addr.ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr : (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
-        perror("inet_ntop()");
+        PRINT_ERROR("inet_ntop(): (%d) %s", errno, strerror(errno));
         free_ssdp_message(&ssdp_message);
         free_stuff();
         exit(EXIT_FAILURE);
@@ -1341,7 +1358,7 @@ static BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac, int
     PRINT_DEBUG("build_ssdp_message() failed: last_newline < 0");
     return FALSE;
   }
-  PRINT_DEBUG("last_newline:     %d", last_newline);
+  PRINT_DEBUG("last_newline: %d", last_newline);
   /* get past request string, point at first header row */
   last_newline += 2;
 
@@ -1735,7 +1752,7 @@ static char *get_ip_address_from_socket(const SOCKET sock) {
   char *result = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
 
   if(ioctl(sock, SIOCGIFCONF, &ifc) == -1) {
-      perror("get_ip_address_from_socket(); ioctl() SIOCGIFCONF");
+      PRINT_ERROR("get_ip_address_from_socket(); ioctl() SIOCGIFCONF: (%d) %s", errno, strerror(errno));
       free(result);
       free_stuff();
       exit(EXIT_FAILURE);
@@ -1749,7 +1766,7 @@ static char *get_ip_address_from_socket(const SOCKET sock) {
          (!conf->use_ipv4 && !conf->use_ipv6)) {
         if (ioctl(sock, SIOCGIFADDR, &ifr[i]) == 0) {
           int sa_fam = ifr[i].ifr_addr.sa_family;
-          if(sa_fam == AF_INET && inet_ntop(sa_fam, &((struct sockaddr_in *)(&ifr[i].ifr_addr))->sin_addr.s_addr, result, IPv6_STR_MAX_SIZE)) {
+          if(sa_fam == AF_INET && inet_ntop(sa_fam, &((struct sockaddr_in *)(&ifr[i].ifr_addr))->sin_addr.s_addr, result, IPv4_STR_MAX_SIZE)) {
             if(strcmp(result, "127.0.0.1") == 0) {
               continue;
             }
@@ -1758,7 +1775,7 @@ static char *get_ip_address_from_socket(const SOCKET sock) {
             // nothing to skip that I am aware of
           }
           else {
-            PRINT_ERROR("get_ip_address_from_socket(); inet_ntop() error\n");
+            PRINT_ERROR("get_ip_address_from_socket(); inet_ntop(): (%d) %s", errno, strerror(errno));
             free(result);
             free_stuff();
             exit(EXIT_FAILURE);
@@ -1766,7 +1783,7 @@ static char *get_ip_address_from_socket(const SOCKET sock) {
           PRINT_DEBUG("found IP form socket: %s", result);
           return result;
         }
-        perror("get_ip_address_from_socket(); ioctl() SIOCGIFADDR");
+        PRINT_ERROR("get_ip_address_from_socket(); ioctl() SIOCGIFADDR: (%d) %s", errno, strerror(errno));
       }
   }
   free(result);
@@ -2058,7 +2075,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
                                      FALSE);
 
       if(resolve_sock == SOCKET_ERROR) {
-        perror("setupsocket(); setsockopt() SO_RCVTIMEO");
+        PRINT_ERROR("fetch_upnp_device_info(); setupSocket(): (%d) %s", errno, strerror(errno));
         free(ip);
         free(rest);
         free(request);
@@ -2074,7 +2091,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
 
       PRINT_DEBUG("setting socket receive-timeout to %d", (int)rtimeout.tv_sec);
       if (setsockopt (resolve_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout, sizeof(rtimeout)) < 0) {
-        perror("fetch_upnp_device_info(); setsockopt() SO_RCVTIMEO");
+        PRINT_ERROR("fetch_upnp_device_info(); setsockopt() SO_RCVTIMEO: (%d) %s", errno, strerror(errno));
         free(ip);
         free(rest);
         free(request);
@@ -2084,7 +2101,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
 
       PRINT_DEBUG("setting socket send-timeout to %d", (int)stimeout.tv_sec);
       if(setsockopt (resolve_sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&stimeout, sizeof(stimeout)) < 0) {
-        perror("fetch_upnp_device_info(); setsockopt() SO_SNDTIMEO");
+        PRINT_ERROR("fetch_upnp_device_info(); setsockopt() SO_SNDTIMEO: (%d) %s", errno, strerror(errno));
         free(ip);
         free(rest);
         free(request);
@@ -2129,7 +2146,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
       tmp_ip = NULL;
       #endif
       if(connect(resolve_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) == SOCKET_ERROR) {
-        perror("fetch_upnp_device_info(); connect()");
+        PRINT_ERROR("fetch_upnp_device_info(); connect(): (%d) %s", errno, strerror(errno));
         free(ip);
         free(rest);
         free(request);
@@ -2549,7 +2566,7 @@ static int findInterface(struct sockaddr_storage *saddr, const char *address) {
         PRINT_DEBUG("findInterface(): saddr is NULL [conf->use_ipv6 == TRUE]");
       }
       if(!conf->quiet_mode) {
-        printf("Matched all addresses (::)\n");
+        PRINT_DEBUG("findInterface(): Matched all addresses (::)\n");
       }
     }
     else {
@@ -2562,7 +2579,7 @@ static int findInterface(struct sockaddr_storage *saddr, const char *address) {
         PRINT_DEBUG("findInterface(): saddr is NULL [conf->use_ipv6 == FALSE]");
       }
       if(!conf->quiet_mode) {
-        printf("Matched all addresses (0.0.0.0)\n");
+        PRINT_DEBUG("findInterface(): Matched all addresses (0.0.0.0)\n");
       }
     }
     freeifaddrs(interfaces);
@@ -2631,11 +2648,13 @@ static int findInterface(struct sockaddr_storage *saddr, const char *address) {
 
 static configuration_s *parseConfigurationFile(const char *file_location) {
   configuration_s *conf = NULL;
+    PRINT_DEBUG("parseConfigurationFile() begin");
   /*if(file_location == NULL || file_exists(file_location)) {
-    perror("File '%s' does not exist!\n", file_location);
+    PRINT_ERROR("File '%s' does not exist", file_location);
     free_stuff();
     exit(EXIT_FAILURE);
   }*/
+  PRINT_DEBUG("parseConfigurationFile() end");
   return conf;
 }
 
@@ -2684,7 +2703,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
       char a[100];
       memset(a, '\0', 100);
       if(!inet_ntop(saddr->ss_family, (saddr->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)saddr)->sin_addr : (void *)&((struct sockaddr_in6 *)saddr)->sin6_addr), a, 100)) {
-        perror("Error");
+        PRINT_ERROR("setupSocket(); inet_ntop(): (%d) %s", errno, strerror(errno));
       }
       PRINT_DEBUG("findInterface() returned: saddr->sin_addr: %s", a);
     }
@@ -2715,7 +2734,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
     /* init socket */
     sock = socket(saddr->ss_family, sock_type, protocol);
     if(sock < 0) {
-      perror("Failed to create socket.\n");
+      PRINT_ERROR("Failed to create socket. (%d) %s", errno, strerror(errno));
       free(saddr);
       if(sa != NULL) {
         free(interface);
@@ -2727,7 +2746,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
     /* Make able to receive from an already used port */
     int reuse = 1;
     if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
-      perror("setsockopt() SO_REUSEADDR:");
+      PRINT_ERROR("setsockopt() SO_REUSEADDR: (%d) %s", errno, strerror(errno));
       free(saddr);
       if(sa != NULL) {
         free(interface);
@@ -2737,7 +2756,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
     }
     /* linux >= 3.9
     if(setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) == -1) {
-      perror("SO_REUSEPORT");
+      PRINT_ERROR("setsockopt() SO_REUSEPORT: (%d) %s", errno, strerror(errno));
       free_stuff();
       exit(EXIT_FAILURE);
     }
@@ -2746,7 +2765,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
     /* Set keepalive */
     if(keepalive) {
       if(setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&keepalive, sizeof(char)) < 0) {
-        perror("setcockopt() SO_KEEPALIVE");
+        PRINT_ERROR("setsockopt() SO_KEEPALIVE: (%d) %s", errno, strerror(errno));
         free(saddr);
         if(sa != NULL) {
           free(interface);
@@ -2759,7 +2778,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
     /* Set TTL */
     if(is_multicast) {
       if(setsockopt(sock, protocol, (is_ipv6 ? IPV6_MULTICAST_HOPS : IP_MULTICAST_TTL), (char *)&conf->ttl, sizeof(char)) < 0) {
-        perror("setcockopt() IP(6)_MULTICAST_TTL/HOPS");
+        PRINT_ERROR("setsockopt() SIP(6)_MULTICAST_TTL/HOP: (%d) %s", errno, strerror(errno));
         free(saddr);
         if(sa != NULL) {
           free(interface);
@@ -2799,7 +2818,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
         }
         #endif
         if(setsockopt(sock, protocol, IPV6_MULTICAST_IF, &mreq6.ipv6mr_interface, sizeof(mreq6.ipv6mr_interface)) < 0) {
-          perror("setcockopt() IPV6_MULTICAST_IF");
+          PRINT_ERROR("setsockopt() IPV6_MULTICAST_IF: (%d) %s", errno, strerror(errno));
           free(saddr);
           if(sa != NULL) {
             free(interface);
@@ -2839,7 +2858,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
         }
         #endif
         if(setsockopt(sock, protocol, IP_MULTICAST_IF, &mreq.imr_interface, sizeof(mreq.imr_interface)) < 0) {
-          perror("setcockopt() IP_MULTICAST_IF");
+          PRINT_ERROR("setsockopt() IP_MULTICAST_IF: (%d) %s", errno, strerror(errno));
           free(saddr);
           if(sa != NULL) {
             free(interface);
@@ -2855,7 +2874,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
       unsigned char loop = FALSE;
       PRINT_DEBUG("Disabling loopback multicast traffic");
       if(setsockopt(sock, protocol, (is_ipv6 ? IPV6_MULTICAST_LOOP : IP_MULTICAST_LOOP), &loop, sizeof(loop)) < 0) {
-        perror("setcockopt() IPV(6)_MULTICAST_LOOP");
+        PRINT_ERROR("setupSocket(); setcockopt() IPV(6)_MULTICAST_LOOP: (%d) %s", errno, strerror(errno));
         free(saddr);
         if(sa != NULL) {
           free(interface);
@@ -2876,7 +2895,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
       // TODO: BIND TO INADDR_ANY if sa and interface is NULL !!!!!!!
 
       if(bind(sock, (struct sockaddr *)saddr, (saddr->ss_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) < 0) {
-        perror("bind() server");
+        PRINT_ERROR("setupSocket(); bind(): (%d) %s", errno, strerror(errno));
         free(saddr);
         if(sa != NULL) {
           free(interface);
@@ -2887,7 +2906,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
       if(!is_udp) {
         PRINT_DEBUG("  is_udp == FALSE");
         if(listen(sock, LISTEN_QUEUE_LENGTH) == SOCKET_ERROR) {
-          perror("listen()");
+          PRINT_ERROR("setupSocket(); listen(): (%d) %s", errno, strerror(errno));
           close(sock);
           free(saddr);
           if(sa != NULL) {
@@ -2914,7 +2933,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
         }
         #endif
         if(setsockopt(sock, protocol, IPV6_ADD_MEMBERSHIP, &mreq6, sizeof(struct ipv6_mreq)) < 0) {
-          perror("setsock() IPV6_ADD_MEMBERSHIP");
+          PRINT_ERROR("setupSocket(); setsockopt() IPV6_ADD_MEMBERSHIP: (%d) %s", errno, strerror(errno));
           close(sock);
           free(saddr);
           if(sa != NULL) {
@@ -2937,7 +2956,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
         }
         #endif
         if(setsockopt(sock, protocol, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
-          perror("setsock() IP_ADD_MEMBERSHIP");
+          PRINT_ERROR("setupSocket(); setsockopt() IP_ADD_MEMBERSHIP: (%d) %s", errno, strerror(errno));
           close(sock);
           free(saddr);
           if(sa != NULL) {
