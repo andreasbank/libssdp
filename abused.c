@@ -56,9 +56,17 @@
  *  by Andreas Bank
  *   MAC retrieval for BSD systems
  *
- * Update 2014-10-03:
+ * Update 2015-02-03:
  *  by Andreas Bank
  *   MAC retrieval on linux
+ *
+ * Update 2015-02-04:
+ *  by Andreas Bank
+ *   Forwarding support
+ *
+ * Update 2015-02-07:
+ *  by Andreas Bank
+ *   Normalise printouts
  */
 
 /*
