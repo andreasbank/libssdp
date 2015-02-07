@@ -96,7 +96,7 @@
 #define DEBUG_MSG_LOCATION_HEADER "http://10.83.14.2:80/udhisapi.xml"
 
 /* Uncomment the line below to enable detailed debug information */
-//#define DEBUG___
+#define DEBUG___
 
 #define DEBUG_COLOR_BEGIN "\x1b[0;32m"
 #define ERROR_COLOR_BEGIN "\x1b[0;31m"
@@ -931,7 +931,7 @@ int main(int argc, char **argv) {
         if(conf->forward_enabled) {
           PRINT_DEBUG("setupSocket() for forwarding");
           // TODO: Make it not send M*SEARCH uPnP packets
-          send_stuff("/abused/index.php", results, notif_recipient_addr, 80, 1);
+          send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
         }
         else {
           printf("\n\n%s", results);
@@ -1595,11 +1595,12 @@ static int send_stuff(const char *url, const char *data, const struct sockaddr_s
       int bytes = send(send_sock, request, strlen(request), 0);
       PRINT_DEBUG("send_stuff(): sent %d bytes", bytes);
       free(request);
-      char *response = (char *)malloc(sizeof(char) * 5096);
-      memset(response, '\0', 5096);
+      int response_size = 10240; // 10KB
+      char *response = (char *)malloc(sizeof(char) * response_size);
+      memset(response, '\0', response_size);
       int all_bytes = 0;
       do {
-        bytes = recv(send_sock, response + all_bytes, 5096 - all_bytes, 0);
+        bytes = recv(send_sock, response + all_bytes, response_size - all_bytes, 0);
         all_bytes += bytes;
       } while(bytes > 0);
       free(ip);
@@ -2310,10 +2311,10 @@ static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hid
     int tags_size = 0;
     int i;
     for(i = 0; i < fields_count; i++) {
-      fields_size += strlen(fields[i]) + 1; // + ": " - "\n" = 3 chars
+      fields_size += strlen(fields[i]) + 1; // + ": " - "\n" = 2 - 1 = 1 char
     }
     for(i = 0; i < tags_count; i++) {
-      tags_size += strlen(tags[i]) + 18; // + the xml formatting below = 18
+      tags_size += strlen(tags[i]) + 50; // + the xml formatting below = 18
     }
 
     memset(fetched_string, '\0', 2048);
@@ -2332,27 +2333,27 @@ static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hid
 
       /* Convert to XML format */
       usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
-        "\t\t<info count=\"%d\">\n", fields_count);
+        "\t\t<custom_fields count=\"%d\">\n", fields_count);
 
       char *tmp_pointer = NULL;
       char *tmp_pointer_end = NULL;
-      char *tmp_string = (char *)malloc(sizeof(char) * 512);
+      char *tmp_string = (char *)malloc(sizeof(char) * 1024);
       for(i = 0; i < fields_count; i++) {
         tmp_pointer = strstr(fetched_string, fields[i]);
-        memset(tmp_string, '\0', 512);
+        memset(tmp_string, '\0', 1024);
         if(tmp_pointer != NULL) {
           tmp_pointer +=  strlen(fields[i]) + 2;
           tmp_pointer_end = strchr(tmp_pointer, '\n');
           strncpy(tmp_string, tmp_pointer, (int)(tmp_pointer_end - tmp_pointer));
           usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
-            "\t\t\t<%s>\n\t\t\t\t%s\n\t\t\t</%s>\n", tags[i], tmp_string, tags[i]);
+            "\t\t\t<custom_field name=\"%s\">\n\t\t\t\t%s\n\t\t\t</custom_field>\n", tags[i], tmp_string);
         }
       }
       free(tmp_string);
       tmp_string = NULL;
 
       usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
-        "\t\t</info>\n");
+        "\t\t</custom_fields>\n");
       PRINT_DEBUG("actual bytes: %d", (int)strlen(xml_message));
     }
     free(fetched_string);
@@ -3102,9 +3103,10 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
     return;
   }
 
-  int message_length = 5120;
+  int message_length = 10240;
   message = (char *)malloc(sizeof(char) * message_length);
-  memset(message, '\0', message_length);
+  memset(message, '\0', sizeof(char) * message_length);
+  message_length -= 50; // compensate for additional chars in the message
   va_start(va, va_format);
 
   int copy_length = 0;
