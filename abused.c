@@ -311,6 +311,7 @@ static int findInterface(struct sockaddr_storage *, const char *);
 static SOCKET setupSocket(BOOL, BOOL, BOOL, char *, struct sockaddr_storage *, const char *, int, BOOL, BOOL);
 static BOOL isMulticastAddress(const char *);
 static void init_ssdp_message(ssdp_message_s *);
+static BOOL create_plain_text_message(char *, int, ssdp_message_s *);
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
@@ -757,7 +758,6 @@ int main(int argc, char **argv) {
     /* Init fork allocations */
     notif_string = (char *)malloc(sizeof(char) * NOTIF_RECV_BUFFER);
 
-
     /* init socket */
     PRINT_DEBUG("setupSocket()");
     notif_server_sock = setupSocket(FALSE,      // BOOL is_ipv6
@@ -855,7 +855,7 @@ int main(int argc, char **argv) {
           ssdp_headers = ssdp_message.headers;
 
           if(drop_message) {
-            break;;
+            break;
           }
         }
       }
@@ -863,6 +863,12 @@ int main(int argc, char **argv) {
       if(filters_factory == NULL || !drop_message) {
 
         char *results = (char *)malloc(XML_BUFFER_SIZE);
+
+        /* If unable to  allocate, report it but don't break
+           in case other non-results actions exist */
+        if(!results) {
+          PRINT_ERROR("Could not allocate buffer memory");
+        }
         memset(results, '\0', XML_BUFFER_SIZE);
 
         /* Handle the messages */
@@ -872,72 +878,36 @@ int main(int argc, char **argv) {
         else if(conf->gather_silent) {
           PRINT_DEBUG("Silent gathering mode is not supported yet!");
         }
-        else if(conf->raw_output) {
+        else if(results && conf->raw_output) {
           snprintf(results, strlen(notif_string), "\n\n%s\n\n", notif_string);
         }
-        else if(conf->xml_output) {
+        else if(results && conf->xml_output) {
           to_xml(&ssdp_message, conf->fetch_info, FALSE, results, XML_BUFFER_SIZE);
         }
-//*********************************
-        else {
-          int buffer_used = 0;
-          buffer_used += snprintf(results + buffer_used,
-                                  XML_BUFFER_SIZE - buffer_used,
-                                  "Time received: %s\n",
-                                  ssdp_message.datetime);
-          buffer_used += snprintf(results + buffer_used,
-                                  XML_BUFFER_SIZE - buffer_used,
-                                  "Origin-MAC: %s\n",
-                                  (ssdp_message.mac != NULL ? ssdp_message.mac : "(Could not be determined)"));
-          buffer_used += snprintf(results + buffer_used,
-                                  XML_BUFFER_SIZE - buffer_used,
-                                  "Origin-IP: %s\nMessage length: %d Bytes\n",
-                                  ssdp_message.ip,
-                                  ssdp_message.message_length);
-          buffer_used += snprintf(results + buffer_used,
-                                  XML_BUFFER_SIZE - buffer_used,
-                                  "Request: %s\nProtocol: %s\n",
-                                  ssdp_message.request,
-                                  ssdp_message.protocol);
-          if(conf->fetch_info) {
-            int bytes_fetched = 0;
-            char *fetched_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
-            memset(fetched_string, '\0', XML_BUFFER_SIZE);
-            bytes_fetched = fetch_upnp_device_info(&ssdp_message, fetched_string, XML_BUFFER_SIZE);
-            if(bytes_fetched > 0) {
-              buffer_used += snprintf(results + buffer_used,
-                                      XML_BUFFER_SIZE - buffer_used,
-                                      "%s",
-                                      fetched_string);
-            }
-            free(fetched_string);
-          }
-
-          int hc = 0;
-
-          while(ssdp_headers) {
-            buffer_used += snprintf(results + buffer_used,
-                                    XML_BUFFER_SIZE - buffer_used,
-                                    "Header[%d][type:%d;%s]: %s\n",
-                                    hc, ssdp_headers->type,
-                                    get_header_string(ssdp_headers->type, ssdp_headers),
-                                    ssdp_headers->contents);
-            ssdp_headers = ssdp_headers->next;
-            hc++;
-          }
-          ssdp_headers = NULL;
+        else if(results && !create_plain_text_message(results, XML_BUFFER_SIZE, &ssdp_message)) {
+            PRINT_ERROR("Failed creating plain-text message");
+            free(results);
+            results = NULL;
         }
-
-        if(conf->forward_enabled) {
+ 
+        /* Check if forwarding ('-a') is enabled */
+        if(results && conf->forward_enabled) {
           PRINT_DEBUG("setupSocket() for forwarding");
           // TODO: Make it not send M*SEARCH uPnP packets
           send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
         }
-        else {
+        /* Else just display results on console */
+        else if(results) {
           printf("\n\n%s", results);
         }
+        else {
+          PRINT_DEBUG("results is NULL");
+        }
 
-        free(results);
+        if(results) {
+          free(results);
+          results = NULL;
+        }
 
       }
 
@@ -3056,8 +3026,66 @@ static void init_ssdp_message(ssdp_message_s *message) {
       message->header_count = 0;
 }
 
-#ifdef DEBUG___
+/**
+ * Create a plain-text message
+ *
+ * @param results The buffer to store the results in
+ * @param buffer_size The size of the buffer 'results'
+ * @param message The message to convert
+ */
+static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_message_s *ssdp_message) {
+  int buffer_used = 0;
+  buffer_used += snprintf(results + buffer_used,
+                          buffer_size - buffer_used,
+                          "Time received: %s\n",
+                          ssdp_message->datetime);
+  buffer_used += snprintf(results + buffer_used,
+                          buffer_size - buffer_used,
+                          "Origin-MAC: %s\n",
+                          (ssdp_message->mac != NULL ? ssdp_message->mac : "(Could not be determined)"));
+  buffer_used += snprintf(results + buffer_used,
+                          buffer_size - buffer_used,
+                          "Origin-IP: %s\nMessage length: %d Bytes\n",
+                          ssdp_message->ip,
+                          ssdp_message->message_length);
+  buffer_used += snprintf(results + buffer_used,
+                          buffer_size - buffer_used,
+                          "Request: %s\nProtocol: %s\n",
+                          ssdp_message->request,
+                          ssdp_message->protocol);
+  if(conf->fetch_info) {
+    int bytes_fetched = 0;
+    char *fetched_string = (char *)malloc(sizeof(char) * buffer_size);
+    memset(fetched_string, '\0', buffer_size);
+    bytes_fetched = fetch_upnp_device_info(ssdp_message, fetched_string, buffer_size);
+    if(bytes_fetched > 0) {
+      buffer_used += snprintf(results + buffer_used,
+                              buffer_size - buffer_used,
+                              "%s",
+                              fetched_string);
+    }
+    free(fetched_string);
+  }
 
+  int hc = 0;
+  ssdp_header_s *ssdp_headers = ssdp_message->headers;
+  while(ssdp_headers) {
+    buffer_used += snprintf(results + buffer_used,
+                            buffer_size - buffer_used,
+                            "Header[%d][type:%d;%s]: %s\n",
+                            hc, ssdp_headers->type,
+                            get_header_string(ssdp_headers->type, ssdp_headers),
+                            ssdp_headers->contents);
+    ssdp_headers = ssdp_headers->next;
+    hc++;
+  }
+
+  ssdp_headers = NULL;
+
+  return TRUE;
+}
+
+#ifdef DEBUG___
 /**
  * Counts the number of times needle occurs in haystack
  *
