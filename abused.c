@@ -93,7 +93,7 @@
    This "UPnP device" can be emulated with a http server (e.g. Apache)
    serving the UPnP-descriptive XML file included in the
    abused repository (<repo>/udhisapi.xml) */
-#define DEBUG_MSG_LOCATION_HEADER "http://10.0.0.2:80/udhisapi.xml"
+#define DEBUG_MSG_LOCATION_HEADER "http://127.0.0.1:80/udhisapi.xml"
 
 /* Uncomment the line below to enable detailed debug information */
 #define DEBUG___
@@ -157,15 +157,15 @@
 #ifdef DEBUG___
   #define PRINT_DEBUG(...)  print_debug(NULL, DEBUG_COLOR_BEGIN, __FILE__, __LINE__, __VA_ARGS__)
   #define PRINT_ERROR(...)  print_debug(stderr, ERROR_COLOR_BEGIN, __FILE__, __LINE__, __VA_ARGS__)
-  #define ADD_ALLOC(...)    add_alloc(...)
-  #define REMOVE_ALLOC(...) remove_alloc(...)
-  #define PRINT_ALLOC()     add_alloc()
+  #define ADD_ALLOC(...)    add_alloc(__VA_ARGS__)
+  #define REMOVE_ALLOC(...) remove_alloc(__VA_ARGS__)
+  #define PRINT_ALLOC()     print_alloc()
 #else
   #define PRINT_DEBUG(...)  do { } while (FALSE)
-  #define PRINT_ERROR(...)  printf(__VA_ARGS__)
-  #define ADD_ALLOC(arg)    do { } while (FALSE)
-  #define REMOVE_ALLOC(arg) do { } while (FALSE)
-  #define PRINT_ALLOC(arg)  do { } while (FALSE)
+  #define PRINT_ERROR(...)  fprintf(stderr, __VA_ARGS__)
+  #define ADD_ALLOC(...)    do { } while (FALSE)
+  #define REMOVE_ALLOC(...) do { } while (FALSE)
+  #define PRINT_ALLOC(...)  do { } while (FALSE)
 #endif
 
 #define DAEMON_PORT           43210   // port the daemon will listen on
@@ -325,8 +325,8 @@ static BOOL create_plain_text_message(char *, int, ssdp_message_s *);
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
-static void add_alloc(...);
-static void remove_alloc(...);
+static void add_alloc(const char *alloc_name, ...);
+static void remove_alloc(const char *alloc_name, ...);
 static void print_alloc();
 #endif
 
@@ -862,10 +862,17 @@ int main(int argc, char **argv) {
 
       /* Retrieve MAC address from socket (if possible, else NULL) */
       char *tmp_mac = NULL;
-      tmp_mac = get_mac_address_from_socket(notif_server_sock, (struct sockaddr_storage *)&notif_client_addr, NULL);
+      //tmp_mac = get_mac_address_from_socket(notif_server_sock, (struct sockaddr_storage *)&notif_client_addr, NULL);
 
       /* Build the ssdp message struct */
-      BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
+      BOOL build_success = FALSE;
+      while(TRUE) {
+        ssdp_message_s my_message;
+        init_ssdp_message(&my_message);
+        build_success = build_ssdp_message(&my_message, tmp_ip, tmp_mac, recvLen, notif_string);
+        free_ssdp_message(&my_message);
+      }
+      //BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
 
       if(!build_success) {
         free_ssdp_message(&ssdp_message);
@@ -878,20 +885,21 @@ int main(int argc, char **argv) {
       /* Check if notification should be used (to print and possibly send to the given destination) */
       ssdp_header_s *ssdp_headers = ssdp_message.headers;
       if(filters_factory != NULL) {
-      PRINT_DEBUG("traversing filters");
-      int fc;
-      for(fc = 0; fc < filters_factory->filters_count; fc++) {
-        if(strcmp(filters_factory->filters[fc].header, "ip") == 0 && strstr(ssdp_message.ip, filters_factory->filters[fc].value) == NULL) {
-          drop_message = TRUE;
-          break;
-        }
-
-        while(ssdp_headers) {
-          if(strcmp(get_header_string(ssdp_headers->type, ssdp_headers), filters_factory->filters[fc].header) == 0 && strstr(ssdp_headers->contents, filters_factory->filters[fc].value) == NULL) {
+        PRINT_DEBUG("traversing filters");
+        int fc;
+        for(fc = 0; fc < filters_factory->filters_count; fc++) {
+          if(strcmp(filters_factory->filters[fc].header, "ip") == 0 && strstr(ssdp_message.ip, filters_factory->filters[fc].value) == NULL) {
             drop_message = TRUE;
             break;
           }
-          ssdp_headers = ssdp_headers->next;
+
+          while(ssdp_headers) {
+            if(strcmp(get_header_string(ssdp_headers->type, ssdp_headers), filters_factory->filters[fc].header) == 0 && strstr(ssdp_headers->contents, filters_factory->filters[fc].value) == NULL) {
+              drop_message = TRUE;
+              PRINT_DEBUG("Message marked for dropping");
+              break;
+            }
+            ssdp_headers = ssdp_headers->next;
           }
           ssdp_headers = ssdp_message.headers;
 
@@ -945,6 +953,7 @@ int main(int argc, char **argv) {
           PRINT_DEBUG("results is NULL");
         }
 
+	
         if(results) {
           PRINT_DEBUG("freeing results");
           free(results);
@@ -957,7 +966,7 @@ int main(int argc, char **argv) {
 
       free_ssdp_message(&ssdp_message);
       // TODO: remove me
-      break;
+      //break;
     }
 
   /* We can never get this far */
@@ -1389,6 +1398,7 @@ static BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac, int
     return FALSE;
   }
   PRINT_DEBUG("last_newline: %d", last_newline);
+
   /* get past request string, point at first header row */
   last_newline += 2;
 
@@ -1658,7 +1668,8 @@ static void free_ssdp_message(ssdp_message_s *message) {
   ssdp_header_s *next_header = NULL;
 
   if(!message) {
-  return;
+    PRINT_ERROR("Message was empty, nothing to free");
+    return;
   }
   if(message->mac != NULL) {
     free(message->mac);
@@ -3238,58 +3249,58 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
       strncpy(message + message_used, from_pointer, copy_length);
       message_used += copy_length;
 
-  switch(to_pointer[1]) {
-  case 's':
-    /* string */
-    s = va_arg(va, char *);
-    if(s) {
-      copy_length = strlen(s);
+    switch(to_pointer[1]) {
+    case 's':
+      /* string */
+      s = va_arg(va, char *);
+      if(s) {
+        copy_length = strlen(s);
+        if(copy_length > message_length - message_used) {
+          fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
+          free(message);
+          return;
+        }
+        strncpy(message + message_used, s, copy_length);
+        message_used += copy_length;
+      }
+      else {
+        copy_length = 6;
+        strncpy(message + message_used, "NULL", copy_length);
+        message_used += copy_length;
+      }
+      break;
+    case 'c':
+      /* character */
+      c = (char)va_arg(va, int);
+      copy_length = 1;
       if(copy_length > message_length - message_used) {
         fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
         free(message);
         return;
       }
-      strncpy(message + message_used, s, copy_length);
+      strncpy(message + message_used, &c, copy_length);
       message_used += copy_length;
-    }
-    else {
-      copy_length = 6;
-      strncpy(message + message_used, "NULL", copy_length);
+      break;
+    case 'd':
+      /* integer */
+      d = va_arg(va, int);
+      char *d_char = (char *)malloc(sizeof(char) * 10);
+      memset(d_char, '\0', 10);
+      sprintf(d_char, "%d", d);
+      copy_length = strlen(d_char);
+      if(copy_length > message_length - message_used) {
+        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
+        free(d_char);
+        free(message);
+        return;
+      }
+      strncpy(message + message_used, d_char, copy_length);
       message_used += copy_length;
-    }
-    break;
-  case 'c':
-    /* character */
-    c = (char)va_arg(va, int);
-    copy_length = 1;
-    if(copy_length > message_length - message_used) {
-      fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
-      free(message);
-      return;
-    }
-    strncpy(message + message_used, &c, copy_length);
-    message_used += copy_length;
-    break;
-  case 'd':
-    /* integer */
-    d = va_arg(va, int);
-    char *d_char = (char *)malloc(sizeof(char) * 10);
-    memset(d_char, '\0', 10);
-    sprintf(d_char, "%d", d);
-    copy_length = strlen(d_char);
-    if(copy_length > message_length - message_used) {
-      fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
       free(d_char);
-      free(message);
-      return;
+      break;
+    default:
+      break;
     }
-    strncpy(message + message_used, d_char, copy_length);
-    message_used += copy_length;
-    free(d_char);
-    break;
-  default:
-    break;
-  }
 
     to_pointer += 2;
   }
@@ -3313,17 +3324,45 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
   free(message);
 }
 
-static void add_alloc(const char *alloc_name) {
+static void add_alloc(const char *alloc_name, ...) {
+  va_list va;
+
+  if (alloc_name) {
+    PRINT_ERROR("add_alloc(): no alloc_name given");
+    return;
+  }
+
+  /* Allocate if not already done */
   if(!alloc_list) {
     alloc_list = (char **)malloc(sizeof(char *) * 500);
   }
+
+  /* Tell VA where its args begin */
+  va_start(va, alloc_name);
+
+  /* Lets count the args */
+  int arg_count = 0;
+  int alloc_name_len = strlen(alloc_name);
+  int p = 0;
+  for(; p < alloc_name_len; p++) {
+    if(alloc_name[p] == '%' && alloc_name[p + 1] != '\0' && alloc_name[p + 1] != '%') {
+      arg_count++;
+    }
+  }
+
+  /* Allocate for the new element */
   char *alloc_element = (char *)malloc(sizeof(char) * 50);
+
+  /* Add the new element */
   strncpy(alloc_element, alloc_name, 50);
+
+  /* Increase counter by 1 */
   alloc_list[alloc_list_size++] = alloc_element;
+
   PRINT_DEBUG("Adding alloc '%s'", alloc_name);
 }
 
-static void remove_alloc(const char *alloc_name) {
+static void remove_alloc(const char *alloc_name, ...) {
   int i = 0;
   for(; i < alloc_list_size; i++) {
     if(0 == strcmp(alloc_name, alloc_list[i])) {
