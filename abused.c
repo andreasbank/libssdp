@@ -851,7 +851,6 @@ int main(int argc, char **argv) {
 
       /* Retrieve IP address from socket */
       char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-      // note that tmp_ip should not be freed since it is passed to ssdp_message_s
       memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
       if(!inet_ntop(notif_client_addr.ss_family, (notif_client_addr.ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr : (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
         PRINT_ERROR("Erroneous IP from sender");
@@ -862,17 +861,11 @@ int main(int argc, char **argv) {
 
       /* Retrieve MAC address from socket (if possible, else NULL) */
       char *tmp_mac = NULL;
-      //tmp_mac = get_mac_address_from_socket(notif_server_sock, (struct sockaddr_storage *)&notif_client_addr, NULL);
+      tmp_mac = get_mac_address_from_socket(notif_server_sock, (struct sockaddr_storage *)&notif_client_addr, NULL);
 
       /* Build the ssdp message struct */
-      BOOL build_success = FALSE;
-      while(TRUE) {
-        ssdp_message_s my_message;
-        init_ssdp_message(&my_message);
-        build_success = build_ssdp_message(&my_message, tmp_ip, tmp_mac, recvLen, notif_string);
-        free_ssdp_message(&my_message);
-      }
-      //BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
+      BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
+      free(tmp_ip);
 
       if(!build_success) {
         free_ssdp_message(&ssdp_message);
@@ -1386,14 +1379,18 @@ static BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac, int
   t = time(NULL);
   strftime(message->datetime, 20, "%Y-%m-%d %H:%M:%S", localtime(&t));
 
-  message->mac = mac;
-  message->ip = ip;
+  if(mac) {
+    strncpy(message->mac, mac, MAC_STR_MAX_SIZE);
+  }
+
+  if(ip) {
+    strncpy(message->ip, ip, IPv6_STR_MAX_SIZE);
+  }
   message->message_length = message_length;
 
   /* find end of request string */
   last_newline = strpos(raw_message, "\r\n");
   if(last_newline < 0) {
-    free(message->datetime);
     PRINT_DEBUG("build_ssdp_message() failed: last_newline < 0");
     return FALSE;
   }
@@ -1671,45 +1668,62 @@ static void free_ssdp_message(ssdp_message_s *message) {
     PRINT_ERROR("Message was empty, nothing to free");
     return;
   }
+
   if(message->mac != NULL) {
     free(message->mac);
     message->mac = NULL;
   }
+
   if(message->ip != NULL) {
     free(message->ip);
     message->ip = NULL;
   }
-  if(message->request != NULL) {
-    free(message->request);
-    message->request = NULL;
-  }
-  if(message->protocol != NULL) {
-    free(message->protocol);
-    message->protocol = NULL;
-  }
-  if(message->answer != NULL) {
-    free(message->answer);
-    message->answer = NULL;
-  }
+
   if(message->datetime != NULL) {
     free(message->datetime);
     message->datetime = NULL;
   }
 
+  if(message->request != NULL) {
+    free(message->request);
+    message->request = NULL;
+  }
+
+  if(message->protocol != NULL) {
+    free(message->protocol);
+    message->protocol = NULL;
+  }
+
+  if(message->answer != NULL) {
+    free(message->answer);
+    message->answer = NULL;
+  }
+
+  if(message->info != NULL) {
+    free(message->info);
+    message->info = NULL;
+  }
+
   do {
+
     if(message->headers->contents != NULL) {
       free(message->headers->contents);
       message->headers->contents = NULL;
     }
+
     if(message->headers->unknown_type != NULL) {
       free(message->headers->unknown_type);
       message->headers->unknown_type = NULL;
     }
+
     next_header = message->headers->next;
     free(message->headers);
     message->headers = next_header;
     next_header = NULL;
+
   } while(message->headers);
+  
+  PRINT_DEBUG("AAAA");
 }
 
 /**
@@ -2066,6 +2080,8 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
     mac = (unsigned char *)&arp.arp_ha.sa_data[0];
 
   }
+
+  freeifaddrs(interfaces);
 
   if(!mac) {
     PRINT_DEBUG("mac is NULL");
@@ -3114,6 +3130,8 @@ static void init_ssdp_message(ssdp_message_s *message) {
   memset(message->protocol, '\0', sizeof(char) * 48);
   message->answer = (char *)malloc(sizeof(char) * 1024);
   memset(message->answer, '\0', sizeof(char) * 1024);
+  message->info = NULL;
+  message->message_length = 0;
   message->header_count = 0;
 }
 
