@@ -85,7 +85,7 @@
 #define ABUSED_VERSION "0.0.1"
 
 /* Uncomment the line below to enable simulating notifs */
-#define DEBUG_MSG___
+//#define DEBUG_MSG___
 /* Set the frequency at which the messages will be received */
 #define DEBUG_MSG_FREQ___ 0.5 
 /* When using simulated messages it is mandatory to
@@ -1723,7 +1723,6 @@ static void free_ssdp_message(ssdp_message_s *message) {
 
   } while(message->headers);
   
-  PRINT_DEBUG("AAAA");
 }
 
 /**
