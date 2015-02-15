@@ -261,30 +261,25 @@ typedef struct filters_factory_struct {
 } filters_factory_s;
 
 typedef struct configuration_struct {
-  char*               interface;             /* Interface to use */
-  BOOL                run_as_daemon;         /* Run the program as a daemon ignoring control signals and terminal */
-  BOOL                run_as_server;         /* Run the program as a server, open a port and wait for incoming connection (requests) */
-  BOOL                listen_for_upnp_notif; /* Switch for enabling listening for UPnP (SSDP) notifications */
-  BOOL                scan_for_upnp_devices; /* Switch to perform an active UPnP (SSDP) scan */
-  BOOL                forward_enabled;       /* Switch to enable forwarding of the scan results */
-  BOOL                raw_output;            /* Use raw input instead of parsing it when displaying or forwarding */
-  BOOL                fetch_info;            /* Don't try to fetch device info from the url in the "Location" header */
-  BOOL                gather;                /* Gather and display discoveries in a table (usable with -a) */
-  BOOL                gather_silent;         /* Gather discoveries, do not display anything */
-  BOOL                xml_output;            /* Use raw input instead of parsing it when displaying or forwarding */
-  unsigned char       ttl;                   /* Time-To-Live value, how many routers the multicast shall propagate through */
-  unsigned char       show_interfaces;       /* Show interfaces at start */
-  unsigned char       hide_link_locals;      /* Hide link locals in result */
-  unsigned char       print_in_color;        /* Print IP in color */
-  unsigned char       print_red;             /* Print IP in red color */
-  unsigned char       bonjour_only;          /* Print only bojour friendly name, not full url */
-  unsigned char       one_line;              /* Print all in one line */
-  char               *filter;                /* Grep-like filter string */
-  BOOL                use_ipv4;              /* Force the usage of the IPv4 protocol */
-  BOOL                use_ipv6;              /* Force the usage of the IPv6 protocol */
-  BOOL                quiet_mode;            /* Minimize informative output */
-  int                 upnp_timeout;          /* The time to wait for a device to answer a query */
-  BOOL                enable_loopback;       /* Enable multicast loopback traffic */
+  char                interface[IPv6_STR_MAX_SIZE];   /* Interface to use */
+  char                ip[IPv6_STR_MAX_SIZE];          /* Interface IP to use */
+  BOOL                run_as_daemon;                  /* Run the program as a daemon ignoring control signals and terminal */
+  BOOL                run_as_server;                  /* Run the program as a server, open a port and wait for incoming connection (requests) */
+  BOOL                listen_for_upnp_notif;          /* Switch for enabling listening for UPnP (SSDP) notifications */
+  BOOL                scan_for_upnp_devices;          /* Switch to perform an active UPnP (SSDP) scan */
+  BOOL                forward_enabled;                /* Switch to enable forwarding of the scan results */
+  BOOL                raw_output;                     /* Use raw input instead of parsing it when displaying or forwarding */
+  BOOL                fetch_info;                     /* Don't try to fetch device info from the url in the "Location" header */
+  BOOL                gather;                         /* Gather and display discoveries in a table (usable with -a) */
+  BOOL                gather_silent;                  /* Gather discoveries, do not display anything */
+  BOOL                xml_output;                     /* Use raw input instead of parsing it when displaying or forwarding */
+  unsigned char       ttl;                            /* Time-To-Live value, how many routers the multicast shall propagate through */
+  char               *filter;                         /* Grep-like filter string */
+  BOOL                use_ipv4;                       /* Force the usage of the IPv4 protocol */
+  BOOL                use_ipv6;                       /* Force the usage of the IPv6 protocol */
+  BOOL                quiet_mode;                     /* Minimize informative output */
+  int                 upnp_timeout;                   /* The time to wait for a device to answer a query */
+  BOOL                enable_loopback;                /* Enable multicast loopback traffic */
 } configuration_s;
 
 
@@ -297,14 +292,12 @@ static char                *send_string = NULL;          /* The results of a UPn
 static char                *recv_string = NULL;          /* The string received from the client that has connected (made a request) to this service */
 static char                *notif_string = NULL;         /* A buffer for the notifications received while listening for UPnP (SSDP) notifications */
 static filters_factory_s   *filters_factory = NULL;      /* The structure contining all the filters information */
-static configuration_s     *conf = NULL;
+static configuration_s     conf;                         /* The program configuration */
 static char                *time_string = NULL;
-#ifdef DEBUG___
-static int                  alloc_list_size = 0;
-static char               **alloc_list = NULL;
-#endif
 
 /* Functions */
+static void set_default_configuration(configuration_s *);
+static void parse_args(int, char * const *, configuration_s *);
 static void exitSig(int);
 static BOOL build_ssdp_message(ssdp_message_s *, char *, char *, int, const char *);
 static unsigned char get_header_type(const char *);
@@ -316,10 +309,10 @@ static int fetch_upnp_device_info(const ssdp_message_s *, char *, int);
 static void to_xml(const ssdp_message_s *, BOOL, BOOL, char *, int);
 static BOOL parse_url(const char *, char *, int, int *, char *, int);
 static void parse_filters(char *, filters_factory_s **, BOOL);
-static char *get_ip_address_from_socket(const SOCKET);
+//static char *get_ip_address_from_socket(const SOCKET);
 static char *get_mac_address_from_socket(const SOCKET, struct sockaddr_storage *, char *);
 static BOOL parse_address(const char *, struct sockaddr_storage **, BOOL);
-static int find_interface(struct sockaddr_storage *, const char *);
+static int find_interface(struct sockaddr_storage *, char *, char *);
 static SOCKET create_upnp_listener(char *, int, int);
 static BOOL set_send_timeout(SOCKET, int);
 static BOOL set_receive_timeout(SOCKET, int);
@@ -328,17 +321,13 @@ static BOOL set_keepalive(SOCKET, BOOL);
 static BOOL set_ttl(SOCKET, int, int);
 static BOOL disable_multicast_loopback(SOCKET, int);
 static BOOL join_multicast_group(SOCKET, char *, char *);
-static SOCKET setupSocket(BOOL, BOOL, BOOL, char *, struct sockaddr_storage *, const char *, int, BOOL, BOOL);
-static BOOL isMulticastAddress(const char *);
+static SOCKET setup_socket(BOOL, BOOL, BOOL, char *, char *, struct sockaddr_storage *, const char *, int, BOOL, BOOL);
+static BOOL is_address_multicast(const char *);
 static void init_ssdp_message(ssdp_message_s *);
-static BOOL create_plain_text_message(char *, int, ssdp_message_s *);
-static BOOL is_sockaddr_bindall(BOOL, void*);
+static BOOL create_plain_text_message(char *, int, ssdp_message_s *, BOOL);
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
-static void add_alloc(const char *alloc_name, ...);
-static void remove_alloc(const char *alloc_name, ...);
-static void print_alloc();
 #endif
 
 
@@ -400,18 +389,12 @@ static void free_stuff() {
     time_string = NULL;
   }
 
-  if(!conf->quiet_mode) {
+  if(!conf.quiet_mode) {
     printf("\nCleaning up and exitting...\n");
   }
 
-  if(conf != NULL) {
-    /* We are not removing conf->interface since
-       it is handled by the system */
-    if(conf->filter != NULL) {
-      free(conf->filter);
-    }
-    free(conf);
-    conf = NULL;
+  if(conf.filter != NULL) {
+    free(conf.filter);
   }
 }
 
@@ -421,13 +404,8 @@ static void usage() {
   printf("OPTIONS:\n");
   printf("\t-C <file.conf>    Configuration file to use\n");
   printf("\t-i                Interface to use, default is all\n");
+  printf("\t-I                Interface IP address to use, default is a bind-all address\n");
   printf("\t-t                TTL value (routers to hop), default is 1\n");
-  printf("\t-s                Show scanned interfaces at start\n");
-  printf("\t-l                Include link-local addresses\n");
-  printf("\t-b                Print only Bonjour friendly name, not full url\n");
-  printf("\t-c                Do not use color when printing\n");
-  printf("\t-r                Use red color when printing (default color is green)\n");
-  printf("\t-o                Print each devices information in one line\n");
   printf("\t-f <string>       Filter for capturing, 'grep'-like effect. Also works\n");
   printf("\t                  for -u and -U where you can specify a list of\n");
   printf("                    comma separated filters\n");
@@ -451,94 +429,56 @@ static void usage() {
   printf("\t-L                Enable multicast loopback traffic\n");
 }
 
-
-int main(int argc, char **argv) {
-  int opt;
-  struct sockaddr_storage notif_client_addr;
-  ssdp_message_s ssdp_message;
-  int recvLen = 1;
-
-  /* Allocate space for the configuration */
-  conf = (configuration_s *)malloc(sizeof(configuration_s));
+static void set_default_configuration(configuration_s *c) {
 
   /* Default configuration */
-  conf->interface =             NULL;
-  conf->run_as_daemon =         FALSE;
-  conf->run_as_server =         FALSE;
-  conf->listen_for_upnp_notif = FALSE;
-  conf->scan_for_upnp_devices = FALSE;
-  conf->forward_enabled =       FALSE;
-  conf->raw_output =            FALSE;
-  conf->gather =                FALSE;
-  conf->gather_silent =         FALSE;
-  conf->fetch_info =            TRUE;
-  conf->xml_output =            FALSE;
-  conf->ttl =                   1;
-  conf->show_interfaces =       FALSE;
-  conf->hide_link_locals =      TRUE;
-  conf->print_in_color =        TRUE;
-  conf->print_red =             FALSE;
-  conf->bonjour_only =          FALSE;
-  conf->one_line =              FALSE;
-  conf->filter =                NULL;
-  conf->use_ipv4 =              FALSE;
-  conf->use_ipv6 =              FALSE;
-  conf->quiet_mode =            FALSE;
-  conf->upnp_timeout =          MULTICAST_TIMEOUT;
-  conf->enable_loopback =       FALSE;
+  memset(c->interface, '\0', IPv6_STR_MAX_SIZE);
+  memset(c->ip, '\0', IPv6_STR_MAX_SIZE);
+  c->run_as_daemon =         FALSE;
+  c->run_as_server =         FALSE;
+  c->listen_for_upnp_notif = FALSE;
+  c->scan_for_upnp_devices = FALSE;
+  c->forward_enabled =       FALSE;
+  c->raw_output =            FALSE;
+  c->gather =                FALSE;
+  c->gather_silent =         FALSE;
+  c->fetch_info =            TRUE;
+  c->xml_output =            FALSE;
+  c->ttl =                   1;
+  c->filter =                NULL;
+  c->use_ipv4 =              FALSE;
+  c->use_ipv6 =              FALSE;
+  c->quiet_mode =            FALSE;
+  c->upnp_timeout =          MULTICAST_TIMEOUT;
+  c->enable_loopback =       FALSE;
+}
 
-  signal(SIGTERM, &exitSig);
-  signal(SIGABRT, &exitSig);
-  signal(SIGINT, &exitSig);
+/* Parse arguments */
+static void parse_args(const int argc, char * const *argv, configuration_s *conf) {
+  int opt;
 
-  #ifdef DEBUG___
-  printf("%sDebug color%s\n", DEBUG_COLOR_BEGIN, DEBUG_COLOR_END);
-  printf("%sError color%s\n", ERROR_COLOR_BEGIN, DEBUG_COLOR_END);
-  #endif
-
-  /* parse arguments */
-  while ((opt = getopt(argc, argv, "i:t:slcrbof:SduUmgGa:RFx64qT:L")) > 0) {
+  while ((opt = getopt(argc, argv, "C:i:I:t:f:SduUmgGa:RFx64qT:L")) > 0) {
     char *pend = NULL;
 
     switch (opt) {
 
     case 'C':
-      /*if(!parse_configuration(optarg)) {
+      /*if(!parse_configuration_file(conf, optarg)) {
         printf("Parsing of '%s' failed!, optarg);
       };*/
       break;
 
     case 'i':
-      conf->interface = optarg;
+      strncpy(conf->interface, optarg, IPv6_STR_MAX_SIZE);
+      break;
+
+    case 'I':
+      strncpy(conf->ip, optarg, IPv6_STR_MAX_SIZE);
       break;
 
     case 't':
       pend = NULL;
       conf->ttl = (unsigned char)strtol(optarg, &pend, 10);
-      break;
-
-    case 's':
-      conf->show_interfaces = TRUE;
-      break;
-
-    case 'l':
-      conf->hide_link_locals = FALSE;
-      break;
-
-    case 'c':
-      conf->print_in_color = FALSE;
-      break;
-
-    case 'r':
-      conf->print_red = TRUE;
-      break;
-
-    case 'b':
-      conf->bonjour_only = TRUE;
-      break;
-
-    case 'o':
-      conf->one_line = TRUE;
       break;
 
     case 'f':
@@ -631,16 +571,34 @@ int main(int argc, char **argv) {
       exit(EXIT_FAILURE);
     }
   }
+}
+
+int main(int argc, char **argv) {
+  struct sockaddr_storage notif_client_addr;
+  ssdp_message_s ssdp_message;
+  int recvLen = 1;
+
+  signal(SIGTERM, &exitSig);
+  signal(SIGABRT, &exitSig);
+  signal(SIGINT, &exitSig);
+
+  #ifdef DEBUG___
+  printf("%sDebug color%s\n", DEBUG_COLOR_BEGIN, DEBUG_COLOR_END);
+  printf("%sError color%s\n", ERROR_COLOR_BEGIN, DEBUG_COLOR_END);
+  #endif
+
+  set_default_configuration(&conf);
+  parse_args(argc, argv, &conf);
 
   /* If missconfigured, stop and notify the user */
-  if(conf->run_as_daemon && !(conf->run_as_server || conf->listen_for_upnp_notif || conf->scan_for_upnp_devices)) {
+  if(conf.run_as_daemon && !(conf.run_as_server || conf.listen_for_upnp_notif || conf.scan_for_upnp_devices)) {
 
     PRINT_ERROR("Cannot start as daemon.\nUse -d in combination with -S, -a or with both.\n");
     exit(EXIT_FAILURE);
 
   }
   /* If run as a daemon */
-  else if(conf->run_as_daemon) {
+  else if(conf.run_as_daemon) {
 
     int fd, max_open_fds;
 
@@ -742,61 +700,67 @@ int main(int argc, char **argv) {
 
   /* If set to listen for AXIS devices notifications then
      fork() and live a separate life */
-  if(conf->listen_for_upnp_notif && (conf->run_as_daemon || conf->run_as_server)) {
+  if(conf.listen_for_upnp_notif && (conf.run_as_daemon || conf.run_as_server)) {
     if(fork() != 0) {
       /* listen_for_upnp_notif went to the forked process,
          so it set to false in parent so it doesn't run twice'*/
-      conf->listen_for_upnp_notif = FALSE;
+      conf.listen_for_upnp_notif = FALSE;
     }
     else {
       PRINT_DEBUG("Created a process for listening of UPnP notifications");
       /* scan_for_upnp_devices is set to false
          so it doesn't run in this child (if it will be run at all) */
-      conf->scan_for_upnp_devices = FALSE;
+      conf.scan_for_upnp_devices = FALSE;
     }
   }
 
   /* If set to scan for AXIS devices then
      fork() and live a separate life */
-  if(conf->scan_for_upnp_devices && (conf->run_as_daemon || conf->run_as_server)) {
+  if(conf.scan_for_upnp_devices && (conf.run_as_daemon || conf.run_as_server)) {
     if(fork() != 0) {
       /* scan_for_upnp_devices went to the forked process,
          so it set to false in parent so it doesn't run twice */
-      conf->scan_for_upnp_devices = FALSE;
+      conf.scan_for_upnp_devices = FALSE;
     }
     else {
       PRINT_DEBUG("Created a process for scanning UPnP devices");
       /* listen_for_upnp_notif is set to false
          so it doesn't run in this child (if it will be run at all) */
-      conf->listen_for_upnp_notif = FALSE;
+      conf.listen_for_upnp_notif = FALSE;
     }
   }
 
   /* If set to listen for AXIS devices notifications then
      start listening for notifications but never continue
      to do any other work the parent should be doing */
-  if(conf->listen_for_upnp_notif) {
+  if(conf.listen_for_upnp_notif) {
     PRINT_DEBUG("listen_for_upnp_notif start");
 
     /* Init fork allocations */
     notif_string = (char *)malloc(sizeof(char) * NOTIF_RECV_BUFFER);
 
     /* init socket */
-    PRINT_DEBUG("setupSocket()");
-    notif_server_sock = setupSocket(
+    PRINT_DEBUG("setup_socket for listening to upnp");
+    if((notif_server_sock = setup_socket(
               FALSE,      // BOOL is_ipv6
               TRUE,       // BOOL is_udp
               TRUE,       // BOOL is_multicast
-              conf->interface,  // char *interface
+              conf.interface,  // char interface
+              conf.ip,
               NULL,       // struct sockaddr_storage *sa
               SSDP_ADDR,  // const char *ip
               SSDP_PORT,  // int port
               TRUE,       // BOOL is_server
-              FALSE);     // BOOL keepalive
+              FALSE       // BOOL keepalive
+      )) < 0) {
+      PRINT_ERROR("Could not create socket");
+      free_stuff();
+      exit(errno);
+    }
 
     /* Parse the filters */
     PRINT_DEBUG("parse_filters()");
-    parse_filters(conf->filter, &filters_factory, TRUE);
+    parse_filters(conf.filter, &filters_factory, TRUE);
 
     /* Child process server loop */
     PRINT_DEBUG("Strating infinite loop");
@@ -902,27 +866,26 @@ int main(int argc, char **argv) {
         memset(results, '\0', sizeof(char) * XML_BUFFER_SIZE);
 
         /* Handle the messages */
-        if(conf->gather) {
+        if(conf.gather) {
           PRINT_DEBUG("Gathering mode is not supported yet!");
         }
-        else if(conf->gather_silent) {
+        else if(conf.gather_silent) {
           PRINT_DEBUG("Silent gathering mode is not supported yet!");
         }
-        else if(results && conf->raw_output) {
+        else if(results && conf.raw_output) {
           snprintf(results, strlen(notif_string), "\n\n%s\n\n", notif_string);
         }
-        else if(results && conf->xml_output) {
-          to_xml(&ssdp_message, conf->fetch_info, FALSE, results, XML_BUFFER_SIZE);
+        else if(results && conf.xml_output) {
+          to_xml(&ssdp_message, conf.fetch_info, FALSE, results, XML_BUFFER_SIZE);
         }
-        else if(results && !create_plain_text_message(results, XML_BUFFER_SIZE, &ssdp_message)) {
+        else if(results && !create_plain_text_message(results, XML_BUFFER_SIZE, &ssdp_message, conf.fetch_info)) {
             PRINT_ERROR("Failed creating plain-text message");
             free(results);
             results = NULL;
         }
 
         /* Check if forwarding ('-a') is enabled */
-        if(results && conf->forward_enabled) {
-          PRINT_DEBUG("setupSocket() for forwarding");
+        if(results && conf.forward_enabled) {
           // TODO: Make it not send M*SEARCH uPnP packets
           send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
         }
@@ -956,24 +919,25 @@ int main(int argc, char **argv) {
   /* If set to scan for AXIS devices then
   start scanning but never continue
   to do any other work the parent should be doing */
-  if(conf->scan_for_upnp_devices) {
+  if(conf.scan_for_upnp_devices) {
     PRINT_DEBUG("scan_for_upnp_devices begin");
 
     /* init sending socket */
-    PRINT_DEBUG("setupSocket() request");
-    notif_client_sock = setupSocket(conf->use_ipv6,  // BOOL is_ipv6
+    PRINT_DEBUG("setup_socket() request");
+    notif_client_sock = setup_socket(conf.use_ipv6,  // BOOL is_ipv6
               TRUE,       // BOOL is_udp
               TRUE,       // BOOL is_multicast
-              conf->interface,  // char *interface
+              conf.interface,  // char interface
+              conf.ip,
               NULL,       // struct sockaddr_storage *sa
-              (conf->use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),  // const char *ip
+              (conf.use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),  // const char *ip
               SSDP_PORT,  // int port
               FALSE,      // BOOL is_server
               FALSE);     // BOOL keepalive
 
     /* Parse the filters */
     PRINT_DEBUG("parse_filters()");
-    parse_filters(conf->filter, &filters_factory, TRUE);
+    parse_filters(conf.filter, &filters_factory, TRUE);
 
     char *response = (char *)malloc(sizeof(char) * NOTIF_RECV_BUFFER);
     char *request = (char *)malloc(sizeof(char) * 2048);
@@ -993,7 +957,7 @@ int main(int argc, char **argv) {
     struct addrinfo *addri;
     struct addrinfo hint;
     memset(&hint, 0, sizeof(hint));
-    hint.ai_family = (conf->use_ipv6 ? AF_INET6 : AF_INET);
+    hint.ai_family = (conf.use_ipv6 ? AF_INET6 : AF_INET);
     hint.ai_socktype = SOCK_DGRAM;
     hint.ai_protocol = IPPROTO_UDP;
     hint.ai_canonname = NULL;
@@ -1003,7 +967,7 @@ int main(int argc, char **argv) {
     memset(port_str, '\0', 6);
     sprintf(port_str, "%d", SSDP_PORT);
     int err = 0;
-    if((err = getaddrinfo((conf->use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR), port_str, &hint, &addri)) != 0) {
+    if((err = getaddrinfo((conf.use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR), port_str, &hint, &addri)) != 0) {
       PRINT_ERROR("getaddrinfo(): %s\n", gai_strerror(err));
       free(port_str);
       free(response);
@@ -1053,11 +1017,12 @@ int main(int argc, char **argv) {
     size_t size = sizeof(notif_client_addr);
 
     /* init listening socket */
-    PRINT_DEBUG("setupSocket() listening");
-    notif_server_sock = setupSocket(conf->use_ipv6,  // BOOL is_ipv6
+    PRINT_DEBUG("setup_socket() listening");
+    notif_server_sock = setup_socket(conf.use_ipv6,  // BOOL is_ipv6
               TRUE,       // BOOL is_udp
               FALSE,       // BOOL is_multicast
-              conf->interface,  // char *interface
+              conf.interface,  // char interface
+              conf.ip,
               NULL,       // struct sockaddr_storage *sa
               NULL,       // const char *ip
               response_port,  // int port
@@ -1066,7 +1031,7 @@ int main(int argc, char **argv) {
 
     /* Set socket timeout, to timeout 2 seconds after devices stop answering */
     struct timeval rtimeout;
-    rtimeout.tv_sec = conf->upnp_timeout;
+    rtimeout.tv_sec = conf.upnp_timeout;
     rtimeout.tv_usec = 0;
 
     PRINT_DEBUG("setting socket receive-timeout to %d", (int)rtimeout.tv_sec);
@@ -1107,7 +1072,7 @@ int main(int argc, char **argv) {
 
       BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, response);
       if(!build_success) {
-        if(conf->raw_output) {
+        if(conf.raw_output) {
           printf("\n\n\n%s\n", response);
         }
         continue;
@@ -1143,18 +1108,18 @@ int main(int argc, char **argv) {
       if(filters_factory == NULL || !drop_message) {
 
         /* Print the message */
-        if(conf->gather) {
+        if(conf.gather) {
           PRINT_DEBUG("Gathering mode is not coded yet!\n");
         }
-        else if(conf->gather_silent) {
+        else if(conf.gather_silent) {
           PRINT_DEBUG("Silent gathering mode is not coded yet!\n");
         }
-        else if(conf->raw_output) {
+        else if(conf.raw_output) {
           printf("\n\n\n%s\n", response);
         }
-        else if(conf->xml_output) {
+        else if(conf.xml_output) {
           char *xml_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
-          to_xml(&ssdp_message, conf->fetch_info, FALSE, xml_string, XML_BUFFER_SIZE);
+          to_xml(&ssdp_message, conf.fetch_info, FALSE, xml_string, XML_BUFFER_SIZE);
           printf("%s\n", xml_string);
           free(xml_string);
         }
@@ -1164,7 +1129,7 @@ int main(int argc, char **argv) {
           printf("Origin-MAC: %s\n", (ssdp_message.mac != NULL ? ssdp_message.mac : "(Could not be determined)"));
           printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message.ip, ssdp_message.message_length);
           printf("Request: %s\nProtocol: %s\n", ssdp_message.request, ssdp_message.protocol);
-          if(conf->fetch_info) {
+          if(conf.fetch_info) {
             int bytes_fetched = 0;
             char *fetched_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
             memset(fetched_string, '\0', XML_BUFFER_SIZE);
@@ -1197,7 +1162,7 @@ int main(int argc, char **argv) {
     exit(EXIT_SUCCESS);
   } // scan_for_upnp_devices end
 
-  if(!conf->listen_for_upnp_notif) {
+  if(!conf.listen_for_upnp_notif) {
     usage();
   }
 
@@ -1515,10 +1480,11 @@ static int send_stuff(const char *url, const char *data, const struct sockaddr_s
 
   /* Create socket */
   PRINT_DEBUG("send_stuff(): creating socket");
-  SOCKET send_sock = setupSocket(conf->use_ipv6,
+  SOCKET send_sock = setup_socket(conf.use_ipv6,
             FALSE,
             FALSE,
-            conf->interface,
+            conf.interface,
+            conf.ip,
             NULL,
             NULL,
             0,
@@ -1803,7 +1769,7 @@ static void parse_filters(char *raw_filter, filters_factory_s **filters_factory,
 *
 * @return char The IP address as a string
 */
-static char *get_ip_address_from_socket(const SOCKET sock) {
+/*static char *get_ip_address_from_socket(const SOCKET sock) {
 // maybe needs a PF_INET type of socket?
   struct ifreq ifr[10];
   struct ifconf ifc;
@@ -1849,7 +1815,7 @@ static char *get_ip_address_from_socket(const SOCKET sock) {
   }
   free(result);
   return NULL;
-}
+}*/
 
 
 /**
@@ -2127,10 +2093,11 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
 
       /* Create socket */
       PRINT_DEBUG("creating socket");
-      SOCKET resolve_sock = setupSocket(conf->use_ipv6,
+      SOCKET resolve_sock = setup_socket(conf.use_ipv6,
                  FALSE,
                  FALSE,
-                 conf->interface,
+                 conf.interface,
+                 conf.ip,
                  NULL,
                  NULL,
                  0,
@@ -2138,7 +2105,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
                  FALSE);
 
       if(resolve_sock == SOCKET_ERROR) {
-        PRINT_ERROR("fetch_upnp_device_info(); setupSocket(): (%d) %s", errno, strerror(errno));
+        PRINT_ERROR("fetch_upnp_device_info(); setup_socket(): (%d) %s", errno, strerror(errno));
         free(ip);
         free(rest);
         free(request);
@@ -2176,7 +2143,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
       PRINT_DEBUG("setting up socket addresses");
       struct sockaddr_storage *da = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
       memset(da, 0, sizeof(struct sockaddr_storage));
-      da->ss_family = conf->use_ipv6 ? AF_INET6 : AF_INET;
+      da->ss_family = conf.use_ipv6 ? AF_INET6 : AF_INET;
       if(!inet_pton(da->ss_family, ip, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr))) {
         int ip_length = strlen(ip);
         if(ip_length < 1) {
@@ -2610,120 +2577,162 @@ static BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_
 *
 * @return int The interface index
 */
-static int find_interface(struct sockaddr_storage *saddr, const char *address) {
+static int find_interface(struct sockaddr_storage *saddr, char *interface, char *address) {
   // TODO: for porting to Windows see http://msdn.microsoft.com/en-us/library/aa365915.aspx
   struct ifaddrs *interfaces, *ifa;
-  char *paddr = NULL;
+  struct sockaddr_in6 *saddr6 = (struct sockaddr_in6 *)saddr;
+  struct sockaddr_in *saddr4 = (struct sockaddr_in *)saddr;
+  char *compare_address = NULL;
   int ifindex = -1;
+  BOOL is_ipv6 = FALSE;
 
-  if(getifaddrs(&interfaces) < 0) {
-    printf("getifaddrs(): could not find any interfaces\n");
-    free_stuff();
-    exit(EXIT_FAILURE);
+  PRINT_DEBUG("find_interface(%s, \"%s\", \"%s\")",
+              saddr == NULL ? NULL : "saddr",
+              interface,
+              address);
+
+  /* Make sure we have the buffers allocated */
+  if(interface == NULL) {
+    PRINT_ERROR("No interface string-buffer available");
+    return -1;
   }
 
-  /* If address not set or is bind-on-all */
-  if(address == NULL || (strlen(address) == 0) || (strcmp(address, "0.0.0.0") == 0)) {
-    if(conf->use_ipv6) {
-      if(saddr != NULL) {
-        saddr->ss_family = AF_INET6;
-        struct sockaddr_in6 *saddr6 = (struct sockaddr_in6 *)saddr;
-        saddr6->sin6_addr = in6addr_any;
-      }
-      else {
-        PRINT_DEBUG("find_interface(): saddr is NULL [conf->use_ipv6 == TRUE]");
-      }
-      if(!conf->quiet_mode) {
-        PRINT_DEBUG("find_interface(): Matched all addresses (::)\n");
-      }
+  if(address == NULL) {
+    PRINT_ERROR("No IP address string-buffer available");
+    return -1;
+  }
+
+  if(saddr == NULL) {
+    PRINT_ERROR("No address structure-buffer available");
+    return -1;
+  }
+
+  /* Check if address is IPv6*/
+  is_ipv6 = inet_pton(AF_INET6,
+                      address,
+                      (void *)&saddr6->sin6_addr) > 0;
+
+  /* If address not set or is bind-on-all
+     then set a bindall address in the struct */
+  if(((strlen(interface) == 0) && (strlen(address) == 0)) ||
+    (strcmp("0.0.0.0", address) == 0) || (strcmp("::", address) == 0)) {
+    if(is_ipv6) {
+      saddr->ss_family = AF_INET6;
+      saddr6->sin6_addr = in6addr_any;
+      PRINT_DEBUG("find_interface(): Matched all addresses (::)\n");
     }
     else {
-      if(saddr != NULL) {
-        saddr->ss_family = AF_INET;
-        struct sockaddr_in *saddr4 = (struct sockaddr_in *)saddr;
-        saddr4->sin_addr.s_addr = htonl(INADDR_ANY);
-      }
-      else {
-        PRINT_DEBUG("find_interface(): saddr is NULL [conf->use_ipv6 == FALSE]");
-      }
+      saddr->ss_family = AF_INET;
+      saddr4->sin_addr.s_addr = htonl(INADDR_ANY);
       PRINT_DEBUG("find_interface(): Matched all addresses (0.0.0.0)");
     }
-    freeifaddrs(interfaces);
     return 0;
   }
 
-  paddr = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+  /* Try to query for all devices on the system */
+  if(getifaddrs(&interfaces) < 0) {
+    PRINT_ERROR("Could not find any interfaces\n");
+    return -1;
+  }
 
+  compare_address = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+
+  /* Loop through the interfaces*/
   for(ifa=interfaces; ifa&&ifa->ifa_next; ifa=ifa->ifa_next) {
 
-    memset(paddr, '\0', sizeof(char) * 46);
-    if(!conf->use_ipv6 && ifa->ifa_addr->sa_family == AF_INET) {
-      inet_ntop(AF_INET, (void *)&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr, paddr, IPv6_STR_MAX_SIZE);
+    /* Helpers */
+    struct sockaddr_in6 *ifaddr6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+    struct sockaddr_in *ifaddr4 = (struct sockaddr_in *)ifa->ifa_addr;
+    int ss_family = ifa->ifa_addr->sa_family;
+
+    memset(compare_address, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
+
+    /* Extract the IP address in printable format */
+    if(is_ipv6 && ss_family == AF_INET6) {
+      PRINT_DEBUG("Extracting a IPv6 address");
+      if(inet_ntop(AF_INET6,
+                (void *)&ifaddr6->sin6_addr,
+                compare_address,
+                IPv6_STR_MAX_SIZE) == NULL) {
+        PRINT_ERROR("Could not extract printable IPv6 for the interface %s: (%d) %s",
+                    ifa->ifa_name,
+                    errno,
+                    strerror(errno));
+        return -1;
+      }
     }
-    else if(!conf->use_ipv4 && ifa->ifa_addr->sa_family == AF_INET6) {
-      inet_ntop(AF_INET6, (void *)&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr, paddr, IPv6_STR_MAX_SIZE);
+    else if(!is_ipv6 && ss_family == AF_INET) {
+      PRINT_DEBUG("Extracting a IPv4 address");
+      if(inet_ntop(AF_INET,
+                (void *)&ifaddr4->sin_addr,
+                compare_address,
+                IPv6_STR_MAX_SIZE) == NULL) {
+        PRINT_ERROR("Could not extract printable IPv4 for the interface %s: (%d) %s",
+                    ifa->ifa_name,
+                    errno,
+                    strerror(errno));
+        return -1;
+      }
     }
     else {
       continue;
     }
 
-    if((strcmp(address, ifa->ifa_name) == 0) || (strcmp(address, paddr) == 0)) {
+    /* Check if this is the desired interface and/or address
+       5 possible scenarios:
+       interface and address given
+       only interface given (address is automatically bindall)
+       only address given
+       none given (address is automatically bindall) */
+    BOOL if_present = strlen(interface) > 0 ? TRUE : FALSE;
+    BOOL addr_present = strlen(address) > 0 ? TRUE : FALSE;
+    BOOL addr_is_bindall = ((strcmp("0.0.0.0", address) == 0) ||
+                       (strcmp("::", address) == 0)) ?
+                      TRUE :
+                      FALSE;
+    if((if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
+       addr_present && (strcmp(address, compare_address))) ||
+      (if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
+       addr_is_bindall) ||
+      (!if_present &&
+       addr_present && (strcmp(address, compare_address) == 0)) ||
+      (!if_present &&
+       addr_is_bindall)) {
+
+      /* Set the interface index to be returned*/
       ifindex = if_nametoindex(ifa->ifa_name);
 
-      if(!conf->quiet_mode) {
-        printf("Matched interface (with index %d) name '%s' with %s address %s\n", ifindex, ifa->ifa_name, (ifa->ifa_addr->sa_family == AF_INET ? "IPv4" : "IPv6"), paddr);
+      PRINT_DEBUG("Matched interface (with index %d) name '%s' with %s address %s\n", ifindex, ifa->ifa_name, (ss_family == AF_INET ? "IPv4" : "IPv6"), compare_address);
+
+      /* Set the appropriate address in the sockaddr struct */
+      if(!is_ipv6 && ss_family == AF_INET) {
+        saddr4->sin_addr = ifaddr4->sin_addr;
+        PRINT_DEBUG("Setting IPv4 saddr...");
+      }
+      else if(is_ipv6 && ss_family == AF_INET6){
+        saddr6->sin6_addr = ifaddr6->sin6_addr;
+        PRINT_DEBUG("Setting IPv6 saddr");
       }
 
-      PRINT_DEBUG("conf->use_ipv4: %s; conf->use_ipv6: %s", (conf->use_ipv4 ? "TRUE" : "FALSE"), (conf->use_ipv6 ? "TRUE" : "FALSE"));
-
-      if(!conf->use_ipv6 && ifa->ifa_addr->sa_family == AF_INET) {
-        if(saddr != NULL) {
-          struct sockaddr_in *saddr4 = ((struct sockaddr_in *)saddr);
-          struct sockaddr_in *ifaddr4 = (struct sockaddr_in *)ifa->ifa_addr;
-          saddr4->sin_addr = ifaddr4->sin_addr;
-          PRINT_DEBUG("setting IPv4 saddr...");
-        }
-      }
-      else if(!conf->use_ipv4){
-        if(saddr != NULL) {
-          struct sockaddr_in6 *saddr6 = ((struct sockaddr_in6 *)saddr);
-          struct sockaddr_in6 *ifaddr6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-          saddr6->sin6_addr = ifaddr6->sin6_addr;
-          PRINT_DEBUG("set IPv6 saddr");
-        }
-      }
-
-      if(saddr != NULL) {
-        saddr->ss_family = ifa->ifa_addr->sa_family;
-      }
+      /* Set family to IP version*/
+      saddr->ss_family = ss_family;
 
       break;
     }
 
   }
 
+  /* Free getifaddrs allocations */
   if(interfaces) {
     freeifaddrs(interfaces);
   }
 
-  if(paddr != NULL) {
-    free(paddr);
+  /* free our compare buffer */
+  if(compare_address != NULL) {
+    free(compare_address);
   }
 
   return ifindex;
-}
-
-// TODO: Do...
-static configuration_s *parseConfigurationFile(const char *file_location) {
-  configuration_s *conf = NULL;
-  PRINT_DEBUG("parseConfigurationFile() begin");
-  /*if(file_location == NULL || file_exists(file_location)) {
-    PRINT_ERROR("File '%s' does not exist", file_location);
-    free_stuff();
-    exit(EXIT_FAILURE);
-  }*/
-  PRINT_DEBUG("parseConfigurationFile() end");
-  return conf;
 }
 
 /* Create a UPNP listener */
@@ -2834,22 +2843,50 @@ static BOOL disable_multicast_loopback(SOCKET sock, int family) {
 static BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip) {
   struct ifaddrs *ifa, *interfaces = NULL;
   BOOL is_bindall = FALSE;
+  BOOL is_mc_ipv6 = FALSE;
   BOOL is_ipv6 = FALSE;
   struct sockaddr_storage sa_interface;
 
-  PRINT_DEBUG("Joining multicast group '%s' on interface IP '%s'", multicast_group, interface_ip);
+  PRINT_DEBUG("join_multicast_group(%d, \"%s\", \"%s\")", sock, multicast_group, interface_ip);
 
-  /* Check if it is a IPv6 address*/
+  /* Check if multicast_group is a IPv6 address*/
+  if(inet_pton(AF_INET6, interface_ip, (void *)&((struct sockaddr_in6 *)&sa_interface)->sin6_addr) > 0) {
+    is_mc_ipv6 = TRUE;
+  }
+  else {
+  /* Check if multicast_group is a IPv4 address */
+    if(inet_pton(AF_INET, interface_ip, (void *)&((struct sockaddr_in *)&sa_interface)->sin_addr) < 1) {
+      PRINT_ERROR("Given multicast group address '%s' is neither an IPv4 nor IPv6, cannot continue", interface_ip);
+      return FALSE;
+    }
+  }
+
+  PRINT_DEBUG("Multicast group address is IPv%d", (is_mc_ipv6 ? 6 : 4));
+
+  /* If interface_ip is empty string set it to "0.0.0.0" */
+  if(interface_ip != NULL && strlen(interface_ip) == 0) {
+    if(is_mc_ipv6) {
+      strncpy(interface_ip, "::", IPv6_STR_MAX_SIZE);
+    }
+    else {
+      strncpy(interface_ip, "0.0.0.0", IPv6_STR_MAX_SIZE);
+    }
+    PRINT_DEBUG("interface_ip was empty, set to '%s'", interface_ip);
+  }
+
+  /* Check if interface_ip is a IPv6 address*/
   if(inet_pton(AF_INET6, interface_ip, (void *)&((struct sockaddr_in6 *)&sa_interface)->sin6_addr) > 0) {
     is_ipv6 = TRUE;
   }
   else {
-  /* Check if it is a IPv4 address */
+  /* Check if interface_ip is a IPv4 address */
     if(inet_pton(AF_INET, interface_ip, (void *)&((struct sockaddr_in *)&sa_interface)->sin_addr) < 1) {
-      PRINT_ERROR("Given interface '%s' address is neither an IPv4 nor IPv6, cannot continue", interface_ip);
+      PRINT_ERROR("Given interface address '%s' is neither an IPv4 nor IPv6, cannot continue", interface_ip);
       return FALSE;
     }
   }
+
+  PRINT_DEBUG("Interface address is IPv%d", (is_mc_ipv6 ? 6 : 4));
 
   /* Check if the address is a bind-on-all address*/
   if(strcmp("0.0.0.0", interface_ip) == 0 ||
@@ -2857,97 +2894,148 @@ static BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *inter
     is_bindall = TRUE;
   }
 
+  PRINT_DEBUG("Interface address is %s", (is_bindall ? "a bind-all address" : interface_ip));
+
+  /* Get all interfaces and IPs */
   if(getifaddrs(&interfaces) < 0) {
     PRINT_ERROR("Could not find any interfaces: (%d) %s\n", errno, strerror(errno));
-    free_stuff();
-    exit(errno);
+    return FALSE;
   }
+
+  PRINT_DEBUG("List of available interfaces and IPs:");
+  PRINT_DEBUG("********************");
+  for(ifa=interfaces; ifa != NULL; ifa=ifa->ifa_next) {
+    struct in_addr *ifaddr4 = (struct in_addr *)&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+    struct in6_addr *ifaddr6 = (struct in6_addr *)&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+    char ip[IPv6_STR_MAX_SIZE];
+    if(ifa->ifa_addr->sa_family != AF_INET &&
+       ifa->ifa_addr->sa_family != AF_INET6) {
+      continue;
+    }
+    if(inet_ntop(ifa->ifa_addr->sa_family,
+                 ifa->ifa_addr->sa_family == AF_INET ? (void *)ifaddr4 :
+                                        (void *)ifaddr6,
+                 ip,
+                 IPv6_STR_MAX_SIZE) == NULL) {
+      PRINT_ERROR("Failed to extract address, will skip current interface: (%d) %s",
+                  errno,
+                  strerror(errno));
+      exit(1);
+    }
+    PRINT_DEBUG("IF: %s; IP: %s", ifa->ifa_name, ip);
+  }
+  PRINT_DEBUG("********************");
+
+  PRINT_DEBUG("Start looping through available interfaces and IPs");
 
   /* Loop throgh all the interfaces */
   for(ifa=interfaces; ifa != NULL; ifa=ifa->ifa_next) {
 
+    /* Skip loopback addresses */
+    if(ifa->ifa_flags & IFF_LOOPBACK) {
+      PRINT_DEBUG("Loopback address detected, skipping");
+      continue;
+    }
+
+    /* Helpers */
+    struct in_addr *ifaddr4 = (struct in_addr *)&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+    struct in6_addr *ifaddr6 = (struct in6_addr *)&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+    int ss_family = ifa->ifa_addr->sa_family;
+
     /* Skip if not a required type of IP address */
-    if((!is_ipv6 && ifa->ifa_addr->sa_family != AF_INET) ||
-       (is_ipv6 && ifa->ifa_addr->sa_family != AF_INET6)) {
+    if((!is_ipv6 && ss_family != AF_INET) ||
+       (is_ipv6 && ss_family != AF_INET6)) {
       PRINT_DEBUG("Skipping interface (%s) address, wrong type (%d)",
                   ifa->ifa_name,
-                  ifa->ifa_addr->sa_family);
+                  ss_family);
       continue;
     }
 
     /* Extract IP in string format */
     char ip[IPv6_STR_MAX_SIZE];
-    if(inet_ntop(ifa->ifa_addr->sa_family,
-                 ifa->ifa_addr,
+    if(inet_ntop(ss_family,
+                 ss_family == AF_INET ? (void *)ifaddr4 :
+                                        (void *)ifaddr6,
                  ip,
-                 sizeof(char) * IPv6_STR_MAX_SIZE) == NULL) {
-      PRINT_ERROR("Failed to extract address, will skip current interface");
+                 IPv6_STR_MAX_SIZE) == NULL) {
+      PRINT_ERROR("Failed to extract address, will skip current interface: (%d) %s",
+                  errno,
+                  strerror(errno));
       continue;
     }
 
     /* If not using a bindall IP then skip all
        IP that do not match the desired IP */
     if(!is_bindall && strcmp(ip, interface_ip) != 0) {
+      PRINT_DEBUG("Skipping interface (%s) address, wrong IP (%s != %s)",
+                  ifa->ifa_name,
+                  ip,
+                  interface_ip);
       continue;
     }
 
+    PRINT_DEBUG("Found candidate interface %s, type %d, IP %s", ifa->ifa_name, ss_family, ip);
+
+    struct ip_mreq mreq;
+    struct ipv6_mreq mreq6;
+
     if(!is_ipv6) {
+      memset(&mreq, 0, sizeof(struct ip_mreq));
+      mreq.imr_interface.s_addr = ifaddr4->s_addr;
+    }
+    else {
+      memset(&mreq6, 0, sizeof(struct ipv6_mreq));
+      mreq6.ipv6mr_interface = if_nametoindex(ifa->ifa_name);
+    }
 
-      struct sockaddr_in *ifaddr4 = (struct sockaddr_in *)ifa->ifa_addr;
-      struct ip_mreq mreq;
-      struct ipv6_mreq mreq6;
+    if(inet_pton(ss_family,
+                 multicast_group,
+                 (is_ipv6 ? (void *)&mreq6.ipv6mr_multiaddr :
+                            (void *)&mreq.imr_multiaddr)) < 1) {
+      PRINT_ERROR("Incompatible multicast group");
+      return FALSE;;
+    }
 
+    #ifdef DEBUG___
+    {
+      PRINT_DEBUG("%s", (is_ipv6 ? "IPV6_ADD_MEMBERSHIP" : "IP_ADD_MEMBERSHIP"));
+      char a[IPv6_STR_MAX_SIZE];
       if(is_ipv6) {
-        mreq.imr_interface.s_addr = ifaddr4->sin_addr.s_addr;
+        PRINT_DEBUG("mreq6.ipv6mr_interface: %d", mreq6.ipv6mr_interface);
       }
       else {
-        mreq6.ipv6mr_interface = if_nametoindex(ifa->ifa_name);
+        inet_ntop(ss_family, (void *)&mreq.imr_interface, a, IPv6_STR_MAX_SIZE);
+        PRINT_DEBUG("mreq.imr_interface: %s", a);
       }
+      inet_ntop(ss_family,
+                is_ipv6 ? (void *)&mreq6.ipv6mr_multiaddr :
+                          (void *)&mreq.imr_multiaddr,
+                a,
+                IPv6_STR_MAX_SIZE);
+      PRINT_DEBUG("mreq%smr_multiaddr: %s", (is_ipv6 ? "6.ipv6" : ".i"), a);
+    }
+    #endif
 
-      if(inet_pton(ifa->ifa_addr->sa_family,
-                   multicast_group,
-                   (is_ipv6 ? (void *)&mreq6.ipv6mr_multiaddr :
-                              (void *)&mreq.imr_multiaddr)) < 1) {
-        PRINT_ERROR("Incompatible multicast group");
-        return FALSE;;
-      }
+    PRINT_DEBUG("Joining multicast group '%s' on interface IP '%s'", multicast_group, ip);
 
-      #ifdef DEBUG___
-      {
-        PRINT_DEBUG("%s", (is_ipv6 ? "IPV6_ADD_MEMBERSHIP" : "IP_ADD_MEMBERSHIP"));
-        char a[100];
-        if(is_ipv6) {
-          PRINT_DEBUG("mreq6.ipv6mr_interface: %d", mreq6.ipv6mr_interface);
-        }
-        else {
-          inet_ntop(AF_INET, (void *)&mreq.imr_interface, a, 100);
-          PRINT_DEBUG("mreq.imr_interface: %s", a);
-        }
-        inet_ntop(AF_INET,
-                  is_ipv6 ? (void *)&mreq6.ipv6mr_multiaddr :
-                            (void *)&mreq.imr_multiaddr,
-                  a,
-                  100);
-        PRINT_DEBUG("mreq%smr_multiaddr: %s", (is_ipv6 ? "6.ipv6" : ".i"), a);
-      }
-      #endif
-
-      if(setsockopt(sock,
-                    is_ipv6 ? IPPROTO_IPV6 :
-                              IPPROTO_IP,
-                    is_ipv6 ? IPV6_ADD_MEMBERSHIP :
-                              IP_ADD_MEMBERSHIP,
-                    is_ipv6 ? (void *)&mreq6 :
-                              (void *)&mreq,
-                    is_ipv6 ? sizeof(struct ipv6_mreq) :
-                              sizeof(struct ip_mreq)) < 0) {
-        PRINT_ERROR("(%d) %s", errno, strerror(errno));
-        close(sock);
-        free_stuff();
-        exit(EXIT_FAILURE);
-      }
+    if(setsockopt(sock,
+                  is_ipv6 ? IPPROTO_IPV6 :
+                            IPPROTO_IP,
+                  is_ipv6 ? IPV6_ADD_MEMBERSHIP :
+                            IP_ADD_MEMBERSHIP,
+                  is_ipv6 ? (void *)&mreq6 :
+                            (void *)&mreq,
+                  is_ipv6 ? sizeof(struct ipv6_mreq) :
+                            sizeof(struct ip_mreq)) < 0) {
+      PRINT_ERROR("(%d) %s", errno, strerror(errno));
+      close(sock);
+      freeifaddrs(interfaces);
+      free_stuff();
+      exit(EXIT_FAILURE);
     }
   }
+
+  PRINT_DEBUG("Finished looping through interfaces and IPs");
 
   /* Free ifaddrs interfaces */
   if(interfaces != NULL) {
@@ -2959,9 +3047,20 @@ static BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *inter
 
 }
 
-/* Creates a connection to a given host */
-// TODO: check that interface is freed!!!!
-static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *interface, struct sockaddr_storage *sa, const char *ip, int port, BOOL is_server, BOOL keepalive) {
+/**
+ * Creates a connection to a given host
+ * TODO: >>>TO BE DEPRECATED SOON<<<
+ */
+static SOCKET setup_socket(BOOL is_ipv6,
+                           BOOL is_udp,
+                           BOOL is_multicast,
+                           char *interface,
+                           char *if_ip,
+                           struct sockaddr_storage *sa,
+                           const char *ip,
+                           int port,
+                           BOOL is_server,
+                           BOOL keepalive) {
   SOCKET sock;
   int protocol;
   int ifindex = 0;
@@ -2974,33 +3073,21 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
   memset(&mreq, 0, sizeof(mreq));
   memset(&mreq6, 0, sizeof(mreq6));
 
-  if(interface != NULL && sa != NULL) {
-    PRINT_ERROR("setupSocket(): Both an interface and a socket address have been passed as arguments. These are mutually exclusive, one must be NULL.\n");
-    free(saddr);
-    free_stuff();
-    exit(EXIT_FAILURE);
-  }
-
   /* If 'sa' (sockaddr) given instead of 'interface' (char *)
      then fill 'interface' with the IP from the sockaddr */
   if(sa != NULL) {
-    interface = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-    memset(interface, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
     inet_ntop(sa->ss_family,
               sa->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)sa)->sin_addr :
-                                          (void *)&((struct sockaddr_in6 *)sa)->sin6_addr,
+                                         (void *)&((struct sockaddr_in6 *)sa)->sin6_addr,
               interface,
               IPv6_STR_MAX_SIZE);
   }
 
   /* Find the index of the interface */
-  ifindex = find_interface(saddr, interface);
+  ifindex = find_interface(saddr, interface, if_ip);
   if(ifindex < 0) {
     PRINT_ERROR("The requested interface '%s' could not be found\n", interface);
     free(saddr);
-    if(sa != NULL) {
-      free(interface);
-    }
     free_stuff();
     exit(EXIT_FAILURE);
   }
@@ -3010,7 +3097,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
     char a[100];
     memset(a, '\0', 100);
     if(!inet_ntop(saddr->ss_family, (saddr->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)saddr)->sin_addr : (void *)&((struct sockaddr_in6 *)saddr)->sin6_addr), a, 100)) {
-      PRINT_ERROR("setupSocket(); inet_ntop(): (%d) %s", errno, strerror(errno));
+      PRINT_ERROR("setup_socket(); inet_ntop(): (%d) %s", errno, strerror(errno));
     }
     PRINT_DEBUG("find_interface() returned: saddr->sin_addr: %s", a);
   }
@@ -3018,7 +3105,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
 
   /* If muticast requested, check if it really is a multicast address */
   if(is_multicast && (ip != NULL && strlen(ip) > 0)) {
-    if(!isMulticastAddress(ip)) {
+    if(!is_address_multicast(ip)) {
       PRINT_ERROR("The specified IP (%s) is not a multicast address\n", ip);
       free(saddr);
       if(sa != NULL) {
@@ -3079,7 +3166,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
   if(!is_server && is_multicast) {
     if(set_ttl(sock,
                (is_ipv6 ? AF_INET6 : AF_INET),
-               conf->ttl) < 0) {
+               conf.ttl) < 0) {
       free(saddr);
       if(sa != NULL) {
         free(interface);
@@ -3108,7 +3195,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
       else {
         mreq6.ipv6mr_interface = (unsigned int)0;
       }
-      saddr6->sin6_addr =  mreq6.ipv6mr_multiaddr;
+      //saddr6->sin6_addr =  mreq6.ipv6mr_multiaddr;
 
       #ifdef DEBUG___
       {
@@ -3116,9 +3203,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
           PRINT_DEBUG("    IPV6_MULTICAST_IF");
         }
         char a[100];
-        // TODO: Fix it! This will fail, ipv6_mreq.ipv6mr_interface is U_INT for IPv6
-        inet_ntop(saddr->ss_family, (void *)&mreq6.ipv6mr_interface, a, 100);
-        PRINT_DEBUG("    mreq6->ipv6mr_interface: %s", a);
+        PRINT_DEBUG("    mreq6->ipv6mr_interface: %d", ifindex);
         inet_ntop(saddr->ss_family, (void *)&mreq6.ipv6mr_multiaddr, a, 100);
         PRINT_DEBUG("    mreq6->ipv6mr_multiaddr: %s", a);
       }
@@ -3157,7 +3242,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
       else {
         mreq.imr_interface.s_addr = htonl(INADDR_ANY);
       }
-      saddr4->sin_addr =  mreq.imr_multiaddr;
+      //saddr4->sin_addr =  mreq.imr_multiaddr;
       #ifdef DEBUG___
       {
         if(!is_server) {
@@ -3183,7 +3268,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
   }
 
   /* Enable/disable loopback multicast */
-  if(is_server && is_multicast && !conf->enable_loopback &&
+  if(is_server && is_multicast && !conf.enable_loopback &&
      !disable_multicast_loopback(sock, saddr->ss_family)) {
     free(saddr);
     if(sa != NULL) {
@@ -3197,13 +3282,19 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
   // TODO: Fix for IPv6
   if(is_server) {
     PRINT_DEBUG("is_server == TRUE");
+    struct sockaddr_storage saddr_;
+    memset(&saddr_, 0, sizeof(struct sockaddr_storage));
+    struct sockaddr_in *sa_ = (struct sockaddr_in *)&saddr_;
+    sa_->sin_family = saddr->ss_family;
+    sa_->sin_addr.s_addr = mreq.imr_multiaddr.s_addr;
+    sa_->sin_port = ((struct sockaddr_in *)saddr)->sin_port;
     char a[100];
-    inet_ntop(saddr->ss_family, (void *)&((struct sockaddr_in *)saddr)->sin_addr, a, 100);
+    inet_ntop(saddr->ss_family, (void *)&sa_->sin_addr, a, 100);
     PRINT_DEBUG("  bind() to: saddr->sin_family: %d(%d)", ((struct sockaddr_in *)saddr)->sin_family, AF_INET);
     PRINT_DEBUG("  bind() to: saddr->sin_addr: %s (port %d)", a, ntohs(((struct sockaddr_in *)saddr)->sin_port));
 
     if(bind(sock, (struct sockaddr *)saddr, (saddr->ss_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) < 0) {
-      PRINT_ERROR("setupSocket(); bind(): (%d) %s", errno, strerror(errno));
+      PRINT_ERROR("setup_socket(); bind(): (%d) %s", errno, strerror(errno));
       free(saddr);
       if(sa != NULL) {
         free(interface);
@@ -3214,7 +3305,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
     if(!is_udp) {
       PRINT_DEBUG("  is_udp == FALSE");
       if(listen(sock, LISTEN_QUEUE_LENGTH) == SOCKET_ERROR) {
-        PRINT_ERROR("setupSocket(); listen(): (%d) %s", errno, strerror(errno));
+        PRINT_ERROR("setup_socket(); listen(): (%d) %s", errno, strerror(errno));
         close(sock);
         free(saddr);
         if(sa != NULL) {
@@ -3229,7 +3320,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
   /* Make sure we have a string IP before joining multicast groups */
   /* NOTE: Workaround until refactoring is complete */
   char iface[IPv6_STR_MAX_SIZE];
-  if(interface == NULL) {
+  if(interface == NULL || strlen(interface) < 1) {
     if(inet_ntop(is_ipv6 ? AF_INET6 :
                            AF_INET,
                  is_ipv6 ? (void *)&((struct sockaddr_in6 *)saddr)->sin6_addr :
@@ -3238,9 +3329,6 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
                  IPv6_STR_MAX_SIZE) == NULL) {
       PRINT_ERROR("Failed to get string representation of the interface address: (%d) %s", errno, strerror(errno));
       free_stuff();
-      if(interface != NULL) {
-        free(interface);
-      }
       free(saddr);
       exit(errno);
     }
@@ -3250,11 +3338,12 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
   }
 
   /* Join the multicast group on required interfaces */
-  if(join_multicast_group(sock,
+  if(is_server && is_multicast && !join_multicast_group(sock,
                           is_ipv6 ? SSDP_ADDR6_SL :
                                     SSDP_ADDR,
                           iface)) {
-    
+    PRINT_ERROR("Failed to join required multicast group");
+    return -1;
   }
 
   /* DEPRECATED
@@ -3288,7 +3377,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
         #endif
 
         if(setsockopt(sock, protocol, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
-         PRINT_ERROR("setupSocket(); setsockopt() IP_ADD_MEMBERSHIP: (%d) %s", errno, strerror(errno));
+         PRINT_ERROR("setup_socket(); setsockopt() IP_ADD_MEMBERSHIP: (%d) %s", errno, strerror(errno));
          close(sock);
          free(saddr);
           if(sa != NULL) {
@@ -3312,7 +3401,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
         }
         #endif
         if(setsockopt(sock, protocol, IPV6_ADD_MEMBERSHIP, &mreq6, sizeof(struct ipv6_mreq)) < 0) {
-          PRINT_ERROR("setupSocket(); setsockopt() IPV6_ADD_MEMBERSHIP: (%d) %s", errno, strerror(errno));
+          PRINT_ERROR("setup_socket(); setsockopt() IPV6_ADD_MEMBERSHIP: (%d) %s", errno, strerror(errno));
           close(sock);
           free(saddr);
           if(sa != NULL) {
@@ -3353,10 +3442,6 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
   }
   */
 
-  if(interface != NULL) {
-    free(interface);
-    interface = NULL;
-  }
   free(saddr);
 
   return sock;
@@ -3371,7 +3456,7 @@ static SOCKET setupSocket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast, char *in
 *
 * @return BOOL Obvious.
 */
-static BOOL isMulticastAddress(const char *address) {
+static BOOL is_address_multicast(const char *address) {
   char *str_first = NULL;
   int int_first = 0;
   BOOL is_ipv6;
@@ -3439,7 +3524,7 @@ static void init_ssdp_message(ssdp_message_s *message) {
 * @param buffer_size The size of the buffer 'results'
 * @param message The message to convert
 */
-static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_message_s *ssdp_message) {
+static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_message_s *ssdp_message, BOOL fetch_info) {
   int buffer_used = 0;
   buffer_used += snprintf(results + buffer_used,
         buffer_size - buffer_used,
@@ -3460,7 +3545,7 @@ static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_messa
         ssdp_message->request,
         ssdp_message->protocol);
 
-  if(conf->fetch_info) {
+  if(fetch_info) {
     int bytes_fetched = 0;
     char *fetched_string = (char *)malloc(sizeof(char) * buffer_size);
     memset(fetched_string, '\0', buffer_size);
@@ -3490,38 +3575,6 @@ static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_messa
   ssdp_headers = NULL;
 
   return TRUE;
-}
-
-/**
- * Check if the s_addr/s6_addr (IP) is INADDR_ANY/in6addr_any
- *
- * @param st The sockaddr_storage to check
- *
- * @return Returns TRUE or FASLE
- */
-static BOOL is_sockaddr_bindall(BOOL is_ipv6, void *in_address) {
-
-  PRINT_DEBUG("is_sockaddr_bindall()");
-  if(is_ipv6) {
-
-    if(((struct in6_addr *)in_address)->s6_addr == in6addr_any.s6_addr) {
-      PRINT_DEBUG("is_sockaddr_bindall(): s6_addr == in6addr_any");
-      return TRUE;
-    }
-
-  }
-  else {
-
-    if(((struct in_addr *)in_address)->s_addr == htonl(INADDR_ANY)) {
-      PRINT_DEBUG("is_sockaddr_bindall(): s_addr == INADDR_ANY");
-      return TRUE;
-    }
-
-  }
-
-  PRINT_DEBUG("is_sockaddr_bindall(): address is not bindall");
-  return FALSE;
-
 }
 
 #ifdef DEBUG___
@@ -3669,63 +3722,6 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
   fprintf(std, "%s[%d][%s:%d] %s%s\n", color, (int)getpid(), file, line, message, DEBUG_COLOR_END);
 
   free(message);
-}
-
-static void add_alloc(const char *alloc_name, ...) {
-  va_list va;
-
-  if (alloc_name) {
-    PRINT_ERROR("add_alloc(): no alloc_name given");
-    return;
-  }
-
-  /* Allocate if not already done */
-  if(!alloc_list) {
-    alloc_list = (char **)malloc(sizeof(char *) * 500);
-  }
-
-  /* Tell VA where its args begin */
-  va_start(va, alloc_name);
-
-  /* Lets count the args */
-  int arg_count = 0;
-  int alloc_name_len = strlen(alloc_name);
-  int p = 0;
-  for(; p < alloc_name_len; p++) {
-    if(alloc_name[p] == '%' && alloc_name[p + 1] != '\0' && alloc_name[p + 1] != '%') {
-      arg_count++;
-    }
-  }
-
-  /* Allocate for the new element */
-  char *alloc_element = (char *)malloc(sizeof(char) * 50);
-
-  /* Add the new element */
-  strncpy(alloc_element, alloc_name, 50);
-
-  /* Increase counter by 1 */
-  alloc_list[alloc_list_size++] = alloc_element;
-
-  PRINT_DEBUG("Adding alloc '%s'", alloc_name);
-}
-
-static void remove_alloc(const char *alloc_name, ...) {
-  int i = 0;
-  for(; i < alloc_list_size; i++) {
-    if(0 == strcmp(alloc_name, alloc_list[i])) {
-      strcat(alloc_list[i], " is freed");
-      PRINT_DEBUG("Removing alloc '%s'", alloc_name);
-      return;
-    }
-  }
-  PRINT_DEBUG("Failed to remove alloc '%s'", alloc_name);
-}
-
-static void print_alloc() {
-  int i = 0;
-  for(; i < alloc_list_size; i++) {
-    PRINT_DEBUG("%d: '%s'", i, alloc_list[i]);
-  }
 }
 #endif
 
