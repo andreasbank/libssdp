@@ -28,6 +28,7 @@
 #define FALSE 0
 #define SPAM_PORT 1900
 #define SPAM_GROUP_ADDRESS "239.255.255.250"
+#define SPAM_INTERVAL 0.2
 #define SEND_BUFFER 1024
 
 void cleanup();
@@ -119,7 +120,7 @@ int main(int argc, char **argv) {
     if(success < 0) {
        cleanup("sendto");
     }
-    sleep(1);
+    sleep(SPAM_INTERVAL);
   }
 
   cleanup(NULL);

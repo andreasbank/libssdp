@@ -2123,6 +2123,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
       if (setsockopt (resolve_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout, sizeof(rtimeout)) < 0) {
         PRINT_ERROR("fetch_upnp_device_info(); setsockopt() SO_RCVTIMEO: (%d) %s", errno, strerror(errno));
         free(ip);
+        close(resolve_sock);
         free(rest);
         free(request);
         free(response);
@@ -2133,6 +2134,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
       if(setsockopt (resolve_sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&stimeout, sizeof(stimeout)) < 0) {
         PRINT_ERROR("fetch_upnp_device_info(); setsockopt() SO_SNDTIMEO: (%d) %s", errno, strerror(errno));
         free(ip);
+        close(resolve_sock);
         free(rest);
         free(request);
         free(response);
@@ -2150,6 +2152,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
           PRINT_ERROR("The destination IP address could be determined (%s)\n", (ip_length < 1 ? "empty" : ip));
         }
         free(ip);
+        close(resolve_sock);
         free(rest);
         free(request);
         free(response);
@@ -2178,6 +2181,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
       if(connect(resolve_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) == SOCKET_ERROR) {
         PRINT_ERROR("fetch_upnp_device_info(); connect(): (%d) %s", errno, strerror(errno));
         free(ip);
+        close(resolve_sock);
         free(rest);
         free(request);
         free(response);
