@@ -1,9 +1,11 @@
 <?php
 /**
  * Configure MySQL with:
+ * CREATE DATABASE 'abused';
+ * CREATE TABLE 'devices' ('id' VARCHAR(255), 'mac' VARCHAR(255), 'ipv4' VARCHAR(15), 'ipv6' VARCHAR(46), ...);
  * CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
- * GRANT SELECT, INSERT, UPDATE ON devicemanagement.devices TO 'abused'@'%';
- * GRANT SELECT, INSERT, UPDATE ON devicemanagement.address TO 'abused'@'%';
+ * GRANT SELECT, INSERT, UPDATE ON abused..devices TO 'abused'@'%';
+ * GRANT SELECT, INSERT, UPDATE ON abused.address TO 'abused'@'%';
  */
 
 class AbusedResult {
@@ -409,6 +411,18 @@ foreach($abused_results as $abused_result) {
                  $abused_result->getStatus(),
                  $abused_result->getType());
   $res = $h_sql->query($query);
+
+  #raw_xml;
+  #mac;
+  #ip;
+  #request_protocol;
+  #request;
+  #datetime;
+  #custom_fields_size;
+  #custom_fields;
+  #upnp_headers_size;
+  #upnp_headers;
+
   if(false === $res) {
     $msg = sprintf("Failed to query MySQL: %s", $h_sql->error); 
     printf($msg);

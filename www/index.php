@@ -1,9 +1,10 @@
 <?php
 /**
  * Configure MySQL with:
+ * CREATE TABLE `devices` (`id` VARCHAR(255), `mac` VARCHAR(255), `ipv4` VARCHAR(15), `ipv6` VARCHAR(46), `model` VARCHAR(255), `friendly_name` VARCHAR(255), `model_version` VARCHAR(255), `last_update` DATETIME);
  * CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
- * GRANT SELECT, INSERT, UPDATE ON devicemanagement.devices TO 'abused'@'%';
- * GRANT SELECT, INSERT, UPDATE ON devicemanagement.address TO 'abused'@'%';
+ * GRANT SELECT, INSERT, UPDATE ON 'devices' TO 'abused'@'%';
+ * GRANT SELECT, INSERT, UPDATE ON 'lock' TO 'abused'@'%';
  */
 
 $host     = 'localhost';
@@ -29,6 +30,7 @@ $results = array();
 while($row = $res->fetch_assoc()) {
   $results[] = $row;
 }
-echo "<pre>\n";
-var_dump($results);
-echo "</pre>\n";
+
+foreach($results as $result) {
+  printf("%s", $row);
+}
