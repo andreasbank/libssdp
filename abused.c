@@ -274,6 +274,7 @@ typedef struct configuration_struct {
   BOOL                gather_silent;                  /* Gather discoveries, do not display anything */
   BOOL                xml_output;                     /* Use raw input instead of parsing it when displaying or forwarding */
   unsigned char       ttl;                            /* Time-To-Live value, how many routers the multicast shall propagate through */
+  BOOL                ignore_search_msgs;             /* Automatically add a filter to ignore M-SEARCH messages*/
   char               *filter;                         /* Grep-like filter string */
   BOOL                use_ipv4;                       /* Force the usage of the IPv4 protocol */
   BOOL                use_ipv6;                       /* Force the usage of the IPv6 protocol */
@@ -287,13 +288,9 @@ typedef struct configuration_struct {
 static SOCKET               notif_server_sock = 0;       /* The main socket for listening for UPnP (SSDP) devices (or device answers) */
 static SOCKET               notif_client_sock = 0;       /* The sock that we want to ask/look for devices on (unicast) */
 static SOCKET               notif_recipient_sock = 0;    /* Notification recipient socket, where the results will be forwarded */
-struct sockaddr_storage    *notif_recipient_addr = NULL;
-static char                *send_string = NULL;          /* The results of a UPnP scan */
-static char                *recv_string = NULL;          /* The string received from the client that has connected (made a request) to this service */
-static char                *notif_string = NULL;         /* A buffer for the notifications received while listening for UPnP (SSDP) notifications */
+struct sockaddr_storage    *notif_recipient_addr = NULL; /* The sockaddr where we store the recipient address */
 static filters_factory_s   *filters_factory = NULL;      /* The structure contining all the filters information */
-static configuration_s     conf;                         /* The program configuration */
-static char                *time_string = NULL;
+static configuration_s      conf;                         /* The program configuration */
 
 /* Functions */
 static void set_default_configuration(configuration_s *);
@@ -349,21 +346,6 @@ static void free_stuff() {
     notif_recipient_sock = 0;
   }
 
-  if(recv_string != NULL) {
-    free(recv_string);
-    recv_string = NULL;
-  }
-
-  if(send_string != NULL) {
-    free(send_string);
-    send_string = NULL;
-  }
-
-  if(notif_string != NULL) {
-    free(notif_string);
-    notif_string = NULL;
-  }
-
   if(filters_factory != NULL) {
     if(filters_factory->filters != NULL) {
       int fc;
@@ -384,18 +366,10 @@ static void free_stuff() {
     filters_factory = NULL;
   }
 
-  if(time_string != NULL) {
-    free(time_string);
-    time_string = NULL;
-  }
-
   if(!conf.quiet_mode) {
     printf("\nCleaning up and exitting...\n");
   }
 
-  if(conf.filter != NULL) {
-    free(conf.filter);
-  }
 }
 
 static void usage() {
@@ -409,6 +383,7 @@ static void usage() {
   printf("\t-f <string>       Filter for capturing, 'grep'-like effect. Also works\n");
   printf("\t                  for -u and -U where you can specify a list of\n");
   printf("                    comma separated filters\n");
+  printf("\t-M                Don't ignore UPnP M-SEARCH messages\n");
   printf("\t-S                Run as a server,\n");
   printf("\t                  listens on port 43210 and returns a\n");
   printf("\t                  bonjour scan result (formatted list) for AXIS devices\n");
@@ -446,6 +421,7 @@ static void set_default_configuration(configuration_s *c) {
   c->xml_output =            FALSE;
   c->ttl =                   1;
   c->filter =                NULL;
+  c->ignore_search_msgs =    TRUE;
   c->use_ipv4 =              FALSE;
   c->use_ipv6 =              FALSE;
   c->quiet_mode =            FALSE;
@@ -457,7 +433,7 @@ static void set_default_configuration(configuration_s *c) {
 static void parse_args(const int argc, char * const *argv, configuration_s *conf) {
   int opt;
 
-  while ((opt = getopt(argc, argv, "C:i:I:t:f:SduUmgGa:RFx64qT:L")) > 0) {
+  while ((opt = getopt(argc, argv, "C:i:I:t:f:MSduUmgGa:RFx64qT:L")) > 0) {
     char *pend = NULL;
 
     switch (opt) {
@@ -485,6 +461,10 @@ static void parse_args(const int argc, char * const *argv, configuration_s *conf
       conf->filter = optarg;
       break;
 
+    case 'M':
+      conf->ignore_search_msgs = FALSE;
+      break;
+
     case 'S':
       conf->run_as_server = TRUE;
       break;
@@ -502,16 +482,16 @@ static void parse_args(const int argc, char * const *argv, configuration_s *conf
       break;
 
     case 'a':
-    if(optarg != NULL && strlen(optarg) > 0) {
-      PRINT_DEBUG("parse_address()");
-      if(!parse_address(optarg, &notif_recipient_addr, TRUE)) {
-        usage();
-        free_stuff();
-        exit(EXIT_FAILURE);
+      if(optarg != NULL && strlen(optarg) > 0) {
+        PRINT_DEBUG("parse_address()");
+        if(!parse_address(optarg, &notif_recipient_addr, TRUE)) {
+          usage();
+          free_stuff();
+          exit(EXIT_FAILURE);
+        }
+        conf->forward_enabled = TRUE;
       }
-      conf->forward_enabled = TRUE;
-    }
-    break;
+      break;
 
     case 'm':
       printf("         {\n      {   }\n       }_{ __{\n    .-{   }   }-.\n   (   }     {   )\n   |`-.._____..-'|\n   |             ;--.\n   |            (__  \\\n   |             | )  )\n   |   ABUSED    |/  /\n   |             /  /\n   |            (  /\n   \\             y'\n    `-.._____..-'\n");
@@ -736,8 +716,8 @@ int main(int argc, char **argv) {
   if(conf.listen_for_upnp_notif) {
     PRINT_DEBUG("listen_for_upnp_notif start");
 
-    /* Init fork allocations */
-    notif_string = (char *)malloc(sizeof(char) * NOTIF_RECV_BUFFER);
+    /* Init buffer for receiving messages */
+    char notif_string[NOTIF_RECV_BUFFER];
 
     /* init socket */
     PRINT_DEBUG("setup_socket for listening to upnp");
@@ -793,7 +773,9 @@ int main(int argc, char **argv) {
 
       PRINT_DEBUG("Setting IP for fake sender");
       notif_client_addr.ss_family = AF_INET;
-      if(inet_pton(AF_INET, "10.0.0.2", (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr) < 1) {
+      if(inet_pton(AF_INET,
+                   "10.0.0.2",
+                   (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr) < 1) {
         PRINT_ERROR("Error setting IP for fake sender (%d)", errno);
       }
       #endif
@@ -804,7 +786,12 @@ int main(int argc, char **argv) {
       /* Retrieve IP address from socket */
       char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
       memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
-      if(!inet_ntop(notif_client_addr.ss_family, (notif_client_addr.ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr : (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
+      if(!inet_ntop(notif_client_addr.ss_family,
+                    (notif_client_addr.ss_family == AF_INET ?
+                      (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr :
+                      (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr),
+                    tmp_ip,
+                    IPv6_STR_MAX_SIZE)) {
         PRINT_ERROR("Erroneous IP from sender");
         free_ssdp_message(&ssdp_message);
         free(tmp_ip);
@@ -818,6 +805,7 @@ int main(int argc, char **argv) {
       /* Build the ssdp message struct */
       BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
       free(tmp_ip);
+      free(tmp_mac);
 
       if(!build_success) {
         free_ssdp_message(&ssdp_message);
@@ -827,26 +815,87 @@ int main(int argc, char **argv) {
       // TODO: Make it recognize both AND and OR (search for ; inside a ,)!!!
       // TODO: add "request" string filtering
 
-      /* Check if notification should be used (to print and possibly send to the given destination) */
-      ssdp_header_s *ssdp_headers = ssdp_message.headers;
+      /* Check if notification should be used (if any filters have been set) */
       if(filters_factory != NULL) {
         PRINT_DEBUG("traversing filters");
         int fc;
         for(fc = 0; fc < filters_factory->filters_count; fc++) {
-          if(strcmp(filters_factory->filters[fc].header, "ip") == 0 && strstr(ssdp_message.ip, filters_factory->filters[fc].value) == NULL) {
-            drop_message = TRUE;
-            break;
+
+          BOOL filter_found = FALSE;
+          char *filter_value = filters_factory->filters[fc].value;
+          char *filter_header = filters_factory->filters[fc].header;
+
+
+          /* If IP filtering has been set, check values */
+          if(strcmp(filter_header, "ip") == 0) {
+            filter_found = TRUE;
+            if(strstr(ssdp_message.ip, filter_value) == NULL) {
+              PRINT_DEBUG("IP filter mismatch, dropping message");
+              drop_message = TRUE;
+              break;
+            }
           }
 
-          while(ssdp_headers) {
-            if(strcmp(get_header_string(ssdp_headers->type, ssdp_headers), filters_factory->filters[fc].header) == 0 && strstr(ssdp_headers->contents, filters_factory->filters[fc].value) == NULL) {
+          /* If mac filtering has been set, check values */
+          if(strcmp(filter_header, "mac") == 0) {
+            filter_found = TRUE;
+            if(strstr(ssdp_message.mac, filter_value) == NULL) {
+              PRINT_DEBUG("MAC filter mismatch, dropping message");
               drop_message = TRUE;
-              PRINT_DEBUG("Message marked for dropping");
               break;
+            }
+          }
+
+          /* If protocol filtering has been set, check values */
+          if(strcmp(filter_header, "protocol") == 0) {
+            filter_found = TRUE;
+            if(strstr(ssdp_message.protocol, filter_value) == NULL) {
+              PRINT_DEBUG("Protocol filter mismatch, dropping message");
+              drop_message = TRUE;
+              break;
+            }
+          }
+
+          /* If request filtering has been set, check values */
+          if(strcmp(filter_header, "request") == 0) {
+            filter_found = TRUE;
+            /* Also check: if -M set check if it is a M-SEARCH message
+               and drop it */
+            if((strstr(ssdp_message.request, filter_value) == NULL) ||
+               (conf.ignore_search_msgs && strstr(ssdp_message.request, "M-SEARCH") != NULL)) {
+              PRINT_DEBUG("Request filter mismatch, dropping message");
+              drop_message = TRUE;
+              break;
+            }
+          }
+
+          ssdp_header_s *ssdp_headers = ssdp_message.headers;
+
+          /* If any other filter has been set try to match it
+             with a header type and then check values */
+          while(ssdp_headers) {
+
+            /* See if the headet type matches the filter type
+               and if so check the values */
+            char const *ssdp_header_string = get_header_string(ssdp_headers->type, ssdp_headers);
+            if(strcmp(ssdp_header_string, filter_header) == 0) {
+              filter_found = TRUE;
+
+              /* Then see if the values match */
+              if(strstr(ssdp_headers->contents, filter_value) == NULL) {
+                PRINT_DEBUG("Header (%s) filter mismatch, marked for dropping", filter_header);
+                drop_message = TRUE;
+                break;
+              }
             }
             ssdp_headers = ssdp_headers->next;
           }
-          ssdp_headers = ssdp_message.headers;
+
+          /* If no comparison (match or missmatch) was made then drop the message */
+          if(!filter_found) {
+            PRINT_DEBUG("Filter type not found, marked for dropping");
+            drop_message = TRUE;
+          }
 
           if(drop_message) {
             break;
@@ -858,10 +907,10 @@ int main(int argc, char **argv) {
 
         char *results = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
 
-        /* If unable to  allocate, report it but don't break
-           in case other non-results actions exist */
         if(!results) {
           PRINT_ERROR("Could not allocate buffer memory");
+          free_stuff();
+          exit(EXIT_FAILURE);
         }
         memset(results, '\0', sizeof(char) * XML_BUFFER_SIZE);
 
@@ -882,6 +931,7 @@ int main(int argc, char **argv) {
             PRINT_ERROR("Failed creating plain-text message");
             free(results);
             results = NULL;
+            continue;
         }
 
         /* Check if forwarding ('-a') is enabled */
@@ -909,8 +959,6 @@ int main(int argc, char **argv) {
       PRINT_DEBUG("loop done");
 
       free_ssdp_message(&ssdp_message);
-      // TODO: remove me
-      //break;
     }
 
   /* We can never get this far */
