@@ -67,6 +67,16 @@
  * Update 2015-02-07:
  *  by Andreas Bank
  *   Normalise printouts
+ *
+ * Update 2015-02-15:
+ *  by Andreas Bank
+ *   Refactored find_interface and join_multicast_group()
+ *   Now correctly joins all interfaces when using
+ *   bind-on-all addresses
+ *
+ * Update 2015-02-21:
+ *  by Andreas Bank
+ *   Added filter for M-SEARCH messages
  */
 
 /*
@@ -77,9 +87,6 @@
  *     ██║   ╚██████╔╝██████╔╝╚██████╔╝╚═╝
  *     ╚═╝    ╚═════╝ ╚═════╝  ╚═════╝
  *  01010100 01001111 01000100 01001111 00111010
- *
- *  - When listening on "all" interfaces (0.0.0.0)
- *    make it join the multicast group on each one.
  *
  *  - Fix IPv6!
  */

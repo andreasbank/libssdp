@@ -1,11 +1,49 @@
 <?php
-/**
- * Configure MySQL with:
- * CREATE DATABASE 'abused';
- * CREATE TABLE 'devices' ('id' VARCHAR(255), 'mac' VARCHAR(255), 'ipv4' VARCHAR(15), 'ipv6' VARCHAR(46), ...);
- * CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
- * GRANT SELECT, INSERT, UPDATE ON abused..devices TO 'abused'@'%';
- * GRANT SELECT, INSERT, UPDATE ON abused.address TO 'abused'@'%';
+/*
+  Configure MySQL with:
+  CREATE DATABASE 'abused';
+   CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL, `mac` VARCHAR(255) NOT NULL, `ipv4` VARCHAR(15), `ipv6` VARCHAR(46), `model` VARCHAR(255), `friendly_name` VARCHAR(255), `model_version` VARCHAR(255), `last_update` DATETIME NOT NULL, PRIMARY KEY (`id`));
+  CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL, `locked` TINYINT(1) DEFAULT 1, `locked_date` DATETIME NOT NULL, `locked_by` VARCHAR(255) NOT NULL, FOREIGN KEY (`device_id`) REFERENCES `devices`(`id`) ON DELETE CASCADE ON UPDATE CASCADE, PRIMARY KEY (`device_id`, `locked_date`));
+  CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
+  GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';
+  GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';
+  DELIMITER //
+  CREATE PROCEDURE `add_device`(IN `id` VARCHAR(255), IN `mac` VARCHAR(17), IN `ipv4` VARCHAR(15), IN `ipv6` VARCHAR(46), IN `model` VARCHAR(255), IN `friendly_name` VARCHAR(255), IN `model_version` VARCHAR(255), IN `last_update` DATETIME)
+    SQL SECURITY INVOKER
+  BEGIN
+    INSERT INTO `devices` VALUES(id, mac, ipv4, ipv6, model, friendly_name, model_version, NOW())
+      ON DUPLICATE KEY UPDATE
+        `mac`=mac,
+        `ipv4`=ipv4,
+        `ipv6`=ipv6,
+        `model`=model,
+        `friendly_name`=friendly_name,
+        `model_version`=model_version,
+        `last_update`=NOW();
+  END//
+  CREATE PROCEDURE `delete_inactive_devices`(IN `inactive_seconds` INT)
+  BEGIN
+    DELETE FROM `devices` WHERE `last_update`<(SELECT NOW()-INTERVAL inactive_seconds SECOND);
+  END//
+  CREATE PROCEDURE `is_device_locked_internal`(IN `device_id` VARCHAR(255), INOUT `is_locked` TINYINT(1))
+  BEGIN
+    SELECT `locked` INTO is_locked FROM `locked_devices` WHERE `device_id`=device_id AND `locked`=1;
+  END//
+  CREATE PROCEDURE `lock_device`(IN `device_id` VARCHAR(255), IN `locked_by` VARCHAR(255))
+  begin
+    DECLARE is_locked INT DEFAULT 0;
+    CALL `is_device_locked_internal`('device_id', is_locked);
+    IF is_locked=1 THEN
+      SELECT 0 AS `success`;
+    END IF
+    INSERT INTO `devices` VALUES(device_id, 1, NOW(), locked_by);
+    SELECT 1 AS `success`;
+  END//
+  DELIMITER ;
+  GRANT EXECUTE ON PROCEDURE abused.add_device TO 'abused'@'%';
+  GRANT EXECUTE ON PROCEDURE abused.is_device_locked TO 'abused'@'%';
+  GRANT EXECUTE ON PROCEDURE abused.delete_inactive_devices TO 'abused'@'%';
+  GRANT EXECUTE ON PROCEDURE abused.is_device_locked_internal TO 'abused'@'%';
  */
 
 class AbusedResult {
@@ -33,7 +71,7 @@ class AbusedResult {
     $this->upnp_headers = $upnp_headers;
   }
 
-  public function setRaw_xml($raw_xml) {
+  public function set_raw_xml($raw_xml) {
     if($this->raw_xml == null) {
       $this->raw_xml = $raw_xml;
     }
@@ -55,7 +93,7 @@ class AbusedResult {
     $abused_results = array();
     for($i = 0; $i < count($parsed_xml->message); $i++) {
       $abused_result = AbusedResult::parse_abused_message($parsed_xml->message[$i]);
-      $abused_result->setRaw_xml($raw_xml);
+      $abused_result->set_raw_xml($raw_xml);
       $abused_results[] = $abused_result;
     }
 
@@ -108,14 +146,18 @@ class AbusedResult {
   }
 
   /* Make magic getters for all fields */
-  public function __get($method_name) {
-    $match = preg_match("/^get([A-Za-z_]+)$/", $method_name, $matches);
+  public function __call($name, $args) {
+    $match = preg_match("/^get_([A-Za-z_]+)$/", $name, $matches);
     if($match) {
       try {
-        return $this->$$matches[1];
+        $funct_name = $matches[1];
+        return $this->$funct_name;
       } catch(Exception $e) {
         throw new Exception(sprintf("Field '%s' does not exist", $matches[1]));
       }
+    }
+    else {
+      throw new Exception(sprintf("Bad request ('%s')", $name));
     }
   }
 
@@ -126,9 +168,6 @@ $raw_xml = file_get_contents('php://input');
 
 /* Parse the XML into an array of AbusedResult objects */
 $abused_results = AbusedResult::parse_xml($raw_xml);
-
-// TODO: remove me!
-exit(0);
 
 /**
  * Retrieves the IP address from the abused_results array
@@ -374,7 +413,7 @@ function is_device_ssh_enabled($address, $username, $password) {
   return true;
 }
 
-/* Try to extract specific information of
+/* Info for extracting specific information of
    the device in case it is an AXIS device */
 $axis_device_default_username = 'root';
 $axis_device_default_password = 'pass';
@@ -383,7 +422,7 @@ $axis_device_tfw_password     = 'tfwpass';
 
 /* MySQL host, database and credentials */
 $host     = 'localhost';
-$database = 'devicemanagement';
+$database = 'abused';
 $username = 'abused';
 $password = 'abusedpass';
 
@@ -396,36 +435,23 @@ if ($h_sql->connect_errno) {
 
 /* Insert or update for each AbusedResult we have received and parsed */
 foreach($abused_results as $abused_result) {
-  $query = sprintf("INSERT INTO `devices` VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s') ON DUPLICATE KEY UPDATE",
-                 $abused_result->getMacaddress(),
-                 $abused_result->getOak(),
-                 $abused_result->getName(),
-                 $abused_result->getOwner(),
-                 $abused_result->getServer(),
-                 $abused_result->getModel(),
-                 $abused_result->getFirmware(),
-                 $abused_result->getCredentials(),
-                 $abused_result->getAway_since(),
-                 $abused_result->getIp(),
-                 $abused_result->getLink(),
-                 $abused_result->getStatus(),
-                 $abused_result->getType());
-  $res = $h_sql->query($query);
+ $query = sprintf("call add_device('%s', '%s', '%s', NULL, NULL, NULL, NULL)",
+                 $abused_result->get_mac(),
+                 $abused_result->get_mac(),
+                 $abused_result->get_ip());
+#  $query = sprintf("call add_device('%s', '%s', '%s', NULL, '%s', '%s', '%s')",
+#                 $abused_result->get_mac(),
+#                 $abused_result->get_mac(),
+#                 $abused_result->get_ip(),
+#                 $abused_result->get_model(),
+#                 $abused_result->get_friendly_name(),
+#                 $abused_result->get_model_version());
 
-  #raw_xml;
-  #mac;
-  #ip;
-  #request_protocol;
-  #request;
-  #datetime;
-  #custom_fields_size;
-  #custom_fields;
-  #upnp_headers_size;
-  #upnp_headers;
+  $res = $h_sql->query($query);
 
   if(false === $res) {
     $msg = sprintf("Failed to query MySQL: %s", $h_sql->error); 
-    printf($msg);
+    printf("%s", $msg);
     error_log($msg);
   }
 }
