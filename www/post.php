@@ -110,7 +110,7 @@ class AbusedResult {
       $custom_field_attributes = $custom_field_array[$i]->attributes();
       $custom_field_name = trim((string) $custom_field_attributes['name']);
       $custom_field_value = trim((string) $custom_field_array[$i]);
-      $custom_fields[] = array($custom_field_name, $custom_field_value);
+      $custom_fields[$custom_field_name] = $custom_field_value;
     }
 
     /* Gather all headers */
@@ -121,7 +121,7 @@ class AbusedResult {
       $header_attributes = $header_array[$i]->attributes();
       $header_name = trim((string) $header_attributes['typeStr']);
       $header_value = trim((string) $header_array[$i]);
-      $headers[] = array($header_name, $header_value);
+      $headers[$header_name] = $header_value;
     }
 
     /* Get request protocol */
@@ -145,19 +145,38 @@ class AbusedResult {
     return $abused_result;
   }
 
-  /* Make magic getters for all fields */
+  /* Make magic getters for all fields
+     eg. object->get_mac() returns the field AbusedResult::mac */
   public function __call($name, $args) {
-    $match = preg_match("/^get_([A-Za-z_]+)$/", $name, $matches);
+    $match = preg_match("/^get_([A-Za-z0-9_]+)$/", $name, $matches);
     if($match) {
-      try {
-        $funct_name = $matches[1];
-        return $this->$funct_name;
-      } catch(Exception $e) {
-        throw new Exception(sprintf("Field '%s' does not exist", $matches[1]));
+
+      /* If it is a request for a custom field */
+      if(0 === strpos($matches[1], 'custom_field_')) {
+
+        /* Try to locate the custom field and return it's value */
+        foreach($this->custom_fields as $cf_name => $cf_value) {
+          if($cf_name == substr($matches[1], 13)) {
+            return $cf_value;
+          }
+        }
+        throw new Exception(sprintf("Custom field '%s' does not exist", $matches[1]));
       }
+      else {
+
+        /* Try to call a method with the matched name */
+        try {
+          $funct_name = $matches[1];
+          return $this->$funct_name;
+        } catch(Exception $e) {
+          throw new Exception(sprintf("Field '%s' does not exist", $matches[1]));
+        }
+
+      }
+
     }
     else {
-      throw new Exception(sprintf("Bad request ('%s')", $name));
+      throw new Exception(sprintf("Method not found ('%s')", $name));
     }
   }
 
@@ -435,17 +454,14 @@ if ($h_sql->connect_errno) {
 
 /* Insert or update for each AbusedResult we have received and parsed */
 foreach($abused_results as $abused_result) {
- $query = sprintf("call add_device('%s', '%s', '%s', NULL, NULL, NULL, NULL)",
+  // TODO: Handle exceptions on missing fields
+  $query = sprintf("call add_device('%s', '%s', '%s', NULL, '%s', '%s', '%s')",
                  $abused_result->get_mac(),
                  $abused_result->get_mac(),
-                 $abused_result->get_ip());
-#  $query = sprintf("call add_device('%s', '%s', '%s', NULL, '%s', '%s', '%s')",
-#                 $abused_result->get_mac(),
-#                 $abused_result->get_mac(),
-#                 $abused_result->get_ip(),
-#                 $abused_result->get_model(),
-#                 $abused_result->get_friendly_name(),
-#                 $abused_result->get_model_version());
+                 $abused_result->get_ip(),
+                 $abused_result->get_custom_field_modelName(),
+                 $abused_result->get_custom_field_friendlyName(),
+                 $abused_result->get_custom_field_modelNumber());
 
   $res = $h_sql->query($query);
 
