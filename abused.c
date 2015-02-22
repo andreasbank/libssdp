@@ -822,6 +822,14 @@ int main(int argc, char **argv) {
       // TODO: Make it recognize both AND and OR (search for ; inside a ,)!!!
       // TODO: add "request" string filtering
 
+      /* If -M set check if it is a M-SEARCH message
+         and drop it */
+      if(conf.ignore_search_msgs && (strstr(ssdp_message.request, "M-SEARCH") != NULL)) {
+          PRINT_DEBUG("Message contains a M-SEARCH request, dropping message");
+          free_ssdp_message(&ssdp_message);
+          continue;
+      }
+
       /* Check if notification should be used (if any filters have been set) */
       if(filters_factory != NULL) {
         PRINT_DEBUG("traversing filters");
@@ -831,7 +839,6 @@ int main(int argc, char **argv) {
           BOOL filter_found = FALSE;
           char *filter_value = filters_factory->filters[fc].value;
           char *filter_header = filters_factory->filters[fc].header;
-
 
           /* If IP filtering has been set, check values */
           if(strcmp(filter_header, "ip") == 0) {
@@ -866,10 +873,7 @@ int main(int argc, char **argv) {
           /* If request filtering has been set, check values */
           if(strcmp(filter_header, "request") == 0) {
             filter_found = TRUE;
-            /* Also check: if -M set check if it is a M-SEARCH message
-               and drop it */
-            if((strstr(ssdp_message.request, filter_value) == NULL) ||
-               (conf.ignore_search_msgs && strstr(ssdp_message.request, "M-SEARCH") != NULL)) {
+            if(strstr(ssdp_message.request, filter_value) == NULL) {
               PRINT_DEBUG("Request filter mismatch, dropping message");
               drop_message = TRUE;
               break;
