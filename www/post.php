@@ -8,7 +8,7 @@
   GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';
   GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';
   DELIMITER //
-  CREATE PROCEDURE `add_device`(IN `id` VARCHAR(255), IN `mac` VARCHAR(17), IN `ipv4` VARCHAR(15), IN `ipv6` VARCHAR(46), IN `model` VARCHAR(255), IN `friendly_name` VARCHAR(255), IN `model_version` VARCHAR(255), IN `last_update` DATETIME)
+  CREATE PROCEDURE `add_device`(IN `id` VARCHAR(255), IN `mac` VARCHAR(17), IN `ipv4` VARCHAR(15), IN `ipv6` VARCHAR(46), IN `model` VARCHAR(255), IN `friendly_name` VARCHAR(255), IN `model_version` VARCHAR(255))
     SQL SECURITY INVOKER
   BEGIN
     INSERT INTO `devices` VALUES(id, mac, ipv4, ipv6, model, friendly_name, model_version, NOW())
