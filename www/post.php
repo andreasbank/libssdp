@@ -35,7 +35,7 @@
     CALL `is_device_locked_internal`('device_id', is_locked);
     IF is_locked=1 THEN
       SELECT 0 AS `success`;
-    END IF
+    END IF;
     INSERT INTO `devices` VALUES(device_id, 1, NOW(), locked_by);
     SELECT 1 AS `success`;
   END//

@@ -2750,9 +2750,11 @@ static int find_interface(struct sockaddr_storage *saddr, char *interface, char 
     BOOL if_present = strlen(interface) > 0 ? TRUE : FALSE;
     BOOL addr_present = strlen(address) > 0 ? TRUE : FALSE;
     BOOL addr_is_bindall = ((strcmp("0.0.0.0", address) == 0) ||
-                       (strcmp("::", address) == 0)) ?
-                      TRUE :
-                      FALSE;
+                            (strcmp("::", address) == 0) ||
+                            (strlen(address) == 0)) ?
+                            TRUE :
+                            FALSE;
+
     if((if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
        addr_present && (strcmp(address, compare_address))) ||
       (if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
@@ -3382,29 +3384,29 @@ static SOCKET setup_socket(BOOL is_ipv6,
 
   /* Make sure we have a string IP before joining multicast groups */
   /* NOTE: Workaround until refactoring is complete */
-  char iface[IPv6_STR_MAX_SIZE];
-  if(interface == NULL || strlen(interface) < 1) {
+  char iface_ip[IPv6_STR_MAX_SIZE];
+  if(if_ip == NULL || strlen(if_ip) < 1) {
     if(inet_ntop(is_ipv6 ? AF_INET6 :
                            AF_INET,
                  is_ipv6 ? (void *)&((struct sockaddr_in6 *)saddr)->sin6_addr :
                            (void *)&((struct sockaddr_in *)saddr)->sin_addr,
-                 iface,
+                 iface_ip,
                  IPv6_STR_MAX_SIZE) == NULL) {
-      PRINT_ERROR("Failed to get string representation of the interface address: (%d) %s", errno, strerror(errno));
+      PRINT_ERROR("Failed to get string representation of the interface IP address: (%d) %s", errno, strerror(errno));
       free_stuff();
       free(saddr);
       exit(errno);
     }
   }
   else {
-    strcpy(iface, interface);
+    strcpy(iface_ip, if_ip);
   }
 
   /* Join the multicast group on required interfaces */
   if(is_server && is_multicast && !join_multicast_group(sock,
                           is_ipv6 ? SSDP_ADDR6_SL :
                                     SSDP_ADDR,
-                          iface)) {
+                          iface_ip)) {
     PRINT_ERROR("Failed to join required multicast group");
     return -1;
   }
