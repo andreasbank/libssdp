@@ -2767,7 +2767,7 @@ static int find_interface(struct sockaddr_storage *saddr, char *interface, char 
       /* Set the interface index to be returned*/
       ifindex = if_nametoindex(ifa->ifa_name);
 
-      PRINT_DEBUG("Matched interface (with index %d) name '%s' with %s address %s\n", ifindex, ifa->ifa_name, (ss_family == AF_INET ? "IPv4" : "IPv6"), compare_address);
+      PRINT_DEBUG("Matched interface (with index %d) name '%s' with %s address %s", ifindex, ifa->ifa_name, (ss_family == AF_INET ? "IPv4" : "IPv6"), compare_address);
 
       /* Set the appropriate address in the sockaddr struct */
       if(!is_ipv6 && ss_family == AF_INET) {
@@ -3138,13 +3138,13 @@ static SOCKET setup_socket(BOOL is_ipv6,
   memset(&mreq, 0, sizeof(mreq));
   memset(&mreq6, 0, sizeof(mreq6));
 
-  /* If 'sa' (sockaddr) given instead of 'interface' (char *)
-     then fill 'interface' with the IP from the sockaddr */
+  /* If 'sa' (sockaddr) given instead of 'if_ip' (char *)
+     then fill 'if_ip' with the IP from the sockaddr */
   if(sa != NULL) {
     inet_ntop(sa->ss_family,
               sa->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)sa)->sin_addr :
                                          (void *)&((struct sockaddr_in6 *)sa)->sin6_addr,
-              interface,
+              if_ip,
               IPv6_STR_MAX_SIZE);
   }
 
@@ -3301,8 +3301,9 @@ static SOCKET setup_socket(BOOL is_ipv6,
       else {
         inet_pton(saddr->ss_family, ip, &mreq.imr_multiaddr);
       }
-      if(interface != NULL && strlen(interface) > 0) {
-        mreq.imr_interface.s_addr = saddr4->sin_addr.s_addr;
+      if((if_ip != NULL && strlen(if_ip) > 0) || 
+          (interface != NULL && strlen(interface) > 0)) {
+         mreq.imr_interface.s_addr = saddr4->sin_addr.s_addr;
       }
       else {
         mreq.imr_interface.s_addr = htonl(INADDR_ANY);
@@ -3346,19 +3347,24 @@ static SOCKET setup_socket(BOOL is_ipv6,
   /* If server requested, bind the socket to the given address and port*/
   // TODO: Fix for IPv6
   if(is_server) {
-    PRINT_DEBUG("is_server == TRUE");
-    struct sockaddr_storage saddr_;
-    memset(&saddr_, 0, sizeof(struct sockaddr_storage));
-    struct sockaddr_in *sa_ = (struct sockaddr_in *)&saddr_;
-    sa_->sin_family = saddr->ss_family;
-    sa_->sin_addr.s_addr = mreq.imr_multiaddr.s_addr;
-    sa_->sin_port = ((struct sockaddr_in *)saddr)->sin_port;
-    char a[100];
-    inet_ntop(saddr->ss_family, (void *)&sa_->sin_addr, a, 100);
-    PRINT_DEBUG("  bind() to: saddr->sin_family: %d(%d)", ((struct sockaddr_in *)saddr)->sin_family, AF_INET);
-    PRINT_DEBUG("  bind() to: saddr->sin_addr: %s (port %d)", a, ntohs(((struct sockaddr_in *)saddr)->sin_port));
 
-    if(bind(sock, (struct sockaddr *)saddr, (saddr->ss_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6))) < 0) {
+    struct sockaddr_in bindaddr;
+    bindaddr.sin_family = saddr->ss_family;
+    bindaddr.sin_addr.s_addr = mreq.imr_multiaddr.s_addr;
+    bindaddr.sin_port = ((struct sockaddr_in *)saddr)->sin_port;
+
+    #ifdef DEBUG___
+    PRINT_DEBUG("is_server == TRUE");
+    char a[100];
+    inet_ntop(bindaddr.sin_family, (void *)&((struct sockaddr_in *)&bindaddr)->sin_addr, a, 100);
+    PRINT_DEBUG("  bind() to: saddr->sin_family: %d(%d)", ((struct sockaddr_in *)&bindaddr)->sin_family, AF_INET);
+    PRINT_DEBUG("  bind() to: saddr->sin_addr: %s (port %d)", a, ntohs(((struct sockaddr_in *)&bindaddr)->sin_port));
+    #endif
+
+    if(bind(sock,
+           (struct sockaddr *)&bindaddr,
+           (bindaddr.sin_family == AF_INET ? sizeof(struct sockaddr_in) :
+                                          sizeof(struct sockaddr_in6))) < 0) {
       PRINT_ERROR("setup_socket(); bind(): (%d) %s", errno, strerror(errno));
       free(saddr);
       if(sa != NULL) {
