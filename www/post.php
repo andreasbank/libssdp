@@ -4,6 +4,8 @@
   CREATE DATABASE 'abused';
    CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL, `mac` VARCHAR(255) NOT NULL, `ipv4` VARCHAR(15), `ipv6` VARCHAR(46), `model` VARCHAR(255), `friendly_name` VARCHAR(255), `model_version` VARCHAR(255), `last_update` DATETIME NOT NULL, PRIMARY KEY (`id`));
   CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL, `locked` TINYINT(1) DEFAULT 1, `locked_date` DATETIME NOT NULL, `locked_by` VARCHAR(255) NOT NULL, FOREIGN KEY (`device_id`) REFERENCES `devices`(`id`) ON DELETE CASCADE ON UPDATE CASCADE, PRIMARY KEY (`device_id`, `locked_date`));
+  CREATE TABLE `model_firmware_capability` (`model` VARCHAR(50), `firmware_version` VARCHAR(30), `capability_list_id` int, PRIMARY KEY(`model`, `firmware_version`));
+  CREATE TABLE `capability_list` (`id` INT, `capability_name` VARCHAR(255) PRIMARY KEY(`id`));
   CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
   GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';
   GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';
@@ -180,6 +182,78 @@ class AbusedResult {
     }
   }
 
+  /**
+   * Checks if the passed argument is a valid MAC address
+   *
+   * @param $mac The MAC address to be checked
+   *
+   * @return Returns true if it is a valid MAC address, otherwise returns false
+   */
+  public static function is_mac_address($mac) {
+    if(preg_match("/^[0-9a-fA-F]{2}(?=([:.]?))(?:\\1[0-9a-fA-F]{2}){5}$/", $mac))
+      return true;
+    return false;
+  }
+  
+  /**
+   * Checks if the passed argument is a valid IPv4 address
+   *
+   * @param $ip The IPv4 address to be checked
+   *
+   * @return Returns true if it is a valid IPv4 address, otherwise returns false
+   */
+  public static function is_ipv4_address($ip) {
+    if(preg_match("/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/", $ip)) {
+      $ipParts=explode(".",$ip);
+      foreach($ipParts as $ipPart) {
+        if(intval($ipPart)<0 || intval($ipPart)>255)
+          return false;
+      }
+      return true;
+    }
+    return false;
+  }
+  
+  /**
+   * Check if a given IPv6 address is valid
+   *
+   * @param $ip The IPv6 address to be checked
+   *
+   * @return Returns true if the given IPv6 is valid, otherwise returns false
+   */
+  public static function is_ipv6_address($ip) {
+    /* Exit for localhost */
+    if (strlen($ip) < 3)
+      return $ip == '::';
+    /* Check if end part is in IPv4 format */
+    if (strpos($ip, '.')) {
+      $lastcolon = strrpos($ip, ':');
+      if (!($lastcolon && $this->is_ipv4_address(substr($ip, $lastcolon + 1))))
+        return false;
+      /* Replace the IPv4 part with IPv6 dummy part */
+      $ip = substr($ip, 0, $lastcolon) . ':0:0';
+    }
+    /* Check for uncompressed address format */
+    if (strpos($ip, '::') === false) {
+      return preg_match('/^(?:[a-f0-9]{1,4}:){7}[a-f0-9]{1,4}$/i', $ip);
+        }
+    //count colons for compressed format
+    if (substr_count($ip, ':') < 8) {
+      return preg_match('/^(?::|(?:[a-f0-9]{1,4}:)+):(?:(?:[a-f0-9]{1,4}:)*[a-f0-9]{1,4})?$/i', $ip);
+        }
+    return false;
+  }
+  
+  /**
+   * Check if a given IP address is valid
+   *
+   * @param $ip The IP address to be checked
+   *
+   * @return Returns true if the gevin IP is valid, otherwise returns false
+   */
+  public static function is_ip_address($ip) {
+    return $this->is_ipv4_address($ip) || $this->is_ipv6_address($ip);
+  }
 }
 
 /* Get the XML from the POST data */
@@ -250,79 +324,6 @@ function get_axis_device_parameter($address, $username, $password, $parameter) {
   return trim(substr($result, strlen($parameter)+1));
 }
 
-
-/**
- * Checks if the passed argument is a valid MAC address
- *
- * @param $mac The MAC address to be checked
- *
- * @return Returns true if it is a valid MAC address, otherwise returns false
- */
-function is_mac_address($mac) {
-  if(preg_match("/^[0-9a-fA-F]{2}(?=([:.]?))(?:\\1[0-9a-fA-F]{2}){5}$/", $mac))
-    return true;
-  return false;
-}
-
-/**
- * Checks if the passed argument is a valid IPv4 address
- *
- * @param $ip The IPv4 address to be checked
- *
- * @return Returns true if it is a valid IPv4 address, otherwise returns false
- */
-function is_ipv4_address($ip) {
-  if(preg_match("/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/", $ip)) {
-    $ipParts=explode(".",$ip);
-    foreach($ipParts as $ipPart) {
-      if(intval($ipPart)<0 || intval($ipPart)>255)
-        return false;
-    }
-    return true;
-  }
-  return false;
-}
-
-/**
- * Check if a given IPv6 address is valid
- *
- * @param $ip The IPv6 address to be checked
- *
- * @return Returns true if the given IPv6 is valid, otherwise returns false
- */
-function is_ipv6_address($ip) {
-  /* Exit for localhost */
-  if (strlen($ip) < 3)
-    return $ip == '::';
-  /* Check if end part is in IPv4 format */
-  if (strpos($ip, '.')) {
-    $lastcolon = strrpos($ip, ':');
-    if (!($lastcolon && $this->is_ipv4_address(substr($ip, $lastcolon + 1))))
-      return false;
-    /* Replace the IPv4 part with IPv6 dummy part */
-    $ip = substr($ip, 0, $lastcolon) . ':0:0';
-  }
-  /* Check for uncompressed address format */
-  if (strpos($ip, '::') === false) {
-    return preg_match('/^(?:[a-f0-9]{1,4}:){7}[a-f0-9]{1,4}$/i', $ip);
-      }
-  //count colons for compressed format
-  if (substr_count($ip, ':') < 8) {
-    return preg_match('/^(?::|(?:[a-f0-9]{1,4}:)+):(?:(?:[a-f0-9]{1,4}:)*[a-f0-9]{1,4})?$/i', $ip);
-      }
-  return false;
-}
-
-/**
- * Check if a given IP address is valid
- *
- * @param $ip The IP address to be checked
- *
- * @return Returns true if the gevin IP is valid, otherwise returns false
- */
-function is_ip_address($ip) {
-  return $this->is_ipv4_address($ip) || $this->is_ipv6_address($ip);
-}
 
 /**
  * Enables/disables the SSH server on the device
@@ -454,14 +455,36 @@ if ($h_sql->connect_errno) {
 
 /* Insert or update for each AbusedResult we have received and parsed */
 foreach($abused_results as $abused_result) {
-  // TODO: Handle exceptions on missing fields
-  $query = sprintf("call add_device('%s', '%s', '%s', NULL, '%s', '%s', '%s')",
-                 $abused_result->get_mac(),
-                 $abused_result->get_mac(),
-                 $abused_result->get_ip(),
-                 $abused_result->get_custom_field_modelName(),
-                 $abused_result->get_custom_field_friendlyName(),
-                 $abused_result->get_custom_field_modelNumber());
+  try {
+    $id = $abused_result->get_mac();
+    $mac = $abused_result->get_mac();
+    $ipv4 = $abused_result->get_ip();
+    $ipv6 = NULL;
+    if(!AbusedResult::is_ipv4_address($ipv4)) {
+      if(AbusedResult::is_ipv6($ipv4)) {
+        $ipv6 = $ipv4;
+        $ipv4 = NULL;
+      }
+      else {
+        /* Not an IP address, skip packet*/
+        continue;
+      }
+    }
+    $model_name = $abused_result->get_custom_field_modelName();
+    $friendly_name = $abused_result->get_custom_field_friendlyName();
+    $model_number = $abused_result->get_custom_field_modelNumber();
+  } catch(Exception $e) {
+    /* Do noting */
+    continue;
+  }
+  $query = sprintf("call add_device('%s', '%s', '%s', '%s', '%s', '%s', '%s')",
+                   $id,
+                   $mac,
+                   $ipv4,
+                   $ipv6,
+                   $model_name,
+                   $friendly_name,
+                   $model_number);
 
   $res = $h_sql->query($query);
 
