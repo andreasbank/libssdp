@@ -1,22 +1,43 @@
 <?php
-/**
- * Configure MySQL with:
- * CREATE TABLE `devices` (`id` VARCHAR(255), `mac` VARCHAR(255), `ipv4` VARCHAR(15), `ipv6` VARCHAR(46), `model` VARCHAR(255), `friendly_name` VARCHAR(255), `model_version` VARCHAR(255), `last_update` DATETIME);
- * CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
- * GRANT SELECT, INSERT, UPDATE ON 'devices' TO 'abused'@'%';
- * GRANT SELECT, INSERT, UPDATE ON 'lock' TO 'abused'@'%';
- */
+$action = NULL;
+if(isset($_GET['action']) && !empty($_GET['action'])) {
+  $action = $_POST['action'];
+}
+else if(isset($_GET['action']) && !empty($_GET['action'])) {
+  $action = $_GET['action'];
+}
+else {
+  printf("No action specified.");
+  exit(0);
+}
 
 $host     = 'localhost';
-$database = 'devicemanagement';
+$database = 'abused';
 $username = 'abused';
 $password = 'abusedpass';
-$query = 'SELECT * FROM `devices` d LEFT OUTER JOIN `address` ON d.macaddress=address.macaddress';
+$query    = 'SELECT * FROM `devices`i';
 
 $h_sql = new mysqli($host, $username, $password, $database);
 if ($h_sql->connect_errno) {
   printf("Failed to connect to MySQL: %s", $h_sql->connect_error);
   exit(1);
+}
+
+switch($action) {
+
+/* Lock the device if possible */
+case 'lock_device':
+  // TODO: do it.
+  //header('HTTP/1.0 200 Ok');
+  //header('HTTP/1.0 409 Resource is in use');
+  //header('HTTP/1.0 410 Resource is no longer present');
+  //header('HTTP/1.0 404 Not Found');
+  break;
+
+/* Inform that the action is invalid */
+default:
+  printf("Invalid action.");
+  exit(0);
 }
 
 $res = $h_sql->query($query);
