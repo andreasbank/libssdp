@@ -2,10 +2,11 @@
 /*
   Configure MySQL with:
   CREATE DATABASE 'abused';
-   CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL, `mac` VARCHAR(255) NOT NULL, `ipv4` VARCHAR(15), `ipv6` VARCHAR(46), `model` VARCHAR(255), `friendly_name` VARCHAR(255), `model_version` VARCHAR(255), `last_update` DATETIME NOT NULL, PRIMARY KEY (`id`));
+  CREATE TABLE `capabilities` (`id` INT, `name` VARCHAR(255), PRIMARY KEY(`id`));
+  CREATE TABLE `model_firmware` (`id` INT, `model_name` VARHCAR(255), `firmware_version` VARCHAR(255), PRIMARY KEY(`id`));
+  CREATE TABLE `model_firmware_capability` (`model_firmware_id` INT, `capability_id` INT, FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware`(`id`), FOREIGN KEY (`capability_id`) REFERENCES `capability`(`id`), PRIMARY KEY(`model_firmware_id`, `capability_id`));
+  CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL, `mac` VARCHAR(255) NOT NULL, `ipv4` VARCHAR(15), `ipv6` VARCHAR(46), `friendly_name` VARCHAR(255), `last_update` DATETIME NOT NULL, `model_firmware_id` INT, FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware` (`id`), PRIMARY KEY (`id`));
   CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL, `locked` TINYINT(1) DEFAULT 1, `locked_date` DATETIME NOT NULL, `locked_by` VARCHAR(255) NOT NULL, FOREIGN KEY (`device_id`) REFERENCES `devices`(`id`) ON DELETE CASCADE ON UPDATE CASCADE, PRIMARY KEY (`device_id`, `locked_date`));
-  CREATE TABLE `model_firmware_capability` (`model` VARCHAR(50), `firmware_version` VARCHAR(30), `capability_list_id` int, PRIMARY KEY(`model`, `firmware_version`));
-  CREATE TABLE `capability_list` (`id` INT, `capability_name` VARCHAR(255) PRIMARY KEY(`id`));
   CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
   GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';
   GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';
