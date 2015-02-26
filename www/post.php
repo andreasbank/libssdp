@@ -2,19 +2,70 @@
 /*
   Configure MySQL with:
   CREATE DATABASE 'abused';
-  CREATE TABLE `capabilities` (`id` INT, `name` VARCHAR(255), PRIMARY KEY(`id`));
-  CREATE TABLE `model_firmware` (`id` INT, `model_name` VARHCAR(255), `firmware_version` VARCHAR(255), PRIMARY KEY(`id`));
-  CREATE TABLE `model_firmware_capability` (`model_firmware_id` INT, `capability_id` INT, FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware`(`id`), FOREIGN KEY (`capability_id`) REFERENCES `capability`(`id`), PRIMARY KEY(`model_firmware_id`, `capability_id`));
-  CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL, `mac` VARCHAR(255) NOT NULL, `ipv4` VARCHAR(15), `ipv6` VARCHAR(46), `friendly_name` VARCHAR(255), `last_update` DATETIME NOT NULL, `model_firmware_id` INT, FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware` (`id`), PRIMARY KEY (`id`));
-  CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL, `locked` TINYINT(1) DEFAULT 1, `locked_date` DATETIME NOT NULL, `locked_by` VARCHAR(255) NOT NULL, FOREIGN KEY (`device_id`) REFERENCES `devices`(`id`) ON DELETE CASCADE ON UPDATE CASCADE, PRIMARY KEY (`device_id`, `locked_date`));
+
+  CREATE TABLE `capabilities` (`id` INT NOT NULL AUTO_INCREMENT,
+                               `name` VARCHAR(255) NOT NULL UNIQUE,
+                               PRIMARY KEY(`id`)) ENGINE=InnoDB;
+
+  CREATE TABLE `model_firmware` (`id` INT NOT NULL AUTO_INCREMENT,
+                                 `model_name` VARCHAR(255) NOT NULL,
+                                 `firmware_version` VARCHAR(255) NOT NULL,
+                                 UNIQUE KEY(`model_name`, `firmware_version`),
+                                 PRIMARY KEY(`id`)) ENGINE=InnoDB;
+
+  CREATE TABLE `model_firmware_capability` (`model_firmware_id` INT NOT NULL,
+                                            `capability_id` INT NOT NULL,
+                                            FOREIGN KEY (`model_firmware_id`)
+                                              REFERENCES `model_firmware`(`id`),
+                                            FOREIGN KEY (`capability_id`)
+                                              REFERENCES `capability`(`id`),
+                                            PRIMARY KEY(`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
+ 
+  CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL,
+                          `mac` VARCHAR(255) NOT NULL,
+                          `ipv4` VARCHAR(15),
+                          `ipv6` VARCHAR(46),
+                          `friendly_name` VARCHAR(255),
+                          `model_firmware_id` INT,
+                          `last_update` DATETIME NOT NULL,
+                          `last_upnp_message` ENUM('hello', 'alive', 'bye') NOT NULL,
+                          FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware` (`id`),
+                          PRIMARY KEY (`id`)) ENGINE=InnoDB;
+
+  CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL,
+                                `locked` TINYINT(1) DEFAULT 1,
+                                `locked_date` DATETIME NOT NULL,
+                                `locked_by` VARCHAR(255) NOT NULL,
+                                FOREIGN KEY (`device_id`)
+                                  REFERENCES `devices`(`id`)
+                                  ON DELETE CASCADE
+                                  ON UPDATE CASCADE,
+                                PRIMARY KEY (`device_id`, `locked_date`)) ENGINE=InnoDB;
+
   CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
+
   GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';
+
   GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';
+
   DELIMITER //
-  CREATE PROCEDURE `add_device`(IN `id` VARCHAR(255), IN `mac` VARCHAR(17), IN `ipv4` VARCHAR(15), IN `ipv6` VARCHAR(46), IN `model` VARCHAR(255), IN `friendly_name` VARCHAR(255), IN `model_version` VARCHAR(255))
+  CREATE PROCEDURE `add_device`(IN `id` VARCHAR(255),
+                                IN `mac` VARCHAR(17),
+                                IN `ipv4` VARCHAR(15),
+                                IN `ipv6` VARCHAR(46),
+                                IN `model` VARCHAR(255),
+                                IN `friendly_name` VARCHAR(255),
+                                IN `model_version` VARCHAR(255))
     SQL SECURITY INVOKER
   BEGIN
-    INSERT INTO `devices` VALUES(id, mac, ipv4, ipv6, model, friendly_name, model_version, NOW())
+    INSERT INTO `devices` VALUES(id,
+                                 mac,
+                                 ipv4,
+                                 ipv6,
+                                 model,
+                                 friendly_name,
+                                 model_version,
+                                 NOW())
       ON DUPLICATE KEY UPDATE
         `mac`=mac,
         `ipv4`=ipv4,
@@ -24,28 +75,51 @@
         `model_version`=model_version,
         `last_update`=NOW();
   END//
+  DELIMITER ;
+
+  DELIMITER //
   CREATE PROCEDURE `delete_inactive_devices`(IN `inactive_seconds` INT)
+    SQL SECURITY INVOKER
   BEGIN
-    DELETE FROM `devices` WHERE `last_update`<(SELECT NOW()-INTERVAL inactive_seconds SECOND);
+    DELETE FROM `devices`
+      WHERE `last_update`<(SELECT NOW()-INTERVAL inactive_seconds SECOND);
   END//
-  CREATE PROCEDURE `is_device_locked_internal`(IN `device_id` VARCHAR(255), INOUT `is_locked` TINYINT(1))
+  DELIMITER ;
+
+  DELIMITER //
+  CREATE PROCEDURE `is_device_locked_internal`(IN `device_id` VARCHAR(255),
+                                               INOUT `is_locked` TINYINT(1))
+    SQL SECURITY INVOKER
   BEGIN
-    SELECT `locked` INTO is_locked FROM `locked_devices` WHERE `device_id`=device_id AND `locked`=1;
+    SELECT `locked` INTO is_locked
+      FROM `locked_devices`
+      WHERE `device_id`=device_id
+        AND `locked`=1;
   END//
-  CREATE PROCEDURE `lock_device`(IN `device_id` VARCHAR(255), IN `locked_by` VARCHAR(255))
-  begin
+  DELIMITER ;
+
+  DELIMITER //
+  CREATE PROCEDURE `lock_device`(IN `device_id` VARCHAR(255),
+                                 IN `locked_by` VARCHAR(255))
+    SQL SECURITY INVOKER
+  BEGIN 
     DECLARE is_locked INT DEFAULT 0;
     CALL `is_device_locked_internal`('device_id', is_locked);
     IF is_locked=1 THEN
       SELECT 0 AS `success`;
     END IF;
-    INSERT INTO `devices` VALUES(device_id, 1, NOW(), locked_by);
+    INSERT INTO `locked_devices`
+      VALUES(device_id, 1, NOW(), locked_by);
     SELECT 1 AS `success`;
   END//
   DELIMITER ;
+
   GRANT EXECUTE ON PROCEDURE abused.add_device TO 'abused'@'%';
+
   GRANT EXECUTE ON PROCEDURE abused.is_device_locked TO 'abused'@'%';
+
   GRANT EXECUTE ON PROCEDURE abused.delete_inactive_devices TO 'abused'@'%';
+
   GRANT EXECUTE ON PROCEDURE abused.is_device_locked_internal TO 'abused'@'%';
  */
 
