@@ -78,6 +78,28 @@
   DELIMITER ;
 
   DELIMITER //
+  CREATE PROCEDURE `add_model_firmware_if_not_exist`(IN `v_model_name` VARCHAR(255),
+                                        IN `v_firmware_version` VARCHAR(255),
+                                        INOUT `return_id` INT)
+    SQL SECURITY INVOKER
+  BEGIN
+    SET return_id=null;
+    SELECT `id` INTO return_id
+      FROM `model_firmware`
+      WHERE `model_name`=v_model_name
+        AND `firmware_version`=v_firmware_version;
+    IF return_id IS NULL THEN
+      INSERT INTO `model_firmware` (`model_name`, `firmware_version`)
+        VALUES(v_model_name, v_firmware_version);
+      SELECT `id` INTO return_id
+        FROM `model_firmware`
+        WHERE `model_name`=v_model_name
+          AND `firmware_version`=v_firmware_version;
+    END IF;
+  END
+  DELIMITER ;
+
+  DELIMITER //
   CREATE PROCEDURE `delete_inactive_devices`(IN `inactive_seconds` INT)
     SQL SECURITY INVOKER
   BEGIN
