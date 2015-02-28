@@ -364,182 +364,173 @@ class AbusedResult {
   }
 }
 
-/* Get the XML from the POST data */
-$raw_xml = file_get_contents('php://input');
 
-/* Parse the XML into an array of AbusedResult objects */
-$abused_results = AbusedResult::parse_xml($raw_xml);
+class CapabilityManager {
 
-/**
- * Retrieves the IP address from the abused_results array
- */
-function get_ip_from_mac($address) {
-  foreach($abused_results as $abused_result) {
-    if($address == $abused_result) {
-      return $abused_result->getMac_address();
-    }
+  $ip = '';
+  $username = '';
+  $password = '';
+
+  public function __construct($ip, $username = 'root', $password = 'pass') {
+    $this->ip = $ip;
+    $this->username = $username;
+    $this->password = $password;
   }
-}
 
-/**
- * Retrieves a parameter from the camera
- *
- * @param address The address of the device
- * @param username The username for the device
- * @param password The password for the device
- * @param parameter The parameter group
- *
- * @return Returns the parameter's current value as a string
- */
-function get_axis_device_parameter($address, $username, $password, $parameter) {
-  $result = "";
-  try {
-    $ip = null;
-    if($this->is_ip_address($address))
-      $ip = $address;
-    elseif($this->is_mmac_address($address))
-      $ip = $this->get_ip_from_mac($address);
-    else
-      throw new Exception("The given address is not a valid IPv4, IPv6 or MAC address", 1);
-    if($ip == null)
-      throw new Exception("Device is not online", 1);
+  /**
+   * Sets a parameter in the camera
+   *
+   * @param value The value the parameter should be set to
+   *
+   * @return Returns the parameter's current value as a string
+   */
+  public function setDeviceParameter($parameter, $value, $donotEncode = false) {
+    $result = null;
     $context = stream_context_create(array(
     'http' => array(
-        'header'  => "Authorization: Basic " . base64_encode($username.":".$password),
-        'timeout' => "5"
+        'header'  => sprintf("Authorization: Basic %s",
+                             base64_encode(sprintf("%s:%s",
+                                                   $this->username,
+                                                   $this->password))),
+        'timeout' => '5'
       )
     ));
-    /* TODO: set up error handling using:
-    set_error_handler(
-      create_function(
-        '$severity, $message, $file, $line',
-        'throw new Exception($message, $severity, $severity, $file, $line);'
-      )
-    );
-    */
-    // remove '@' for debugging
-    $result = @file_get_contents("http://".$ip."/axis-cgi/param.cgi?action=list".($parameter?"&group=".$parameter:""), false, $context);
+
+//*********************
+//STUFF NEEDED TO GET DIGEST WORKING!
+//stream_context_set_option($context, 'ssl', 'verify_host', false);
+//********************
+
+    $result = @file_get_contents("http://".$this->ip."/axis-cgi/param.cgi?action=update&".$parameter."=".($donotEncode?$value:rawurlencode($value)), false, $context);
     if($result === false) {
       if(isset($http_response_header) && strpos($http_response_header[0], "401"))
         throw new Exception("Wrong credentials", 1);
       throw new Exception("Connection failed", 1);
+    }
+    if($result!="OK") {
+      throw new Exception("Did not receive OK from device (result=\"".$result."\")", 1);
+    }
+    return true;
+  }
+
+  /**
+   * Retrieves a parameter from the device
+   *
+   * @param parameter The parameter group
+   *
+   * @return Returns the parameter's current value as a string
+   */
+  public function get_axis_device_parameter($parameter) {
+    $result = null;
+    $context = stream_context_create(array(
+      'http' => array(
+          'header'  => sprintf("Authorization: Basic %s",
+                               base64_encode(sprintf("%s:%s",
+                                                     $this->username,
+                                                     $this->password))),
+          'timeout' => '5'
+        )
+      ));
+
+    $result = @file_get_contents("http://".$this->ip."/axis-cgi/param.cgi?action=list".($parameter?"&group=".$parameter:""), false, $context);
+
+    if(false === $result) {
+      if(isset($http_response_header) && strpos($http_response_header[0], "401")) {
+        throw new Exception("Wrong credentials", 1);
+      }
+      throw new Exception("Connection failed", 1);
     } else if(preg_match("/^# Error:/", $result)) {
       throw new Exception($result, 1);
     }
-  } catch(Exception $e) {
-    throw new Exception("Controller::get_device_parameter(): ".$e->getMessage(), $e->getCode());
+    return trim(substr($result, strlen($parameter)+1));
   }
-  return trim(substr($result, strlen($parameter)+1));
-}
-
-
-/**
- * Enables/disables the SSH server on the device
- *
- * @param address The address of the device
- * @param username The username for the device
- * @param password The password for the device
- * @param enable True to enable or false to disable the SSH server
- *
- * @return Returns true on success and false on failure
- */
-function set_device_ssh($address, $username, $password, $enable) {
-  try {
+  
+  
+  /**
+   * Enables/disables the SSH server on the device
+   *
+   * @param enable True to enable or false to disable the SSH server
+   *
+   * @return Returns true on success and false on failure
+   */
+  public function set_device_ssh($enable) {
     if($enable) {
       $enable = "yes";
     } else {
       $enable = "no";
     }
-    if(is_device_ssh_capable($address, $username, $password)) {
+    if($this->is_device_ssh_capable()) {
       throw new Exception("The device is not SSH capable", 1);
     }
-    set_device_parameter($address, $username, $password, "Network.SSH.Enabled", $enable);
+    $this->set_device_parameter("Network.SSH.Enabled", $enable);
     return true;
-  } catch(Exception $e) {
-    throw new Exception(sprintf("set_device_ssh(): %s", $e->getMessage()), $e->getCode());
   }
-  return true;
-}
-
-/**
- * Enables the SSH server on the device
- *
- * @param address The address of the device
- * @param username The username for the device
- * @param password The password for the device
- *
- * @return Returns true on success and false on failure
- */
-function enable_device_ssh($address, $username, $password) {
-  try {
-    return set_device_ssh($address, $username, $password, true);
-  } catch(Exception $e) {
-    throw new Exception(sprintf("enable_device_ssh(): %s", $e->getMessage()), $e->getCode());
+  
+  /**
+   * Enables the SSH server on the device
+   *
+   * @return Returns true on success and false on failure
+   */
+  public function enable_device_ssh() {
+    return $this->set_device_ssh(true);
   }
-  return true;
-}
-
-/**
- * Disables the SSH server on the device
- *
- * @param address The address of the device
- * @param username The username for the device
- * @param password The password for the device
- *
- * @return Returns true on success and false on failure
- */
-function disable_device_ssh($address, $username, $password) {
-  try {
-    return set_device_ssh($address, $username, $password, false);
-  } catch(Exception $e) {
-    throw new Exception(sprintf("disable_device_ssh(): %s", $e->getMessage()), $e->getCode());
+  
+  /**
+   * Disables the SSH server on the device
+   *
+   * @return Returns true on success and false on failure
+   */
+  public function disable_device_ssh() {
+    return $this->set_device_ssh(false);
   }
-  return true;
-}
-
-/**
- * Checks if the device firmware is SSH capable (>=LFP5)
- *
- * @param address The address of the device
- * @param username The username for the device
- * @param password The password for the device
- *
- * @return Returns true on success and false on failure
- */
-function is_device_ssh_capable($address, $username, $password) {
-  try {
-    $parameter = "Network.SSH.Enabled";
-    get_device_parameter($address, $username, $password, $parameter);
-  } catch(Exception $e) {
-    if(preg_match("/# Error:/", $e->getMessage()))
+  
+  /**
+   * Checks if the device firmware is SSH capable (>=LFP5)
+   *
+   * @return Returns true on success and false on failure
+   */
+  public function is_device_ssh_capable() {
+    try {
+      $parameter = 'Network.SSH.Enabled';
+      $this->get_device_parameter($parameter);
+    } catch(Exception $e) {
+      if(preg_match("/# Error:/", $e->getMessage()))
+        return false;
+      throw $e;
+    }
+    return true;
+  }
+  
+  /**
+   * Checks if the device SSH server is enabled
+   *
+   * @return Returns true on success and false on failure
+   */
+  public function is_device_ssh_enabled() {
+    try {
+      $parameter = "Network.SSH.Enabled";
+      $result = $this->get_device_parameter($parameter);
+    } catch(Exception $e) {
+      if(preg_match("/# Error:/", $e->getMessage()))
+        return false;
+      throw $e;
+    }
+    if('no' == $result)
       return false;
-    throw new Exception(sprintf("is_device_ssh_capable(): %s", $e->getMessage()), $e->getCode());
+    return true;
   }
-  return true;
+
+  public function get_capability() {
+    
+  }
+
 }
 
-/**
- * Checks if the device SSH server is enabled
- *
- * @param address The address of the device
- * @param username The username for the device
- * @param password The password for the device
- *
- * @return Returns true on success and false on failure
- */
-function is_device_ssh_enabled($address, $username, $password) {
-  try {
-    $parameter = "Network.SSH.Enabled";
-    $result = get_device_parameter($address, $username, $password, $parameter);
-  } catch(Exception $e) {
-    if(preg_match("/# Error:/", $e->getMessage()))
-      return false;
-    throw new Exception(sprintf("is_device_ssh_enabled(): %s", $e->getMessage()), $e->getCode());
-  }
-  if('no' == $result)
-    return false;
-  return true;
-}
+/* Get the XML from the POST data */
+$raw_xml = file_get_contents('php://input');
+
+/* Parse the XML into an array of AbusedResult objects */
+$abused_results = AbusedResult::parse_xml($raw_xml);
 
 /* Info for extracting specific information of
    the device in case it is an AXIS device */
