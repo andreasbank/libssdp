@@ -40,7 +40,7 @@
                                   REFERENCES `devices`(`id`)
                                   ON DELETE CASCADE
                                   ON UPDATE CASCADE,
-                                PRIMARY KEY (`device_id`, `locked_date`)) ENGINE=InnoDB;
+                                PRIMARY KEY (`device_id`, `state_date`)) ENGINE=InnoDB;
 
   CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
 
@@ -49,31 +49,31 @@
   GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';
 
   DELIMITER //
-  CREATE PROCEDURE `add_device`(IN `id` VARCHAR(255),
-                                IN `mac` VARCHAR(17),
-                                IN `ipv4` VARCHAR(15),
-                                IN `ipv6` VARCHAR(46),
-                                IN `model` VARCHAR(255),
-                                IN `friendly_name` VARCHAR(255),
-                                IN `model_version` VARCHAR(255))
+  CREATE PROCEDURE `add_or_update_device`(IN `v_id` VARCHAR(255),
+                                          IN `v_mac` VARCHAR(17),
+                                          IN `v_ipv4` VARCHAR(15),
+                                          IN `v_ipv6` VARCHAR(46),
+                                          IN `v_friendly_name` VARCHAR(255),
+                                          IN `v_model_firmware_id` INT,
+                                          IN `v_last_upnp_message` VARCHAR(5))
     SQL SECURITY INVOKER
   BEGIN
-    INSERT INTO `devices` VALUES(id,
-                                 mac,
-                                 ipv4,
-                                 ipv6,
-                                 model,
-                                 friendly_name,
-                                 model_version,
-                                 NOW())
+    INSERT INTO `devices` VALUES(v_id,
+                                 v_mac,
+                                 v_ipv4,
+                                 v_ipv6,
+                                 v_friendly_name,
+                                 v_model_firmware_id,
+                                 NOW(),
+                                 v_last_upnp_message)
       ON DUPLICATE KEY UPDATE
-        `mac`=mac,
-        `ipv4`=ipv4,
-        `ipv6`=ipv6,
-        `model`=model,
-        `friendly_name`=friendly_name,
-        `model_version`=model_version,
-        `last_update`=NOW();
+        `mac`=v_mac,
+        `ipv4`=v_ipv4,
+        `ipv6`=v_ipv6,
+        `friendly_name`=v_friendly_name,
+        `model_firmware_id`=v_model_firmware_id,
+        `last_update`=NOW(),
+        `last_upnp_message`=v_last_upnp_message;
   END//
   DELIMITER ;
 
@@ -109,30 +109,41 @@
   DELIMITER ;
 
   DELIMITER //
-  CREATE PROCEDURE `is_device_locked_internal`(IN `device_id` VARCHAR(255),
+  CREATE PROCEDURE `is_device_locked_internal`(IN `v_device_id` VARCHAR(255),
                                                INOUT `is_locked` TINYINT(1))
     SQL SECURITY INVOKER
   BEGIN
     SELECT `locked` INTO is_locked
       FROM `locked_devices`
-      WHERE `device_id`=device_id
+      WHERE `device_id`=v_device_id
         AND `locked`=1;
   END//
   DELIMITER ;
 
   DELIMITER //
-  CREATE PROCEDURE `lock_device`(IN `device_id` VARCHAR(255),
-                                 IN `locked_by` VARCHAR(255))
+  CREATE PROCEDURE `lock_device`(IN `v_device_id` VARCHAR(255),
+                                 IN `v_locked_by` VARCHAR(255))
     SQL SECURITY INVOKER
   BEGIN 
     DECLARE is_locked INT DEFAULT 0;
-    CALL `is_device_locked_internal`('device_id', is_locked);
+    CALL `is_device_locked_internal`(v_device_id, is_locked);
     IF is_locked=1 THEN
       SELECT 0 AS `success`;
+    ELSE
+      INSERT INTO `locked_devices`
+        VALUES(v_device_id, 1, NOW(), v_locked_by);
+      SELECT 1 AS `success`;
     END IF;
-    INSERT INTO `locked_devices`
-      VALUES(device_id, 1, NOW(), locked_by);
-    SELECT 1 AS `success`;
+  END//
+  DELIMITER ;
+
+  DELIMITER //
+  CREATE PROCEDURE `unlock_device`(IN `v_device_id` VARCHAR(255))
+    SQL SECURITY INVOKER
+  BEGIN
+    DELETE FROM `locked_devices`
+    WHERE `locked`=1
+    AND `device_id`=v_device_id;
   END//
   DELIMITER ;
 
