@@ -168,7 +168,7 @@ class AbusedResult {
   private $upnp_headers_size;
   private $upnp_headers;
 
-  function __construct($raw_xml, $mac, $ip, $request_protocol, $request, $datetime, $custom_fields_size, $custom_fields, $upnp_headers_size, $upnp_headers) {
+  public function __construct($raw_xml, $mac, $ip, $request_protocol, $request, $datetime, $custom_fields_size, $custom_fields, $upnp_headers_size, $upnp_headers) {
     $this->raw_xml = $raw_xml;
     $this->mac = $mac;
     $this->ip = $ip;
@@ -367,9 +367,10 @@ class AbusedResult {
 
 class CapabilityManager {
 
-  $ip = '';
-  $username = '';
-  $password = '';
+  private $ip = '';
+  private $username = '';
+  private $password = '';
+  private $timeout = 5;
 
   public function __construct($ip, $username = 'root', $password = 'pass') {
     $this->ip = $ip;
@@ -378,38 +379,217 @@ class CapabilityManager {
   }
 
   /**
+   * Set the timeout for the connections
+   */
+  public function set_timeout($timeout) {
+    if(!is_int($timeout) || (empty($timeout) && $timeout != 0) ||
+       $timeout < 0 || $timeout > 300) {
+      throw new Exception('Timeout must be a positive integer');
+    }
+    $this->timeout = $timeout;
+  }
+
+  /**
+   *  Generates a new nonce
+   */
+  public function generate_nonce($bits = 256) {
+    $bytes = ceil($bits / 8);
+    $cnonce = '';
+    $random_string = '';
+    for($i = 0; $i < $bytes; $i++) {
+      $random_string = sprintf("%s%s", $random_string, chr(mt_rand(0, 255)));
+    }
+    $cnonce = hash('sha512', $random_string);
+    return $cnonce;
+  }
+
+  /* Build a DIGEST authentication header */
+  public function build_digest_auth_header($headers, $uri) {
+    /*
+    response is something like this:
+    HTTP/1.0 401 Unauthorized
+    Server: HTTPd/0.9
+    Date: Sun, 1 Mar 2015 20:26:47 GMT
+    WWW-Authenticate: Digest realm="testrealm@host.com",
+                             qop="auth,auth-int",
+                             nonce="dcd98b7102dd2f0e8b11d0f600bfb0c093",
+                             opaque="5ccc069c403ebaf9f0171e9517f40e41"
+    */
+
+    /* Extract the WWW-Authenticate header */
+    $header = null;
+    foreach($headers as $header_) {
+      if(strstr($header_, 'WWW-Authenticate: Digest') != false) {
+        $header = $header_;
+        break;
+      }
+    }
+
+    $auth_args = array();
+
+    /* Extract the digest args from the WWW-Authenticate header */
+    $match_success = preg_match("/WWW-Authenticate:\sDigest\s(.*)/", $header, $matches);
+    if($match_success) {
+
+      /* Clean the digest authorization arguments
+         and create an associative array */
+      $raw_arguments = split(',', $matches[1]);
+      foreach($raw_arguments as $raw_argument) {
+        $argument = split('=', trim($raw_argument), 2);
+        if(!empty($argument[1]) && !empty($argument[0])) {
+          $auth_args[$argument[0]] = str_replace('"', '', $argument[1]);
+        }
+      }
+
+    }
+
+    /* Check if 'auth' (normal digest) authentication
+       method is supported and if authenticating against
+       a 'realm' */
+    if(!in_array('auth', split(',', $auth_args['qop'])) ||
+       !in_array('realm', array_keys($auth_args))) {
+      throw new Exception('The server requested a unsupported digest authentication method');
+    }
+
+    /* Set our args; RFC2069: qop=auth */
+    $auth_args['qop'] = 'auth';
+    $nc = 1;
+    $cnonce = $this->generate_nonce();
+
+    /* Build the header response field according to
+       http://tools.ietf.org/html/rfc2069,
+       note that we only implement needed features
+       and make alot of assumptions (as using 'realm') */
+    $ha1 = md5(sprintf("%s:%s:%s", $this->username, $auth_args['realm'], $this->password));
+    $ha2 = md5(sprintf("GET:%s", $uri));
+    $response = md5(sprintf("%s:%s:%d:%s:%s:%s",
+                            $ha1,
+                            $auth_args['nonce'],
+                            $nc,
+                            $cnonce,
+                            $auth_args['qop'],
+                            $ha2));
+
+    $auth_digest = sprintf("Authorization: Digest username=\"%s\"", $this->username);
+    $auth_digest = sprintf("%s, realm=\"%s\"", $auth_digest, $auth_args['realm']);
+    $auth_digest = sprintf("%s, nonce=\"%s\"", $auth_digest, $auth_args['nonce']);
+    $auth_digest = sprintf("%s, uri=\"%s\"", $auth_digest, $uri);
+    $auth_digest = sprintf("%s, qop=%s", $auth_digest, $auth_args['qop']);
+    $auth_digest = sprintf("%s, nc=%d", $auth_digest, $nc);
+    $auth_digest = sprintf("%s, cnonce=\"%s\"", $auth_digest, $cnonce);
+    $auth_digest = sprintf("%s, response=\"%s\"", $auth_digest, $response);
+    if(array_key_exists('opaque', $auth_args)) {
+      $auth_digest = sprintf("%s, response=\"%s\"", $auth_digest, $auth_args['opaque']);
+    }
+
+    return $auth_digest;
+  }
+
+  /**
+   * Build basic authentication header
+   */
+  public function build_basic_auth_header() {
+    $auth_basic = sprintf("Authorization: Basic %s",
+                          base64_encode(sprintf("%s:%s",
+                                                $this->username,
+                                                $this->password)));
+    return $auth_basic;
+  }
+
+  /**
+   * Build the request context
+   */
+  public function build_context($auth_header = null) {
+
+    /* If no specific authentication header given
+       build a basic authentication header and use it*/
+    if(empty($auth_header)) {
+      $auth_header = $this->build_basic_auth_header();
+    }
+
+    $context = stream_context_create(array(
+                                       'http' => array(
+                                         'header'  => $auth_header,
+                                         'timeout' => $this->timeout
+                                       )));
+    return $context;
+  }
+
+  /**
+   * Send a http(s) request
+   */
+  public function send_request($url) {
+    $result = null;
+
+    /* Extract transport method [http|https] */
+    $transport = strstr($url, '://', true);
+    if($transport != 'http' && $transport != 'https') {
+      throw new Exception('Wrong transport method, only HTTP or HTTPS is allowed');
+    }
+
+    $context = $this->build_context();
+
+    //*********************
+    // KEEP IN CASE OF ALIENS
+    //if($transport == 'https') {
+    //  stream_context_set_option($context, 'ssl', 'verify_host', false);
+    //  stream_context_set_option($context, 'ssl', 'allow_self_signed', true);
+    //  stream_context_set_option($context, 'ssl', 'verify_peer', false);
+    //}
+    //********************
+
+    /* Try with basic authentication */
+    $result = @file_get_contents($url, false, $context);
+
+    /* Check if digest is needed */
+    if($result === false &&
+       isset($http_response_header) &&
+       strpos($http_response_header[0], '401')) {
+
+      /* Retry using digest authentication */
+      $context = $this->build_context($this->build_digest_auth_header($http_response_header,
+                                                                      $url));
+      $result = @file_get_contents($url, false, $context);
+    }
+
+    if($result === false) {
+      if(isset($http_response_header) && strpos($http_response_header[0], '401')) {
+        throw new Exception("Wrong credentials", 401);
+      }
+      throw new Exception("Connection failed", 998);
+    }
+
+    return $result;
+  }
+
+  /**
    * Sets a parameter in the camera
    *
+   * @param parameter The parameter to be set
    * @param value The value the parameter should be set to
+   * @param donotEncode Whether to URLEncode the parameter
+   * @param transport The type of thransport to use [http|https]
    *
    * @return Returns the parameter's current value as a string
    */
-  public function setDeviceParameter($parameter, $value, $donotEncode = false) {
+  public function set_axis_device_parameter($parameter,
+                                       $value,
+                                       $donotEncode = false,
+                                       $transport = 'http') {
     $result = null;
-    $context = stream_context_create(array(
-    'http' => array(
-        'header'  => sprintf("Authorization: Basic %s",
-                             base64_encode(sprintf("%s:%s",
-                                                   $this->username,
-                                                   $this->password))),
-        'timeout' => '5'
-      )
-    ));
+    $url = sprintf("%s://%s/axis-cgi/param.cgi?action=update&%s=%s",
+                   $transport,
+                   $this->ip,
+                   $parameter,
+                   ($donotEncode?$value:rawurlencode($value)));
 
-//*********************
-//STUFF NEEDED TO GET DIGEST WORKING!
-//stream_context_set_option($context, 'ssl', 'verify_host', false);
-//********************
+    $result = $this->send_request($url);
 
-    $result = @file_get_contents("http://".$this->ip."/axis-cgi/param.cgi?action=update&".$parameter."=".($donotEncode?$value:rawurlencode($value)), false, $context);
-    if($result === false) {
-      if(isset($http_response_header) && strpos($http_response_header[0], "401"))
-        throw new Exception("Wrong credentials", 1);
-      throw new Exception("Connection failed", 1);
+    /* Check if the device did not set the parameter */
+    if($result != 'OK') {
+      throw new Exception(sprintf("Did not receive OK from device (result=\"%s\"", $result), 1);
     }
-    if($result!="OK") {
-      throw new Exception("Did not receive OK from device (result=\"".$result."\")", 1);
-    }
+
     return true;
   }
 
@@ -417,35 +597,29 @@ class CapabilityManager {
    * Retrieves a parameter from the device
    *
    * @param parameter The parameter group
+   * @param transport The type of thransport to use [http|https]
    *
    * @return Returns the parameter's current value as a string
    */
-  public function get_axis_device_parameter($parameter) {
+  public function get_axis_device_parameter($parameter, $transport = 'http') {
     $result = null;
-    $context = stream_context_create(array(
-      'http' => array(
-          'header'  => sprintf("Authorization: Basic %s",
-                               base64_encode(sprintf("%s:%s",
-                                                     $this->username,
-                                                     $this->password))),
-          'timeout' => '5'
-        )
-      ));
+    $url = sprintf("%s://%s/axis-cgi/param.cgi?action=list%s",
+                   $transport,
+                   $this->ip,
+                   ($parameter ? sprintf("&group=%s", $parameter) : ''));
 
-    $result = @file_get_contents("http://".$this->ip."/axis-cgi/param.cgi?action=list".($parameter?"&group=".$parameter:""), false, $context);
+    $result = $this->send_request($url);
 
-    if(false === $result) {
-      if(isset($http_response_header) && strpos($http_response_header[0], "401")) {
-        throw new Exception("Wrong credentials", 1);
-      }
-      throw new Exception("Connection failed", 1);
-    } else if(preg_match("/^# Error:/", $result)) {
-      throw new Exception($result, 1);
+    /* Check if an error ocurred */
+    if(1 == preg_match('/^# Error:/', $result)) {
+      throw new Exception($result, 999);
     }
-    return trim(substr($result, strlen($parameter)+1));
+
+    /* Return the result excluding the group string */
+    return trim(substr($result, strlen($parameter) + 1));
   }
-  
-  
+ 
+ 
   /**
    * Enables/disables the SSH server on the device
    *
@@ -453,16 +627,16 @@ class CapabilityManager {
    *
    * @return Returns true on success and false on failure
    */
-  public function set_device_ssh($enable) {
+  public function set_axis_device_ssh($enable) {
     if($enable) {
       $enable = "yes";
     } else {
       $enable = "no";
     }
-    if($this->is_device_ssh_capable()) {
-      throw new Exception("The device is not SSH capable", 1);
+    if(!$this->is_axis_device_ssh_capable()) {
+      throw new Exception('The device is not SSH capable', 1);
     }
-    $this->set_device_parameter("Network.SSH.Enabled", $enable);
+    $this->set_axis_device_parameter('Network.SSH.Enabled', $enable);
     return true;
   }
   
@@ -471,8 +645,8 @@ class CapabilityManager {
    *
    * @return Returns true on success and false on failure
    */
-  public function enable_device_ssh() {
-    return $this->set_device_ssh(true);
+  public function enable_axis_device_ssh() {
+    return $this->set_axis_device_ssh(true);
   }
   
   /**
@@ -480,8 +654,8 @@ class CapabilityManager {
    *
    * @return Returns true on success and false on failure
    */
-  public function disable_device_ssh() {
-    return $this->set_device_ssh(false);
+  public function disable_axis_device_ssh() {
+    return $this->set_axis_device_ssh(false);
   }
   
   /**
@@ -489,14 +663,17 @@ class CapabilityManager {
    *
    * @return Returns true on success and false on failure
    */
-  public function is_device_ssh_capable() {
+  public function is_axis_device_ssh_capable() {
     try {
       $parameter = 'Network.SSH.Enabled';
-      $this->get_device_parameter($parameter);
+      $this->get_axis_device_parameter($parameter);
     } catch(Exception $e) {
-      if(preg_match("/# Error:/", $e->getMessage()))
+      if(999 != $e->getCode()) {
+        throw $e;
+      }
+      else {
         return false;
-      throw $e;
+      }
     }
     return true;
   }
@@ -506,15 +683,10 @@ class CapabilityManager {
    *
    * @return Returns true on success and false on failure
    */
-  public function is_device_ssh_enabled() {
-    try {
-      $parameter = "Network.SSH.Enabled";
-      $result = $this->get_device_parameter($parameter);
-    } catch(Exception $e) {
-      if(preg_match("/# Error:/", $e->getMessage()))
-        return false;
-      throw $e;
-    }
+  public function is_axis_device_ssh_enabled() {
+    $parameter = 'Network.SSH.Enabled';
+    $result = $this->get_axis_device_parameter($parameter);
+
     if('no' == $result)
       return false;
     return true;
@@ -525,6 +697,26 @@ class CapabilityManager {
   }
 
 }
+
+// *********** TEST **************
+$cm = null;
+$cm = new CapabilityManager('10.0.0.32', 'root', 'pass');
+try {
+  $can_ssh = $cm->is_axis_device_ssh_capable();
+  if($can_ssh) {
+    $is_enabled = $cm->is_axis_device_ssh_enabled('Network.SSH.Enabled');
+    printf("SSH enabled: %s<br />\n", ($is_enabled ? 'yes' : 'no'));
+  }
+  else {
+    printf("The device is not SSH capable<br />\n");
+  }
+  $fw_ver = $cm->get_axis_device_parameter('Properties.Firmware.Version', 'https');
+  printf("Firmware version: %s<br />\n", $fw_ver);
+} catch(Exception $e) {
+  printf("%s", $e->getMessage());
+}
+exit(0);
+// *******************************
 
 /* Get the XML from the POST data */
 $raw_xml = file_get_contents('php://input');
