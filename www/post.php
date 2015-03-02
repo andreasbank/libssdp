@@ -692,15 +692,125 @@ class CapabilityManager {
     return true;
   }
 
-  public function get_capability() {
-    
+  public function has_ir() {
+    try {
+      $this->get_axis_device_parameter('Layout.IRIlluminationEnabled');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_pir() {
+    for($i = 0; $i < 4; $i++) {
+      try {
+        $this->get_axis_device_parameter(sprintf("IOPort.%d.Input.PIR", $i));
+        return true;
+      } catch(Exception $e) {
+        /* Do nothing */
+      }
+    }
+    return false;
+  }
+
+  public function has_light_control() {
+    try {
+      $this->get_axis_device_parameter('Properties.LightControl');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_status_led() {
+    try {
+      $this->get_axis_device_parameter('StatusLED');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_ptz() {
+    try {
+      $this->get_axis_device_parameter('PTZ');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_dptz() {
+    try {
+      $this->get_axis_device_parameter('Properties.PTZ.DigitalPTZ');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_audio() {
+    try {
+      $this->get_axis_device_parameter('Properties.Audio');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_speaker() {
+    try {
+      $this->get_axis_device_parameter('AudioSource.A0.OutputGain');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_mic() {
+    try {
+      $input_type = $this->get_axis_device_parameter('AudioSource.A0.InputType');
+      if(!in_array($input_type, array( 'mic', 'internal' )) {
+        return false;
+      }
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_wlan() {
+    try {
+      $this->get_axis_device_parameter('Network.Wireless');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_local_storage() {
+    try {
+      $this->get_axis_device_parameter('Properties.LocalStorage.LocalStorage');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
+  }
+
+  public function has_sd_disk() {
+    try {
+      $this->get_axis_device_parameter('Properties.LocalStorage.SDCard');
+    } catch(Exception $e) {
+      return false;
+    }
+    return true;
   }
 
 }
 
 // *********** TEST **************
 $cm = null;
-$cm = new CapabilityManager('10.0.0.32', 'root', 'pass');
+$cm = new CapabilityManager('10.0.0.32', 'root', 'mucinO02');
 try {
   $can_ssh = $cm->is_axis_device_ssh_capable();
   if($can_ssh) {
@@ -714,6 +824,12 @@ try {
   printf("Firmware version: %s<br />\n", $fw_ver);
 } catch(Exception $e) {
   printf("%s", $e->getMessage());
+}
+if($cm->has_ir()) {
+  printf("Has support for IR illumination<br />\n");
+}
+else {
+  printf("Does not have support for IR illumination<br />\n");
 }
 exit(0);
 // *******************************
