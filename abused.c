@@ -690,7 +690,7 @@ int main(int argc, char **argv) {
   if(conf.listen_for_upnp_notif && (conf.run_as_daemon || conf.run_as_server)) {
     if(fork() != 0) {
       /* listen_for_upnp_notif went to the forked process,
-         so it set to false in parent so it doesn't run twice'*/
+         so it is set to false in parent so it doesn't run twice'*/
       conf.listen_for_upnp_notif = FALSE;
     }
     else {
@@ -947,7 +947,6 @@ int main(int argc, char **argv) {
 
         /* Check if forwarding ('-a') is enabled */
         if(results && conf.forward_enabled) {
-          // TODO: Make it not send M*SEARCH uPnP packets
           send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
         }
         /* Else just display results on console */
