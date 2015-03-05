@@ -106,6 +106,8 @@
 
 /* Uncomment the line below to enable detailed debug information */
 #define DEBUG___
+/* Uncomment the line below to also enable writing debug to a file */
+#define DEBUG_TO_FILE___
 
 #define DEBUG_COLOR_BEGIN "\x1b[0;32m"
 #define ERROR_COLOR_BEGIN "\x1b[0;31m"
@@ -578,14 +580,19 @@ int main(int argc, char **argv) {
   parse_args(argc, argv, &conf);
 
   /* If missconfigured, stop and notify the user */
-  if(conf.run_as_daemon && !(conf.run_as_server || conf.listen_for_upnp_notif || conf.scan_for_upnp_devices)) {
+  if(conf.run_as_daemon &&
+     !(conf.run_as_server ||
+       (conf.listen_for_upnp_notif && conf.forward_enabled) ||
+       conf.scan_for_upnp_devices)) {
 
-    PRINT_ERROR("Cannot start as daemon.\nUse -d in combination with -S, -a or with both.\n");
+    PRINT_ERROR("Cannot start as daemon.\nUse -d in combination with -S or -a.\n");
     exit(EXIT_FAILURE);
 
   }
   /* If run as a daemon */
   else if(conf.run_as_daemon) {
+
+    PRINT_DEBUG("Running as daemon");
 
     int fd, max_open_fds;
 
@@ -3680,9 +3687,10 @@ static int chr_count(char *haystack, char needle) {
 
 static void print_debug(FILE *std, const char *color, const char* file, int line, char *va_format, ...) {
   va_list va;
-  char *message = NULL;
+  char message[10240];
   int message_used = 0;
   char *from_pointer = va_format;
+  char header[50];
   char *to_pointer = va_format;
   int args_count = chr_count(va_format, '%');
   const char *no_memory = "Not enought memory in buffer to build debug message";
@@ -3690,13 +3698,15 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
   char c;
   int d;
 
+  /* Create a nice header for the output */
+  sprintf(header, "%s[%d][%s:%04d] ", color, (int)getpid(), file, line);
+
   if(!va_format) {
-    fprintf(stderr, "%s[%d][%s:%d] Error, va_arg input format (va_format) not set%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, DEBUG_COLOR_END);
+    fprintf(stderr, "%s[%d][%s:%d] Error, va_arg input format (va_format) not set%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, DEBUG_COLOR_END);
     return;
   }
 
   int message_length = 10240;
-  message = (char *)malloc(sizeof(char) * message_length);
   memset(message, '\0', sizeof(char) * message_length);
   message_length -= 50; // compensate for additional chars in the message
   va_start(va, va_format);
@@ -3712,8 +3722,7 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
       copy_length = to_pointer - from_pointer;
 
       if(copy_length > message_length - message_used) {
-      fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
-        free(message);
+      fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
         return;
       }
 
@@ -3727,8 +3736,7 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
       if(s) {
         copy_length = strlen(s);
         if(copy_length > message_length - message_used) {
-          fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
-          free(message);
+          fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
           return;
         }
         strncpy(message + message_used, s, copy_length);
@@ -3745,8 +3753,7 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
       c = (char)va_arg(va, int);
       copy_length = 1;
       if(copy_length > message_length - message_used) {
-        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
-        free(message);
+        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
         return;
       }
       strncpy(message + message_used, &c, copy_length);
@@ -3760,9 +3767,8 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
       sprintf(d_char, "%d", d);
       copy_length = strlen(d_char);
       if(copy_length > message_length - message_used) {
-        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", (color?color:ERROR_COLOR_BEGIN), (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
+        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
         free(d_char);
-        free(message);
         return;
       }
       strncpy(message + message_used, d_char, copy_length);
@@ -3790,9 +3796,20 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
     std = stdout;
   }
 
-  fprintf(std, "%s[%d][%s:%d] %s%s\n", color, (int)getpid(), file, line, message, DEBUG_COLOR_END);
+  #ifdef DEBUG_TO_FILE___
+  /* Write to debug file */
+  FILE *fh = fopen("debug.log", "a");
+  if(NULL == fh) {
+    fprintf(stderr, "%s[%d][%s:%d] Failed to create debug file%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, DEBUG_COLOR_END);
+  }
+  else {
+    fprintf(fh, "%s%s%s\n", header, message, DEBUG_COLOR_END);
+    fclose(fh);
+  }
+  #endif
 
-  free(message);
+  fprintf(std, "%s%s%s\n", header, message, DEBUG_COLOR_END);
+  
 }
 #endif
 
