@@ -613,11 +613,13 @@ int main(int argc, char **argv) {
 
     /* If started with init then no need to detach and do all the stuff */
     if(getppid() == 1) {
-
+      
+      PRINT_DEBUG("Started by init, skipping some daemon setup");
       goto started_with_init;
 
     }
 
+    /* Ignore signals */
     #ifdef SIGTTOU
     signal(SIGTTOU, SIG_IGN);
     #endif
@@ -640,6 +642,7 @@ int main(int argc, char **argv) {
     }
 
     #ifdef BSD
+    PRINT_DEBUG("Using BSD daemon proccess");
     setpgrp();
 
     if((fd = open("/dev/tty", O_RDWR)) >= 0) {
@@ -657,6 +660,8 @@ int main(int argc, char **argv) {
 
     }
     #else
+    PRINT_DEBUG("Using UNIX daemon proccess");
+
     /* Non-BSD UNIX systems do the above with a single call to setpgrp() */
     setpgrp();
 
@@ -666,7 +671,15 @@ int main(int argc, char **argv) {
     /*  Get new PGID (not PG-leader and not zero)
         because non-BSD systems don't allow assigning
         controlling terminals to non-PG-leader processes */
-    if(fork() != 0) {
+    pid_t pid = fork();
+    if(pid < 0) {
+
+      /* Exit the both processess */
+      exit(EXIT_FAILURE);
+
+    }
+
+    if(pid > 0) {
 
       /* Exit the parent */
       exit(EXIT_SUCCESS);
@@ -676,7 +689,8 @@ int main(int argc, char **argv) {
 
     started_with_init:
 
-    /* Close all open descriptors */
+    /* Close all possibly open descriptors */
+    PRINT_DEBUG("Closing all open descriptors");
     max_open_fds = sysconf(_SC_OPEN_MAX);
     for(fd = 0; fd < max_open_fds; fd++) {
 
@@ -690,11 +704,14 @@ int main(int argc, char **argv) {
     /* Clear filemode creation mask */
     umask(0);
 
+    PRINT_DEBUG("Completed the preparations to run as a daemon");
   }
 
-  /* If set to listen for AXIS devices notifications then
+  /* If set to listen for UPnP notifications then
      fork() and live a separate life */
-  if(conf.listen_for_upnp_notif && (conf.run_as_daemon || conf.run_as_server)) {
+  if(conf.listen_for_upnp_notif &&
+     ((conf.run_as_daemon && conf.forward_enabled) ||
+     conf.run_as_server)) {
     if(fork() != 0) {
       /* listen_for_upnp_notif went to the forked process,
          so it is set to false in parent so it doesn't run twice'*/
@@ -708,7 +725,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  /* If set to scan for AXIS devices then
+  /* If set to scan for UPnP-enabled devices then
      fork() and live a separate life */
   if(conf.scan_for_upnp_devices && (conf.run_as_daemon || conf.run_as_server)) {
     if(fork() != 0) {
