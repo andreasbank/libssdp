@@ -257,6 +257,18 @@ typedef struct ssdp_message_struct {
   struct ssdp_header_struct *headers;
 } ssdp_message_s;
 
+/* the ssdp_message_s cache that
+   acts as a buffer for sending
+   bulks of messages instead of spamming;
+   *ssdp_message should always point to
+   the last ssdp_message in the buffer */
+typedef struct ssdp_cache_struct {
+  struct ssdp_cache_struct *first;
+  ssdp_message_s *ssdp_message;
+  struct ssdp_cache_struct *next;
+  unsigned int ssdp_messages_count;
+} ssdp_cache_s;
+
 typedef struct filter_struct {
   char *header;
   char *value;
@@ -331,6 +343,8 @@ static SOCKET setup_socket(BOOL, BOOL, BOOL, char *, char *, struct sockaddr_sto
 static BOOL is_address_multicast(const char *);
 static void init_ssdp_message(ssdp_message_s *);
 static BOOL create_plain_text_message(char *, int, ssdp_message_s *, BOOL);
+static BOOL add_ssdp_message_to_cache(ssdp_cache_s **, ssdp_message_s *);
+static void free_ssdp_cache(ssdp_cache_s **);
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
@@ -385,29 +399,29 @@ static void usage() {
   printf("[A]bused is [B]anks [U]ber-[S]exy-[E]dition [D]aemon\"\n\n");
   printf("USAGE: abused [OPTIONS]\n");
   printf("OPTIONS:\n");
-  printf("\t-C <file.conf>    Configuration file to use\n");
+  //printf("\t-C <file.conf>    Configuration file to use\n");
   printf("\t-i                Interface to use, default is all\n");
   printf("\t-I                Interface IP address to use, default is a bind-all address\n");
   printf("\t-t                TTL value (routers to hop), default is 1\n");
   printf("\t-f <string>       Filter for capturing, 'grep'-like effect. Also works\n");
   printf("\t                  for -u and -U where you can specify a list of\n");
-  printf("                    comma separated filters\n");
+  printf("\t                  comma separated filters\n");
   printf("\t-M                Don't ignore UPnP M-SEARCH messages\n");
   printf("\t-S                Run as a server,\n");
   printf("\t                  listens on port 43210 and returns a\n");
-  printf("\t                  bonjour scan result (formatted list) for AXIS devices\n");
+  printf("\t                  UPnP scan result (formatted list) for AXIS devices\n");
   printf("\t                  upon receiving the string 'abused'\n");
   printf("\t-d                Run as a UNIX daemon,\n");
-  printf("\t                  only works in combination with -S\n");
+  printf("\t                  only works in combination with -S or -a\n");
   printf("\t-u                Listen for local UPnP (SSDP) notifications\n");
   printf("\t-U                Perform an active search for UPnP devices\n");
   printf("\t-a <ip>:<port>    Forward the events to the specified ip and port,\n");
   printf("\t                  also works in combination with -u.\n");
   printf("\t-R                Output unparsed raw data\n");
-  printf("\t-F                Do not try to parse the \"Location\" header to get more device info\n");
-  printf("\t-x                Convert results to XML before use or output\n");
-  printf("\t-4                Force the use of the IPv4 protocol\n");
-  printf("\t-6                Force the use of the IPv6 protocol\n");
+  printf("\t-F                Do not try to parse the \"Location\" header and fetch device info\n");
+  printf("\t-x                Convert results to XML before sending or outputing\n");
+  //printf("\t-4                Force the use of the IPv4 protocol\n");
+  //printf("\t-6                Force the use of the IPv6 protocol\n");
   printf("\t-q                Be quiet!\n");
   printf("\t-T                The time to wait for a device to answer a query\n");
   printf("\t-L                Enable multicast loopback traffic\n");
@@ -785,10 +799,17 @@ int main(int argc, char **argv) {
       PRINT_DEBUG("loop: ready to receive");
       recvLen = recvfrom(notif_server_sock, notif_string, NOTIF_RECV_BUFFER, 0,
                         (struct sockaddr *) &notif_client_addr, (socklen_t *)&size);
-      if(recvLen < 0) {
-        free_stuff();
-        PRINT_ERROR("recvfrom(): Failed to receive any data");
-        exit(EXIT_FAILURE);
+
+      /* If in gather mode */
+      if(conf.gather && conf.forward_enabled) {
+
+        /* If timeout reached then go through the 
+          ssdp_cache list and see if anything needs
+          to be sent */
+        if(recvLen < 0) {
+          continue;
+        }
+
       }
       #else
       // DEV/TEST STUFF, DELETE AFTERWARDS
@@ -844,7 +865,6 @@ int main(int argc, char **argv) {
       }
 
       // TODO: Make it recognize both AND and OR (search for ; inside a ,)!!!
-      // TODO: add "request" string filtering
 
       /* If -M set check if it is a M-SEARCH message
          and drop it */
@@ -953,9 +973,6 @@ int main(int argc, char **argv) {
         if(conf.gather) {
           PRINT_DEBUG("Gathering mode is not supported yet!");
         }
-        else if(conf.gather_silent) {
-          PRINT_DEBUG("Silent gathering mode is not supported yet!");
-        }
         else if(results && conf.raw_output) {
           snprintf(results, strlen(notif_string), "\n\n%s\n\n", notif_string);
         }
@@ -1030,7 +1047,7 @@ int main(int argc, char **argv) {
     strcat(request, "ST:urn:axis-com:service:BasicService:1\r\n");
     //strcat(request, "ST:urn:schemas-upnp-org:device:SwiftServer:1\r\n");
     strcat(request, "Man:\"ssdp:discover\"\r\n");
-    strcat(request, "MX:3\r\n\r\n");
+    strcat(request, "MX:0\r\n\r\n");
 
     BOOL drop_message;
 
@@ -2292,17 +2309,20 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
         all_bytes += bytes;
       } while(bytes > 0);
       PRINT_DEBUG("received %d bytes", all_bytes);
+      PRINT_DEBUG("%s", response);
       PRINT_DEBUG("closing socket");
       close(resolve_sock);
 
       /* Extract the usefull info */
-      char *friendlyName = (char *)malloc(sizeof(char) * 128);
-      char *manufacturer = (char *)malloc(sizeof(char) * 128);
-      char *manufacturerURL = (char *)malloc(sizeof(char) * 128);
-      char *modelName = (char *)malloc(sizeof(char) * 128);
-      char *modelNumber = (char *)malloc(sizeof(char) * 128);
-      char *modelURL = (char *)malloc(sizeof(char) * 128);
+      char serialNumber[128];
+      char friendlyName[128];
+      char manufacturer[128];
+      char manufacturerURL[128];
+      char modelName[128];
+      char modelNumber[128];
+      char modelURL[128];
       char *tmp_pointer = NULL;
+      memset(serialNumber, '\0', 128);
       memset(friendlyName, '\0', 128);
       memset(manufacturer, '\0', 128);
       memset(manufacturerURL, '\0', 128);
@@ -2311,6 +2331,11 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
       memset(modelURL, '\0', 128);
 
       /* Newline-separated info */
+      tmp_pointer = strstr(response, "<serialNumber>");
+      if(tmp_pointer) {
+        strncpy(serialNumber, tmp_pointer + 14, (int)(strstr(response, "</serialNumber>") - (tmp_pointer + 14)));
+        bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Serial number: %s\n", serialNumber);
+      }
       tmp_pointer = strstr(response, "<friendlyName>");
       if(tmp_pointer) {
         strncpy(friendlyName, tmp_pointer + 14, (int)(strstr(response, "</friendlyName>") - (tmp_pointer + 14)));
@@ -2342,13 +2367,6 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
         bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Model URL: %s\n", modelURL);
       }
 
-      /* I AM FREEEEE!!!! */
-      free(friendlyName);
-      free(manufacturer);
-      free(manufacturerURL);
-      free(modelName);
-      free(modelNumber);
-      free(modelURL);
     }
 
     free(ip);
@@ -2397,6 +2415,7 @@ static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hid
   if(fetch_info) {
     char *fetched_string = (char *)malloc(sizeof(char) * 2048);
     const char *tags[] = {
+      "serialNumber",
       "friendlyName",
       "manufacturer",
       "manufacturerURL",
@@ -2405,6 +2424,7 @@ static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hid
       "modelURL"
     };
     const char *fields[] = {
+      "Serial number",
       "Friendly name",
       "Manufacturer",
       "Manufacturer URL",
@@ -3671,6 +3691,111 @@ static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_messa
   return TRUE;
 }
 
+/**
+ * Adds a ssdp message to a ssdp messages list. If the list hasn't been
+ * initialized then it is initialized first.
+ *
+ * @param **ssdp_cache_pointer The address of a pointer to a ssdp cache list
+ * @param *ssdp_message The ssdp message to be appended to the cache list
+ *
+ * @return TRUE on success, exits on error
+ */
+static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_message_s *ssdp_message) {
+  ssdp_cache_s *ssdp_cache = NULL;
+
+  /* Sanity check */
+  if(NULL == ssdp_cache_pointer) {
+    PRINT_ERROR("No ssdp cache list given");
+    free_stuff();
+    exit(EXIT_FAILURE);
+  }
+
+  /* Initialize the list if needed */
+  if(NULL == *ssdp_cache_pointer) {
+    *ssdp_cache_pointer = (ssdp_cache_s *) malloc(sizeof(ssdp_cache_s));
+    if(NULL == *ssdp_cache_pointer) {
+      PRINT_ERROR("Failed to allocate memory for the ssdp cache list");
+      free_stuff();
+      exit(EXIT_FAILURE);
+    }
+    memset(*ssdp_cache_pointer, 0, sizeof(ssdp_cache_s));
+  }
+
+  /* Make life easier */
+  ssdp_cache = *ssdp_cache_pointer;
+
+  /* Make sure we are at the end of the linked list
+     and move to last if needed*/
+  if(NULL != ssdp_cache->next) {
+    PRINT_ERROR("Wrong pointer to the SSDP cache has been provided");
+    while(NULL != ssdp_cache->next) {
+      PRINT_DEBUG("Moving to the next element in the cache list");
+      ssdp_cache = ssdp_cache->next;
+    }
+  }
+
+  /* If working on an preexisting cache list
+     then create a new element in the list,
+     set the 'first' field to the first element
+     and move to the new element */
+  if(NULL != ssdp_cache->ssdp_message) {
+    ssdp_cache->next = (ssdp_cache_s *) malloc(sizeof(ssdp_cache_s));
+    ssdp_cache->next->first = ssdp_cache->first;
+    ssdp_cache = ssdp_cache->next;
+  }
+
+  /* Point to the ssdp_message from the element
+     and increase the counter */
+  ssdp_cache->ssdp_messages_count++;
+  ssdp_cache->ssdp_message = ssdp_message;
+
+  return TRUE;
+}
+
+/**
+ * Frees all the elements in the ssdp messages list
+ *
+ * @param **ssdp_cache_pointer The ssdp cache list to be cleared
+ */
+static void free_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer) {
+  ssdp_cache_s *ssdp_cache = NULL;
+  ssdp_cache_s *next_cache = NULL;
+
+  /* Sanity check */
+  if(NULL == ssdp_cache_pointer) {
+    PRINT_ERROR("No ssdp cache list given");
+    free_stuff();
+    exit(EXIT_FAILURE);
+  }
+
+  /* If there is any elements in the list */
+  if(NULL != *ssdp_cache_pointer) {
+
+    /* Make life easier */
+    ssdp_cache = *ssdp_cache_pointer;
+
+    /* Start from the first element */
+    ssdp_cache = ssdp_cache->first;
+
+    /* Loop through elements and free them */
+    do {
+
+      /* Free the ssdp_message */
+      if(NULL != ssdp_cache->ssdp_message) {
+        free_ssdp_message(ssdp_cache->ssdp_message);
+      }
+
+      /* Point to the next element in the list */
+      next_cache = ssdp_cache->next;
+      free(ssdp_cache);
+      ssdp_cache = next_cache;
+
+    } while(NULL != ssdp_cache);
+
+    /* Finally set the list to NULL */
+    *ssdp_cache_pointer = NULL;
+  }
+}
 #ifdef DEBUG___
 /**
 * Counts the number of times needle occurs in haystack
