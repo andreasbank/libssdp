@@ -158,6 +158,7 @@
 
 class AbusedResult {
   private $raw_xml;
+  private $serial_number;
   private $mac;
   private $ip;
   private $request_protocol;
@@ -168,8 +169,9 @@ class AbusedResult {
   private $upnp_headers_size;
   private $upnp_headers;
 
-  public function __construct($raw_xml, $mac, $ip, $request_protocol, $request, $datetime, $custom_fields_size, $custom_fields, $upnp_headers_size, $upnp_headers) {
+  public function __construct($raw_xml, $serial_number, $mac, $ip, $request_protocol, $request, $datetime, $custom_fields_size, $custom_fields, $upnp_headers_size, $upnp_headers) {
     $this->raw_xml = $raw_xml;
+    $this->serial_number = $serial_number;
     $this->mac = $mac;
     $this->ip = $ip;
     $this->request_protocol = $request_protocol;
@@ -808,30 +810,30 @@ class CapabilityManager {
 
 }
 
-// *********** TEST **************
-$cm = null;
-$cm = new CapabilityManager('10.0.0.32', 'root', 'mucinO02');
-try {
-  $can_ssh = $cm->is_axis_device_ssh_capable();
-  if($can_ssh) {
-    $is_enabled = $cm->is_axis_device_ssh_enabled('Network.SSH.Enabled');
-    printf("SSH enabled: %s<br />\n", ($is_enabled ? 'yes' : 'no'));
-  }
-  else {
-    printf("The device is not SSH capable<br />\n");
-  }
-  $fw_ver = $cm->get_axis_device_parameter('Properties.Firmware.Version', 'https');
-  printf("Firmware version: %s<br />\n", $fw_ver);
-} catch(Exception $e) {
-  printf("%s", $e->getMessage());
-}
-if($cm->has_ir()) {
-  printf("Has support for IR illumination<br />\n");
-}
-else {
-  printf("Does not have support for IR illumination<br />\n");
-}
-exit(0);
+// *********** CapabilityManager TEST **************
+//$cm = null;
+//$cm = new CapabilityManager('10.0.0.32', 'root', 'mucinO02');
+//try {
+//  $can_ssh = $cm->is_axis_device_ssh_capable();
+//  if($can_ssh) {
+//    $is_enabled = $cm->is_axis_device_ssh_enabled('Network.SSH.Enabled');
+//    printf("SSH enabled: %s<br />\n", ($is_enabled ? 'yes' : 'no'));
+//  }
+//  else {
+//    printf("The device is not SSH capable<br />\n");
+//  }
+//  $fw_ver = $cm->get_axis_device_parameter('Properties.Firmware.Version', 'https');
+//  printf("Firmware version: %s<br />\n", $fw_ver);
+//} catch(Exception $e) {
+//  printf("%s", $e->getMessage());
+//}
+//if($cm->has_ir()) {
+//  printf("Has support for IR illumination<br />\n");
+//}
+//else {
+//  printf("Does not have support for IR illumination<br />\n");
+//}
+//exit(0);
 // *******************************
 
 /* Get the XML from the POST data */
@@ -863,8 +865,18 @@ if ($h_sql->connect_errno) {
 /* Insert or update for each AbusedResult we have received and parsed */
 foreach($abused_results as $abused_result) {
   try {
-    $id = $abused_result->get_mac();
     $mac = $abused_result->get_mac();
+    /* Igore messages that dont have a mac
+       (devices that aren't on the local net)*/
+    if(empty($mac)) {
+      continue;
+    }
+    /* If ID is not a MAC address then use the
+       MAC address as ID (for AXIS compatibility)*/
+    $id = $abused_result->get_serial_number();
+    if(!$abused_result->is_mac_address(id)) {
+      $id = str_replace(':', '', $mac);
+    }
     $ipv4 = $abused_result->get_ip();
     $ipv6 = NULL;
     if(!AbusedResult::is_ipv4_address($ipv4)) {
