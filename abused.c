@@ -345,12 +345,223 @@ static void init_ssdp_message(ssdp_message_s *);
 static BOOL create_plain_text_message(char *, int, ssdp_message_s *, BOOL);
 static BOOL add_ssdp_message_to_cache(ssdp_cache_s **, ssdp_message_s *);
 static void free_ssdp_cache(ssdp_cache_s **);
+static void daemonize();
+static BOOL filter(ssdp_message_s *, filters_factory_s *);
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
 #endif
 
+static void daemonize() {
 
+  PRINT_DEBUG("Running as daemon");
+
+  int fd, max_open_fds;
+
+  /**
+  * Daemon preparation steps:
+  *
+  * 1. Set up rules for ignoring all (tty related)
+  *    signals that can stop the process
+  *
+  * 2. Fork to child and exit parent to free
+  *    the terminal and the starting process
+  *
+  * 3. Change PGID to ignore parent stop signals
+  *    and disassociate from controlling terminal
+  *    (two solutions, normal and BSD)
+  *
+  */
+
+  /* If started with init then no need to detach and do all the stuff */
+  if(getppid() == 1) {
+    
+    PRINT_DEBUG("Started by init, skipping some daemon setup");
+    goto started_with_init;
+
+  }
+
+  /* Ignore signals */
+  #ifdef SIGTTOU
+  signal(SIGTTOU, SIG_IGN);
+  #endif
+
+  #ifdef SIGTTIN
+  signal(SIGTTIN, SIG_IGN);
+  #endif
+
+  #ifdef SIGTSTP
+  signal(SIGTSTP, SIG_IGN);
+  #endif
+
+  /*  Get new PGID (not PG-leader and not zero) and free parent process
+  so terminal can be used/closed */
+  if(fork() != 0) {
+
+    /* Exit parent */
+    exit(EXIT_SUCCESS);
+
+  }
+
+  #ifdef BSD
+  PRINT_DEBUG("Using BSD daemon proccess");
+  setpgrp();
+
+  if((fd = open("/dev/tty", O_RDWR)) >= 0) {
+
+    /* Get rid of the controlling terminal */
+    ioctl(fd, TIOCNOTTY, 0);
+    close(fd);
+
+  }
+  else {
+
+    PRINT_ERROR("Could not dissassociate from controlling terminal: openning /dev/tty failed.");
+    free_stuff();
+    exit(EXIT_FAILURE);
+
+  }
+  #else
+  PRINT_DEBUG("Using UNIX daemon proccess");
+
+  /* Non-BSD UNIX systems do the above with a single call to setpgrp() */
+  setpgrp();
+
+  /* Ignore death if parent dies */
+  signal(SIGHUP,SIG_IGN);
+
+  /*  Get new PGID (not PG-leader and not zero)
+      because non-BSD systems don't allow assigning
+      controlling terminals to non-PG-leader processes */
+  pid_t pid = fork();
+  if(pid < 0) {
+
+    /* Exit the both processess */
+    exit(EXIT_FAILURE);
+
+  }
+
+  if(pid > 0) {
+
+    /* Exit the parent */
+    exit(EXIT_SUCCESS);
+
+  }
+  #endif
+
+  started_with_init:
+
+  /* Close all possibly open descriptors */
+  PRINT_DEBUG("Closing all open descriptors");
+  max_open_fds = sysconf(_SC_OPEN_MAX);
+  for(fd = 0; fd < max_open_fds; fd++) {
+
+    close(fd);
+
+  }
+
+  /* Change cwd in case it was on a mounted system */
+  chdir("/");
+
+  /* Clear filemode creation mask */
+  umask(0);
+
+  PRINT_DEBUG("Now running in daemon mode");
+
+}
+
+/**
+ * Check if the SSDP message needs to be filtered-out (dropped)
+ *
+ * @param ssdp_message The SSDP message to be checked
+ * @param filters_factory The filters to check against
+ */
+static BOOL filter(ssdp_message_s *ssdp_message, filters_factory_s *filters_factory) {
+
+  PRINT_DEBUG("traversing filters");
+  BOOL drop_message = FALSE;
+  int fc;
+  for(fc = 0; fc < filters_factory->filters_count; fc++) {
+
+    BOOL filter_found = FALSE;
+    char *filter_value = filters_factory->filters[fc].value;
+    char *filter_header = filters_factory->filters[fc].header;
+
+    /* If IP filtering has been set, check values */
+    if(strcmp(filter_header, "ip") == 0) {
+      filter_found = TRUE;
+      if(strstr(ssdp_message->ip, filter_value) == NULL) {
+        PRINT_DEBUG("IP filter mismatch, dropping message");
+        drop_message = TRUE;
+        break;
+      }
+    }
+
+    /* If mac filtering has been set, check values */
+    if(strcmp(filter_header, "mac") == 0) {
+      filter_found = TRUE;
+      if(strstr(ssdp_message->mac, filter_value) == NULL) {
+        PRINT_DEBUG("MAC filter mismatch, dropping message");
+        drop_message = TRUE;
+        break;
+      }
+    }
+
+    /* If protocol filtering has been set, check values */
+    if(strcmp(filter_header, "protocol") == 0) {
+      filter_found = TRUE;
+      if(strstr(ssdp_message->protocol, filter_value) == NULL) {
+        PRINT_DEBUG("Protocol filter mismatch, dropping message");
+        drop_message = TRUE;
+        break;
+      }
+    }
+
+    /* If request filtering has been set, check values */
+    if(strcmp(filter_header, "request") == 0) {
+      filter_found = TRUE;
+      if(strstr(ssdp_message->request, filter_value) == NULL) {
+        PRINT_DEBUG("Request filter mismatch, dropping message");
+        drop_message = TRUE;
+        break;
+      }
+    }
+
+    ssdp_header_s *ssdp_headers = ssdp_message->headers;
+
+    /* If any other filter has been set try to match it
+       with a header type and then check values */
+    while(ssdp_headers) {
+
+      /* See if the headet type matches the filter type
+         and if so check the values */
+      char const *ssdp_header_string = get_header_string(ssdp_headers->type, ssdp_headers);
+      if(strcmp(ssdp_header_string, filter_header) == 0) {
+        filter_found = TRUE;
+
+        /* Then see if the values match */
+        if(strstr(ssdp_headers->contents, filter_value) == NULL) {
+          PRINT_DEBUG("Header (%s) filter mismatch, marked for dropping", filter_header);
+          drop_message = TRUE;
+          break;
+        }
+      }
+      ssdp_headers = ssdp_headers->next;
+    }
+
+    /* If no comparison (match or missmatch) was made then drop the message */
+    if(!filter_found) {
+      PRINT_DEBUG("Filter type not found, marked for dropping");
+      drop_message = TRUE;
+    }
+
+    if(drop_message) {
+      break;
+    }
+  }
+
+  return drop_message;
+}
 
 static void free_stuff() {
 
@@ -605,120 +816,7 @@ int main(int argc, char **argv) {
   }
   /* If run as a daemon */
   else if(conf.run_as_daemon) {
-
-    PRINT_DEBUG("Running as daemon");
-
-    int fd, max_open_fds;
-
-    /**
-    * Daemon preparation steps:
-    *
-    * 1. Set up rules for ignoring all (tty related)
-    *    signals that can stop the process
-    *
-    * 2. Fork to child and exit parent to free
-    *    the terminal and the starting process
-    *
-    * 3. Change PGID to ignore parent stop signals
-    *    and disassociate from controlling terminal
-    *    (two solutions, normal and BSD)
-    *
-    */
-
-    /* If started with init then no need to detach and do all the stuff */
-    if(getppid() == 1) {
-      
-      PRINT_DEBUG("Started by init, skipping some daemon setup");
-      goto started_with_init;
-
-    }
-
-    /* Ignore signals */
-    #ifdef SIGTTOU
-    signal(SIGTTOU, SIG_IGN);
-    #endif
-
-    #ifdef SIGTTIN
-    signal(SIGTTIN, SIG_IGN);
-    #endif
-
-    #ifdef SIGTSTP
-    signal(SIGTSTP, SIG_IGN);
-    #endif
-
-    /*  Get new PGID (not PG-leader and not zero) and free parent process
-    so terminal can be used/closed */
-    if(fork() != 0) {
-
-      /* Exit parent */
-      exit(EXIT_SUCCESS);
-
-    }
-
-    #ifdef BSD
-    PRINT_DEBUG("Using BSD daemon proccess");
-    setpgrp();
-
-    if((fd = open("/dev/tty", O_RDWR)) >= 0) {
-
-      /* Get rid of the controlling terminal */
-      ioctl(fd, TIOCNOTTY, 0);
-      close(fd);
-
-    }
-    else {
-
-      PRINT_ERROR("Could not dissassociate from controlling terminal: openning /dev/tty failed.");
-      free_stuff();
-      exit(EXIT_FAILURE);
-
-    }
-    #else
-    PRINT_DEBUG("Using UNIX daemon proccess");
-
-    /* Non-BSD UNIX systems do the above with a single call to setpgrp() */
-    setpgrp();
-
-    /* Ignore death if parent dies */
-    signal(SIGHUP,SIG_IGN);
-
-    /*  Get new PGID (not PG-leader and not zero)
-        because non-BSD systems don't allow assigning
-        controlling terminals to non-PG-leader processes */
-    pid_t pid = fork();
-    if(pid < 0) {
-
-      /* Exit the both processess */
-      exit(EXIT_FAILURE);
-
-    }
-
-    if(pid > 0) {
-
-      /* Exit the parent */
-      exit(EXIT_SUCCESS);
-
-    }
-    #endif
-
-    started_with_init:
-
-    /* Close all possibly open descriptors */
-    PRINT_DEBUG("Closing all open descriptors");
-    max_open_fds = sysconf(_SC_OPEN_MAX);
-    for(fd = 0; fd < max_open_fds; fd++) {
-
-      close(fd);
-
-    }
-
-    /* Change cwd in case it was on a mounted system */
-    chdir("/");
-
-    /* Clear filemode creation mask */
-    umask(0);
-
-    PRINT_DEBUG("Completed the preparations to run as a daemon");
+    daemonize();
   }
 
   /* If set to listen for UPnP notifications then
@@ -876,86 +974,7 @@ int main(int argc, char **argv) {
 
       /* Check if notification should be used (if any filters have been set) */
       if(filters_factory != NULL) {
-        PRINT_DEBUG("traversing filters");
-        int fc;
-        for(fc = 0; fc < filters_factory->filters_count; fc++) {
-
-          BOOL filter_found = FALSE;
-          char *filter_value = filters_factory->filters[fc].value;
-          char *filter_header = filters_factory->filters[fc].header;
-
-          /* If IP filtering has been set, check values */
-          if(strcmp(filter_header, "ip") == 0) {
-            filter_found = TRUE;
-            if(strstr(ssdp_message.ip, filter_value) == NULL) {
-              PRINT_DEBUG("IP filter mismatch, dropping message");
-              drop_message = TRUE;
-              break;
-            }
-          }
-
-          /* If mac filtering has been set, check values */
-          if(strcmp(filter_header, "mac") == 0) {
-            filter_found = TRUE;
-            if(strstr(ssdp_message.mac, filter_value) == NULL) {
-              PRINT_DEBUG("MAC filter mismatch, dropping message");
-              drop_message = TRUE;
-              break;
-            }
-          }
-
-          /* If protocol filtering has been set, check values */
-          if(strcmp(filter_header, "protocol") == 0) {
-            filter_found = TRUE;
-            if(strstr(ssdp_message.protocol, filter_value) == NULL) {
-              PRINT_DEBUG("Protocol filter mismatch, dropping message");
-              drop_message = TRUE;
-              break;
-            }
-          }
-
-          /* If request filtering has been set, check values */
-          if(strcmp(filter_header, "request") == 0) {
-            filter_found = TRUE;
-            if(strstr(ssdp_message.request, filter_value) == NULL) {
-              PRINT_DEBUG("Request filter mismatch, dropping message");
-              drop_message = TRUE;
-              break;
-            }
-          }
-
-          ssdp_header_s *ssdp_headers = ssdp_message.headers;
-
-          /* If any other filter has been set try to match it
-             with a header type and then check values */
-          while(ssdp_headers) {
-
-            /* See if the headet type matches the filter type
-               and if so check the values */
-            char const *ssdp_header_string = get_header_string(ssdp_headers->type, ssdp_headers);
-            if(strcmp(ssdp_header_string, filter_header) == 0) {
-              filter_found = TRUE;
-
-              /* Then see if the values match */
-              if(strstr(ssdp_headers->contents, filter_value) == NULL) {
-                PRINT_DEBUG("Header (%s) filter mismatch, marked for dropping", filter_header);
-                drop_message = TRUE;
-                break;
-              }
-            }
-            ssdp_headers = ssdp_headers->next;
-          }
-
-          /* If no comparison (match or missmatch) was made then drop the message */
-          if(!filter_found) {
-            PRINT_DEBUG("Filter type not found, marked for dropping");
-            drop_message = TRUE;
-          }
-
-          if(drop_message) {
-            break;
-          }
-        }
+        drop_message = filter(&ssdp_message, filters_factory);
       }
 
       if(filters_factory == NULL || !drop_message) {
