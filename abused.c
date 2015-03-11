@@ -314,6 +314,7 @@ static filters_factory_s   *filters_factory = NULL;      /* The structure contin
 static configuration_s      conf;                         /* The program configuration */
 
 /* Functions */
+static void free_stuff();
 static void set_default_configuration(configuration_s *);
 static void parse_args(int, char * const *, configuration_s *);
 static void exitSig(int);
