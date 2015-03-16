@@ -980,49 +980,31 @@ int main(int argc, char **argv) {
 
       if(filters_factory == NULL || !drop_message) {
 
-        char *results = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
-
-        if(!results) {
-          PRINT_ERROR("Could not allocate buffer memory");
-          free_stuff();
-          exit(EXIT_FAILURE);
-        }
+        char results[XML_BUFFER_SIZE];
         memset(results, '\0', sizeof(char) * XML_BUFFER_SIZE);
 
         /* Handle the messages */
         if(conf.gather) {
           PRINT_DEBUG("Gathering mode is not supported yet!");
         }
-        else if(results && conf.raw_output) {
+        else if(conf.raw_output) {
           snprintf(results, strlen(notif_string), "\n\n%s\n\n", notif_string);
         }
-        else if(results && conf.xml_output) {
+        else if(conf.xml_output) {
           to_xml(&ssdp_message, conf.fetch_info, FALSE, results, XML_BUFFER_SIZE);
         }
-        else if(results && !create_plain_text_message(results, XML_BUFFER_SIZE, &ssdp_message, conf.fetch_info)) {
+        else if(!create_plain_text_message(results, XML_BUFFER_SIZE, &ssdp_message, conf.fetch_info)) {
             PRINT_ERROR("Failed creating plain-text message");
-            free(results);
-            results = NULL;
             continue;
         }
 
         /* Check if forwarding ('-a') is enabled */
-        if(results && conf.forward_enabled) {
+        if(conf.forward_enabled) {
           send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
         }
         /* Else just display results on console */
-        else if(results) {
-          printf("\n\n%s", results);
-        }
         else {
-          PRINT_DEBUG("results is NULL");
-        }
-
-	
-        if(results) {
-          PRINT_DEBUG("freeing results");
-          free(results);
-          results = NULL;
+          printf("\n\n%s", results);
         }
 
       }

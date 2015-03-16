@@ -1,15 +1,17 @@
 <?php
 /*
   Configure MySQL with:
-  CREATE DATABASE 'abused';
+  CREATE DATABASE `abused`;
 
   CREATE TABLE `capabilities` (`id` INT NOT NULL AUTO_INCREMENT,
                                `name` VARCHAR(255) NOT NULL UNIQUE,
+                               `group` VARCHAR(255) NOT NULL UNIQUE,
                                PRIMARY KEY(`id`)) ENGINE=InnoDB;
 
   CREATE TABLE `model_firmware` (`id` INT NOT NULL AUTO_INCREMENT,
                                  `model_name` VARCHAR(255) NOT NULL,
                                  `firmware_version` VARCHAR(255) NOT NULL,
+                                 `last_updated` DATETIME,
                                  UNIQUE KEY(`model_name`, `firmware_version`),
                                  PRIMARY KEY(`id`)) ENGINE=InnoDB;
 
@@ -18,7 +20,7 @@
                                             FOREIGN KEY (`model_firmware_id`)
                                               REFERENCES `model_firmware`(`id`),
                                             FOREIGN KEY (`capability_id`)
-                                              REFERENCES `capability`(`id`),
+                                              REFERENCES `capabilities`(`id`),
                                             PRIMARY KEY(`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
  
   CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL,
@@ -34,13 +36,13 @@
 
   CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL,
                                 `locked` TINYINT(1) DEFAULT 1,
-                                `locked_date` DATETIME NOT NULL,
                                 `locked_by` VARCHAR(255) NOT NULL,
+                                `locked_date` DATETIME NOT NULL,
                                 FOREIGN KEY (`device_id`)
                                   REFERENCES `devices`(`id`)
                                   ON DELETE CASCADE
                                   ON UPDATE CASCADE,
-                                PRIMARY KEY (`device_id`, `state_date`)) ENGINE=InnoDB;
+                                PRIMARY KEY (`device_id`, `locked_date`)) ENGINE=InnoDB;
 
   CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
 
@@ -96,7 +98,7 @@
         WHERE `model_name`=v_model_name
           AND `firmware_version`=v_firmware_version;
     END IF;
-  END
+  END//
   DELIMITER ;
 
   DELIMITER //
@@ -812,11 +814,11 @@ class CapabilityManager {
 
 // *********** CapabilityManager TEST **************
 //$cm = null;
-//$cm = new CapabilityManager('10.0.0.32', 'root', 'mucinO02');
+//$cm = new CapabilityManager('10.0.0.32', 'root', 'pass');
 //try {
 //  $can_ssh = $cm->is_axis_device_ssh_capable();
 //  if($can_ssh) {
-//    $is_enabled = $cm->is_axis_device_ssh_enabled('Network.SSH.Enabled');
+//    $is_enabled = $cm->is_axis_device_ssh_enabled();
 //    printf("SSH enabled: %s<br />\n", ($is_enabled ? 'yes' : 'no'));
 //  }
 //  else {
