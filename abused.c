@@ -353,6 +353,9 @@ static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
 #endif
 
+/**
+ * Prepares the process to run as a daemon
+ */
 static void daemonize() {
 
   PRINT_DEBUG("Running as daemon");
@@ -860,6 +863,9 @@ int main(int argc, char **argv) {
   if(conf.listen_for_upnp_notif) {
     PRINT_DEBUG("listen_for_upnp_notif start");
 
+    /* Create a list for keeping/caching SSDP messages */
+    ssdp_cache_s ssdp_cache;
+
     /* Init buffer for receiving messages */
     char notif_string[NOTIF_RECV_BUFFER];
 
@@ -896,16 +902,27 @@ int main(int argc, char **argv) {
       #ifndef DEBUG_MSG___
       int size = sizeof(notif_client_addr);
       PRINT_DEBUG("loop: ready to receive");
+
+      // TODO: If gather mode then set timeout to 10 sec
+      if(conf.gather) {
+        if(!set_receive_timeout(notif_server_sock, 10)) {
+          PRINT_ERROR("Failed to set the receive timeout");
+          free_stuff();
+          exit(EXIT_FAILURE);
+        }
+      }
+
       recvLen = recvfrom(notif_server_sock, notif_string, NOTIF_RECV_BUFFER, 0,
                         (struct sockaddr *) &notif_client_addr, (socklen_t *)&size);
 
       /* If in gather mode */
-      if(conf.gather && conf.forward_enabled) {
+      if(conf.gather) {
 
         /* If timeout reached then go through the 
           ssdp_cache list and see if anything needs
           to be sent */
         if(recvLen < 0) {
+          // TODO: flush(send) list
           continue;
         }
 
@@ -935,8 +952,7 @@ int main(int argc, char **argv) {
       init_ssdp_message(&ssdp_message);
 
       /* Retrieve IP address from socket */
-      char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-      memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
+      char tmp_ip[IPv6_STR_MAX_SIZE];
       if(!inet_ntop(notif_client_addr.ss_family,
                     (notif_client_addr.ss_family == AF_INET ?
                       (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr :
@@ -945,7 +961,6 @@ int main(int argc, char **argv) {
                     IPv6_STR_MAX_SIZE)) {
         PRINT_ERROR("Erroneous IP from sender");
         free_ssdp_message(&ssdp_message);
-        free(tmp_ip);
         continue;
       }
 
@@ -955,7 +970,6 @@ int main(int argc, char **argv) {
 
       /* Build the ssdp message struct */
       BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
-      free(tmp_ip);
       free(tmp_mac);
 
       if(!build_success) {
@@ -980,51 +994,33 @@ int main(int argc, char **argv) {
 
       if(filters_factory == NULL || !drop_message) {
 
-        char *results = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
-
-        if(!results) {
-          PRINT_ERROR("Could not allocate buffer memory");
-          free_stuff();
-          exit(EXIT_FAILURE);
-        }
-        memset(results, '\0', sizeof(char) * XML_BUFFER_SIZE);
+        char results[XML_BUFFER_SIZE];
 
         /* Handle the messages */
         if(conf.gather) {
           PRINT_DEBUG("Gathering mode is not supported yet!");
+          //add_ssdp_message_to_cache(ssdp_message, &ssdp_cache);
         }
-        else if(results && conf.raw_output) {
+        else if(conf.raw_output) {
           snprintf(results, strlen(notif_string), "\n\n%s\n\n", notif_string);
         }
-        else if(results && conf.xml_output) {
+        else if(conf.xml_output) {
           to_xml(&ssdp_message, conf.fetch_info, FALSE, results, XML_BUFFER_SIZE);
         }
-        else if(results && !create_plain_text_message(results, XML_BUFFER_SIZE, &ssdp_message, conf.fetch_info)) {
+        else if(!create_plain_text_message(results, XML_BUFFER_SIZE, &ssdp_message, conf.fetch_info)) {
             PRINT_ERROR("Failed creating plain-text message");
-            free(results);
-            results = NULL;
             continue;
         }
 
         /* Check if forwarding ('-a') is enabled */
-        if(results && conf.forward_enabled) {
+        if(conf.forward_enabled) {
           send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
         }
         /* Else just display results on console */
-        else if(results) {
+        else {
           printf("\n\n%s", results);
         }
-        else {
-          PRINT_DEBUG("results is NULL");
-        }
-
 	
-        if(results) {
-          PRINT_DEBUG("freeing results");
-          free(results);
-          results = NULL;
-        }
-
       }
 
       PRINT_DEBUG("loop done");
@@ -1615,22 +1611,12 @@ static int send_stuff(const char *url, const char *data, const struct sockaddr_s
     return 0;
   }
 
-  struct timeval stimeout, rtimeout;
-  stimeout.tv_sec = 1;
-  stimeout.tv_usec = 0;
-  rtimeout.tv_sec = timeout;
-  rtimeout.tv_usec = 0;
-
-  PRINT_DEBUG("send_stuff(): setting socket receive-timeout to %d", (int)rtimeout.tv_sec);
-  if (setsockopt(send_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout, sizeof(rtimeout)) < 0) {
-    PRINT_ERROR("send_stuff(): setsockopt() SO_RCVTIMEO: %d, %s", errno, strerror(errno));
+  if(!set_receive_timeout(send_sock, timeout)) {
     close(send_sock);
     return 0;
   }
 
-  PRINT_DEBUG("setting socket send-timeout to %d", (int)stimeout.tv_sec);
-  if(setsockopt (send_sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&stimeout, sizeof(stimeout)) < 0) {
-    PRINT_ERROR("send_stuff(); setsockopt() SO_SNDTIMEO, %d, %s", errno, strerror(errno));
+  if(!set_send_timeout(send_sock, 1)) {
     close(send_sock);
     return 0;
   }
@@ -1880,62 +1866,6 @@ static void parse_filters(char *raw_filter, filters_factory_s **filters_factory,
     }
   }
 }
-
-/**
-* Get the remote IP address from a given sock
-*
-* @param sock The socket to extract the IP address from
-*
-* @return char The IP address as a string
-*/
-/*static char *get_ip_address_from_socket(const SOCKET sock) {
-// maybe needs a PF_INET type of socket?
-  struct ifreq ifr[10];
-  struct ifconf ifc;
-  memset(ifr, 0, sizeof(ifr));
-  ifc.ifc_len = sizeof(ifr);
-  ifc.ifc_req = ifr;
-  char *result = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-
-  if(ioctl(sock, SIOCGIFCONF, &ifc) == -1) {
-  PRINT_ERROR("get_ip_address_from_socket(); ioctl() SIOCGIFCONF: (%d) %s", errno, strerror(errno));
-  free(result);
-  free_stuff();
-  exit(EXIT_FAILURE);
-  }
-
-  int i, ifc_length = ifc.ifc_len / sizeof(struct ifreq);
-  for(i = 0; i < ifc_length; i++) {
-    memset(result, '\0', IPv6_STR_MAX_SIZE);
-    if((conf->use_ipv4 && ifr[i].ifr_addr.sa_family == AF_INET) ||
-     (conf->use_ipv6 && ifr[i].ifr_addr.sa_family == AF_INET6) ||
-     (!conf->use_ipv4 && !conf->use_ipv6)) {
-      if (ioctl(sock, SIOCGIFADDR, &ifr[i]) == 0) {
-        int sa_fam = ifr[i].ifr_addr.sa_family;
-        if(sa_fam == AF_INET && inet_ntop(sa_fam, &((struct sockaddr_in *)(&ifr[i].ifr_addr))->sin_addr.s_addr, result, IPv4_STR_MAX_SIZE)) {
-          if(strcmp(result, "127.0.0.1") == 0) {
-            continue;
-          }
-        }
-        else if(sa_fam == AF_INET6 && inet_ntop(sa_fam, &((struct sockaddr_in6 *)(&ifr[i].ifr_addr))->sin6_addr.s6_addr, result, IPv6_STR_MAX_SIZE)) {
-          // nothing to skip that I am aware of
-        }
-        else {
-          PRINT_ERROR("get_ip_address_from_socket(); inet_ntop(): (%d) %s", errno, strerror(errno));
-          free(result);
-          free_stuff();
-          exit(EXIT_FAILURE);
-        }
-        PRINT_DEBUG("found IP form socket: %s", result);
-        return result;
-      }
-      PRINT_ERROR("get_ip_address_from_socket(); ioctl() SIOCGIFADDR: (%d) %s", errno, strerror(errno));
-    }
-  }
-  free(result);
-  return NULL;
-}*/
-
 
 /**
 * Get the remote MAC address from a given sock
@@ -2232,15 +2162,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
         return 0;
       }
 
-      struct timeval stimeout, rtimeout;
-      stimeout.tv_sec = 1;
-      stimeout.tv_usec = 0;
-      rtimeout.tv_sec = 5;
-      rtimeout.tv_usec = 0;
-
-      PRINT_DEBUG("setting socket receive-timeout to %d", (int)rtimeout.tv_sec);
-      if (setsockopt (resolve_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout, sizeof(rtimeout)) < 0) {
-        PRINT_ERROR("fetch_upnp_device_info(); setsockopt() SO_RCVTIMEO: (%d) %s", errno, strerror(errno));
+      if(!set_receive_timeout(resolve_sock, 5)) {
         free(ip);
         close(resolve_sock);
         free(rest);
@@ -2249,9 +2171,7 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
         return 0;
       }
 
-      PRINT_DEBUG("setting socket send-timeout to %d", (int)stimeout.tv_sec);
-      if(setsockopt (resolve_sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&stimeout, sizeof(stimeout)) < 0) {
-        PRINT_ERROR("fetch_upnp_device_info(); setsockopt() SO_SNDTIMEO: (%d) %s", errno, strerror(errno));
+      if(!set_send_timeout(resolve_sock, 1)) {
         free(ip);
         close(resolve_sock);
         free(rest);
