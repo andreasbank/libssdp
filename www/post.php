@@ -103,23 +103,50 @@
 
   DELIMITER //
   CREATE PROCEDURE `add_model_firmware_if_not_exist`(IN `v_model_name` VARCHAR(255),
-                                        IN `v_firmware_version` VARCHAR(255),
-                                        INOUT `return_id` INT)
+                                        IN `v_firmware_version` VARCHAR(255))
     SQL SECURITY INVOKER
   BEGIN
-    SET return_id=null;
-    SELECT `id` INTO return_id
+    DECLARE found_id INT DEFAULT NULL;
+    SELECT `id` INTO found_id
       FROM `model_firmware`
       WHERE `model_name`=v_model_name
         AND `firmware_version`=v_firmware_version;
-    IF return_id IS NULL THEN
+    IF found_id IS NULL THEN
       INSERT INTO `model_firmware` (`model_name`, `firmware_version`)
         VALUES(v_model_name, v_firmware_version);
-      SELECT `id` INTO return_id
-        FROM `model_firmware`
-        WHERE `model_name`=v_model_name
-          AND `firmware_version`=v_firmware_version;
     END IF;
+    SELECT `id`
+    FROM `model_firmware`
+    WHERE `model_name`=v_model_name
+    AND `firmware_version`=v_firmware_version;
+  END//
+  DELIMITER ;
+
+  DELIMITER ;
+  CREATE PROCEDURE `is_model_firmware_probed`(IN `v_model_firmware_id` INT)
+    SQL SECURITY INVOKER
+  BEGIN
+    DECLARE v_count INT DEFAULT 0;
+    SELECT COUNT(*) INTO v_count
+    FROM `model_firmware_capabilities`
+    WHERE `model_firmware_id`=v_model_firmware_id;
+    IF v_count > 0 THEN
+      SELECT 'yes' AS `Probed`;
+    ELSE
+      SELECT 'no' AS `Probed`;
+    END IF;
+  END//
+  DELIMITER ;
+
+  DELIMITER //
+  CREATE PROCEDURE `add_capability_to_model_firmware` (IN `v_capability_id` INT,
+                                                       IN `v_model_firmware` INT)
+    SQL SECURITY INVOKER
+  BEGIN
+    INSERT INTO `model_firmware_capability`
+    VALUES (
+      v_capability, v_model_firmware
+    );
   END//
   DELIMITER ;
 
