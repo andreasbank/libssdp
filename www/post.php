@@ -1,15 +1,17 @@
 <?php
 /*
   Configure MySQL with:
-  CREATE DATABASE 'abused';
+  CREATE DATABASE `abused`;
 
   CREATE TABLE `capabilities` (`id` INT NOT NULL AUTO_INCREMENT,
                                `name` VARCHAR(255) NOT NULL UNIQUE,
+                               `group` VARCHAR(255) NOT NULL UNIQUE,
                                PRIMARY KEY(`id`)) ENGINE=InnoDB;
 
   CREATE TABLE `model_firmware` (`id` INT NOT NULL AUTO_INCREMENT,
                                  `model_name` VARCHAR(255) NOT NULL,
                                  `firmware_version` VARCHAR(255) NOT NULL,
+                                 `last_updated` DATETIME,
                                  UNIQUE KEY(`model_name`, `firmware_version`),
                                  PRIMARY KEY(`id`)) ENGINE=InnoDB;
 
@@ -18,7 +20,7 @@
                                             FOREIGN KEY (`model_firmware_id`)
                                               REFERENCES `model_firmware`(`id`),
                                             FOREIGN KEY (`capability_id`)
-                                              REFERENCES `capability`(`id`),
+                                              REFERENCES `capabilities`(`id`),
                                             PRIMARY KEY(`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
  
   CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL,
@@ -34,19 +36,41 @@
 
   CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL,
                                 `locked` TINYINT(1) DEFAULT 1,
-                                `locked_date` DATETIME NOT NULL,
                                 `locked_by` VARCHAR(255) NOT NULL,
+                                `locked_date` DATETIME NOT NULL,
                                 FOREIGN KEY (`device_id`)
                                   REFERENCES `devices`(`id`)
                                   ON DELETE CASCADE
                                   ON UPDATE CASCADE,
-                                PRIMARY KEY (`device_id`, `state_date`)) ENGINE=InnoDB;
+                                PRIMARY KEY (`device_id`, `locked_date`)) ENGINE=InnoDB;
 
   CREATE USER 'abused'@'%' IDENTIFIED BY 'abusedpass';
 
   GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';
 
   GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';
+
+  DELIMITER //
+  CREATE PROCEDURE `add_capability_if_not_exist`(IN `v_capability_name` VARCHAR(255),
+                                                 IN `v_capability_group` VARCHAR(255))
+    SQL SECURITY INVOKER
+  BEGIN
+      DECLARE found_id INT DEFAULT NULL;
+      SELECT `id` INTO found_id
+        FROM `capabilities`
+        WHERE `name`=v_capability_name
+          AND `group`=v_capability_group;
+      IF found_id IS NULL THEN
+        INSERT INTO `capabilities` (`name`, `group`)
+          VALUES(v_capability_name, v_capability_group);
+      END IF;
+      SELECT `id`
+        FROM `capabilities`
+        WHERE `name`=v_capability_name
+          AND `group`=v_capability_group;
+  
+  END//
+  DELIMITER ;
 
   DELIMITER //
   CREATE PROCEDURE `add_or_update_device`(IN `v_id` VARCHAR(255),
@@ -96,7 +120,7 @@
         WHERE `model_name`=v_model_name
           AND `firmware_version`=v_firmware_version;
     END IF;
-  END
+  END//
   DELIMITER ;
 
   DELIMITER //
@@ -772,7 +796,7 @@ class CapabilityManager {
   public function has_mic() {
     try {
       $input_type = $this->get_axis_device_parameter('AudioSource.A0.InputType');
-      if(!in_array($input_type, array( 'mic', 'internal' )) {
+      if(!in_array($input_type, array( 'mic', 'internal' ))) {
         return false;
       }
     } catch(Exception $e) {
@@ -811,29 +835,29 @@ class CapabilityManager {
 }
 
 // *********** CapabilityManager TEST **************
-//$cm = null;
-//$cm = new CapabilityManager('10.0.0.32', 'root', 'mucinO02');
-//try {
-//  $can_ssh = $cm->is_axis_device_ssh_capable();
-//  if($can_ssh) {
-//    $is_enabled = $cm->is_axis_device_ssh_enabled('Network.SSH.Enabled');
-//    printf("SSH enabled: %s<br />\n", ($is_enabled ? 'yes' : 'no'));
-//  }
-//  else {
-//    printf("The device is not SSH capable<br />\n");
-//  }
-//  $fw_ver = $cm->get_axis_device_parameter('Properties.Firmware.Version', 'https');
-//  printf("Firmware version: %s<br />\n", $fw_ver);
-//} catch(Exception $e) {
-//  printf("%s", $e->getMessage());
-//}
-//if($cm->has_ir()) {
-//  printf("Has support for IR illumination<br />\n");
-//}
-//else {
-//  printf("Does not have support for IR illumination<br />\n");
-//}
-//exit(0);
+$cm = null;
+$cm = new CapabilityManager('192.168.0.41', 'root', 'pass');
+try {
+  $can_ssh = $cm->is_axis_device_ssh_capable();
+  if($can_ssh) {
+    $is_enabled = $cm->is_axis_device_ssh_enabled();
+    printf("SSH enabled: %s<br />\n", ($is_enabled ? 'yes' : 'no'));
+  }
+  else {
+    printf("The device is not SSH capable<br />\n");
+  }
+  $fw_ver = $cm->get_axis_device_parameter('Properties.Firmware.Version', 'https');
+  printf("Firmware version: %s<br />\n", $fw_ver);
+} catch(Exception $e) {
+  printf("%s", $e->getMessage());
+}
+if($cm->has_ir()) {
+  printf("Has support for IR illumination<br />\n");
+}
+else {
+  printf("Does not have support for IR illumination<br />\n");
+}
+exit(0);
 // *******************************
 
 /* Get the XML from the POST data */
@@ -891,12 +915,11 @@ foreach($abused_results as $abused_result) {
     }
     $model_name = $abused_result->get_custom_field_modelName();
     $friendly_name = $abused_result->get_custom_field_friendlyName();
-    $model_number = $abused_result->get_custom_field_modelNumber();
   } catch(Exception $e) {
     /* Do noting */
     continue;
   }
-  $query = sprintf("call add_device('%s', '%s', '%s', '%s', '%s', '%s', '%s')",
+  $query = sprintf("call add_or_update_device('%s', '%s', '%s', '%s', '%s', '%s', '%s')",
                    $id,
                    $mac,
                    $ipv4,

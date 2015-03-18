@@ -915,6 +915,10 @@ int main(int argc, char **argv) {
       recvLen = recvfrom(notif_server_sock, notif_string, NOTIF_RECV_BUFFER, 0,
                         (struct sockaddr *) &notif_client_addr, (socklen_t *)&size);
 
+      PRINT_DEBUG("**** RECEIVED %d bytes ****\n%s", recvLen, notif_string);
+      PRINT_DEBUG("************************");
+
+
       /* If in gather mode */
       if(conf.gather) {
 
@@ -1002,7 +1006,7 @@ int main(int argc, char **argv) {
           //add_ssdp_message_to_cache(ssdp_message, &ssdp_cache);
         }
         else if(conf.raw_output) {
-          snprintf(results, strlen(notif_string), "\n\n%s\n\n", notif_string);
+          snprintf(results, strlen(notif_string) + 4, "\n\n%s\n\n", notif_string);
         }
         else if(conf.xml_output) {
           to_xml(&ssdp_message, conf.fetch_info, FALSE, results, XML_BUFFER_SIZE);
@@ -1020,7 +1024,6 @@ int main(int argc, char **argv) {
         else {
           printf("\n\n%s", results);
         }
-	
       }
 
       PRINT_DEBUG("loop done");
