@@ -861,30 +861,77 @@ class CapabilityManager {
 
 }
 
+class SqlConnection {
+
+  /* MySQL host, database and credentials */
+  private $host     = 'localhost';
+  private $database = 'abused';
+  private $username = 'abused';
+  private $password = 'abusedpass';
+  private $connection = NULL;
+
+  public function __construct($host, $database, $username, $password) {
+    $this->host = $host;
+    $this->database = $database;
+    $this->username = $username;
+    $this->password = $password;
+    $this->connection = new mysqli($host, $username, $password, $database);
+    if($this->connection->connect_errno) {
+      throw new Exception(sprintf("Failed to connect to MySQL: %s", $h_sql->connect_error));
+    }
+  }
+
+  public function __destruct() {
+    $this->connection->close();
+  }
+
+  public function query($query) {
+
+    $res = $this->connection->query($query);
+    if(false === $res) {
+      $msg = sprintf("Failed to query MySQL: %s", $h_sql->error);
+      $res->free();
+      throw new Exception(sprintf("%s", $msg));
+    }
+    $result = $this->resultset_to_array($res);
+    $res->free();
+    return $result;
+  }
+
+  public function resultset_to_array($resultset) {
+    $results = array();
+    while($row = $resultset->fetch_assoc()) {
+      $results[] = $row;
+    }
+    return $results;
+  }
+
+}
+
 // *********** CapabilityManager TEST **************
-$cm = null;
-$cm = new CapabilityManager('192.168.0.41', 'root', 'pass');
-try {
-  $can_ssh = $cm->is_axis_device_ssh_capable();
-  if($can_ssh) {
-    $is_enabled = $cm->is_axis_device_ssh_enabled();
-    printf("SSH enabled: %s<br />\n", ($is_enabled ? 'yes' : 'no'));
-  }
-  else {
-    printf("The device is not SSH capable<br />\n");
-  }
-  $fw_ver = $cm->get_axis_device_parameter('Properties.Firmware.Version', 'https');
-  printf("Firmware version: %s<br />\n", $fw_ver);
-} catch(Exception $e) {
-  printf("%s", $e->getMessage());
-}
-if($cm->has_ir()) {
-  printf("Has support for IR illumination<br />\n");
-}
-else {
-  printf("Does not have support for IR illumination<br />\n");
-}
-exit(0);
+//$cm = null;
+//$cm = new CapabilityManager('192.168.0.41', 'root', 'pass');
+//try {
+//  $can_ssh = $cm->is_axis_device_ssh_capable();
+//  if($can_ssh) {
+//    $is_enabled = $cm->is_axis_device_ssh_enabled();
+//    printf("SSH enabled: %s<br />\n", ($is_enabled ? 'yes' : 'no'));
+//  }
+//  else {
+//    printf("The device is not SSH capable<br />\n");
+//  }
+//  $fw_ver = $cm->get_axis_device_parameter('Properties.Firmware.Version', 'https');
+//  printf("Firmware version: %s<br />\n", $fw_ver);
+//} catch(Exception $e) {
+//  printf("%s", $e->getMessage());
+//}
+//if($cm->has_ir()) {
+//  printf("Has support for IR illumination<br />\n");
+//}
+//else {
+//  printf("Does not have support for IR illumination<br />\n");
+//}
+//exit(0);
 // *******************************
 
 /* Get the XML from the POST data */
@@ -900,18 +947,8 @@ $axis_device_default_password = 'pass';
 $axis_device_tfw_username     = 'tfwroot';
 $axis_device_tfw_password     = 'tfwpass';
 
-/* MySQL host, database and credentials */
-$host     = 'localhost';
-$database = 'abused';
-$username = 'abused';
-$password = 'abusedpass';
-
 /* Connect to MySQL */
-$h_sql = new mysqli($host, $username, $password, $database);
-if ($h_sql->connect_errno) {
-  printf("Failed to connect to MySQL: %s", $h_sql->connect_error);
-  exit(1);
-}
+$sqconnectionl = new SqlConnection($host, $database, $username, $password);
 
 /* Insert or update for each AbusedResult we have received and parsed */
 foreach($abused_results as $abused_result) {
@@ -942,6 +979,10 @@ foreach($abused_results as $abused_result) {
     }
     $model_name = $abused_result->get_custom_field_modelName();
     $friendly_name = $abused_result->get_custom_field_friendlyName();
+
+    /* See if model-firmware combination has
+       been probed for capabilities */
+
   } catch(Exception $e) {
     /* Do noting */
     continue;
@@ -955,12 +996,6 @@ foreach($abused_results as $abused_result) {
                    $friendly_name,
                    $model_number);
 
-  $res = $h_sql->query($query);
-
-  if(false === $res) {
-    $msg = sprintf("Failed to query MySQL: %s", $h_sql->error); 
-    printf("%s", $msg);
-    error_log($msg);
-  }
+  $sqlconnection->query($query);
 }
 
