@@ -107,7 +107,7 @@
 /* Uncomment the line below to enable detailed debug information */
 #define DEBUG___
 /* Uncomment the line below to also enable writing debug to a file */
-#define DEBUG_TO_FILE___
+//#define DEBUG_TO_FILE___
 
 #define DEBUG_COLOR_BEGIN "\x1b[0;32m"
 #define ERROR_COLOR_BEGIN "\x1b[0;31m"
