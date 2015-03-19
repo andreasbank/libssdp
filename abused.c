@@ -266,7 +266,7 @@ typedef struct ssdp_cache_struct {
   struct ssdp_cache_struct *first;
   ssdp_message_s *ssdp_message;
   struct ssdp_cache_struct *next;
-  unsigned int ssdp_messages_count;
+  unsigned int *ssdp_messages_count;
 } ssdp_cache_s;
 
 typedef struct filter_struct {
@@ -927,6 +927,7 @@ int main(int argc, char **argv) {
           to be sent */
         if(recvLen < 0) {
           // TODO: flush(send) list
+          send
           continue;
         }
 
@@ -3662,6 +3663,9 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
       exit(EXIT_FAILURE);
     }
     memset(*ssdp_cache_pointer, 0, sizeof(ssdp_cache_s));
+    /* Set the counter to 0 */
+    (*ssdp_cache_pointer)->ssdp_messages_count = (unsigned int *)malloc(sizeof(unsigned int));
+    *(*ssdp_cache_pointer)->ssdp_messages_count = 0;
   }
 
   /* Make life easier */
@@ -3684,12 +3688,13 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
   if(NULL != ssdp_cache->ssdp_message) {
     ssdp_cache->next = (ssdp_cache_s *) malloc(sizeof(ssdp_cache_s));
     ssdp_cache->next->first = ssdp_cache->first;
+    ssdp_cache->next->ssdp_messages_count = ssdp_cache->ssdp_messages_count;
     ssdp_cache = ssdp_cache->next;
   }
 
   /* Point to the ssdp_message from the element
      and increase the counter */
-  ssdp_cache->ssdp_messages_count++;
+  (*ssdp_cache->ssdp_messages_count)++;
   ssdp_cache->ssdp_message = ssdp_message;
 
   return TRUE;
@@ -3719,6 +3724,9 @@ static void free_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer) {
 
     /* Start from the first element */
     ssdp_cache = ssdp_cache->first;
+
+    /* Free counter */
+    free(ssdp_cache->ssdp_messages_count);
 
     /* Loop through elements and free them */
     do {
