@@ -78,6 +78,12 @@ class AbusedResult {
       $custom_fields[$custom_field_name] = $custom_field_value;
     }
 
+    /* Parse out serialNumber */
+    $serial_number = '';
+    if(array_key_exists('serialNumber', $custom_fields)) {
+      $serial_number = trim((string) $custom_fields['serialNumber']);
+    }
+
     /* Gather all headers */
     $headers = array();
     $header_array = $message->headers->header;
@@ -96,7 +102,7 @@ class AbusedResult {
     /* Build AbusedResult object */
     $abused_result = new AbusedResult(
       null,
-      trim((string) $message->serialNumber),
+      $serial_number,
       trim((string) $message->mac),
       trim((string) $message->ip),
       $request_protocol,

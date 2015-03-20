@@ -343,8 +343,9 @@ class CapabilityManager {
   public function has_pir() {
     for($i = 0; $i < 4; $i++) {
       try {
-        $this->get_axis_device_parameter(sprintf("IOPort.%d.Input.PIR", $i));
-        return true;
+        if('PIR sensor' == $this->get_axis_device_parameter(sprintf("IOPort.I%d.Input", $i))) {
+          return true;
+        }
       } catch(Exception $e) {
         /* Do nothing */
       }

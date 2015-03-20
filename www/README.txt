@@ -7,7 +7,6 @@
 
   CREATE TABLE `capabilities` (`id` INT NOT NULL AUTO_INCREMENT,
                                `name` VARCHAR(255) NOT NULL UNIQUE,
-                               `group` VARCHAR(255) NOT NULL UNIQUE,
                                PRIMARY KEY(`id`)) ENGINE=InnoDB;
 
   CREATE TABLE `model_firmware` (`id` INT NOT NULL AUTO_INCREMENT,
