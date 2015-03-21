@@ -88,6 +88,9 @@
  *     ╚═╝    ╚═════╝ ╚═════╝  ╚═════╝
  *  01010100 01001111 01000100 01001111 00111010
  *
+ *  - Write JSON converter
+ *  - Fix fetch_info so it is done at upnp message creation
+ *    and not in to_xml() function
  *  - Fix IPv6!
  */
 
@@ -186,10 +189,10 @@
 #define SSDP_ADDR6_SL         "ff05::c" // SSDP IPv6 site-local address
 #define SSDP_PORT             1900 // SSDP port
 #define NOTIF_RECV_BUFFER     2048 // notification receive-buffer
-#define XML_BUFFER_SIZE       20480 // XML buffer/container string
+#define XML_BUFFER_SIZE       2048 // XML buffer/container string
 #define IPv4_STR_MAX_SIZE     16 // aaa.bbb.ccc.ddd
 #define IPv6_STR_MAX_SIZE     46 // xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:aaa.bbb.ccc.ddd
-#define MAC_STR_MAX_SIZE  18 // 00:40:8C:1A:2B:3C + '\0'
+#define MAC_STR_MAX_SIZE      18 // 00:40:8C:1A:2B:3C + '\0'
 #define PORT_MAX_NUMBER       65535
 #define LISTEN_QUEUE_LENGTH   2
 #define DEVICE_INFO_SIZE      16384
@@ -289,11 +292,10 @@ typedef struct configuration_struct {
   BOOL                listen_for_upnp_notif;          /* Switch for enabling listening for UPnP (SSDP) notifications */
   BOOL                scan_for_upnp_devices;          /* Switch to perform an active UPnP (SSDP) scan */
   BOOL                forward_enabled;                /* Switch to enable forwarding of the scan results */
-  BOOL                raw_output;                     /* Use raw input instead of parsing it when displaying or forwarding */
   BOOL                fetch_info;                     /* Don't try to fetch device info from the url in the "Location" header */
-  BOOL                gather;                         /* Gather and display discoveries in a table (usable with -a) */
-  BOOL                gather_silent;                  /* Gather discoveries, do not display anything */
-  BOOL                xml_output;                     /* Use raw input instead of parsing it when displaying or forwarding */
+  BOOL                ssdp_cache_size;                /* The size of the ssdp_cache list */
+  BOOL                json_output;                    /* Convert to JSON before forwarding */
+  BOOL                xml_output;                     /* Convert to XML before forwarding */
   unsigned char       ttl;                            /* Time-To-Live value, how many routers the multicast shall propagate through */
   BOOL                ignore_search_msgs;             /* Automatically add a filter to ignore M-SEARCH messages*/
   char               *filter;                         /* Grep-like filter string */
@@ -325,7 +327,8 @@ static int strpos(const char*, const char *);
 static int send_stuff(const char *, const char *, const struct sockaddr_storage *, int, int);
 static void free_ssdp_message(ssdp_message_s *);
 static int fetch_upnp_device_info(const ssdp_message_s *, char *, int);
-static void to_xml(const ssdp_message_s *, BOOL, BOOL, char *, int);
+static unsigned int to_json(const ssdp_message_s *, BOOL, BOOL, BOOL, char *, int);
+static unsigned int to_xml(const ssdp_message_s *, BOOL, BOOL, BOOL, char *, int);
 static BOOL parse_url(const char *, char *, int, int *, char *, int);
 static void parse_filters(char *, filters_factory_s **, BOOL);
 //static char *get_ip_address_from_socket(const SOCKET);
@@ -342,12 +345,14 @@ static BOOL disable_multicast_loopback(SOCKET, int);
 static BOOL join_multicast_group(SOCKET, char *, char *);
 static SOCKET setup_socket(BOOL, BOOL, BOOL, char *, char *, struct sockaddr_storage *, const char *, int, BOOL, BOOL);
 static BOOL is_address_multicast(const char *);
-static void init_ssdp_message(ssdp_message_s *);
+static BOOL init_ssdp_message(ssdp_message_s **);
 static BOOL create_plain_text_message(char *, int, ssdp_message_s *, BOOL);
 static BOOL add_ssdp_message_to_cache(ssdp_cache_s **, ssdp_message_s *);
 static void free_ssdp_cache(ssdp_cache_s **);
 static void daemonize();
 static BOOL filter(ssdp_message_s *, filters_factory_s *);
+static unsigned int cache_to_json(ssdp_cache_s *, char *, unsigned int, BOOL);
+static unsigned int cache_to_xml(ssdp_cache_s *, char *, unsigned int, BOOL);
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
@@ -465,13 +470,97 @@ static void daemonize() {
   }
 
   /* Change cwd in case it was on a mounted system */
-  chdir("/");
+  if(-1 == chdir("/")) {
+    PRINT_ERROR("Failed to change to a safe directory");
+    free_stuff();
+    exit(EXIT_FAILURE);
+  }
 
   /* Clear filemode creation mask */
   umask(0);
 
   PRINT_DEBUG("Now running in daemon mode");
 
+}
+
+/**
+ * Convert a ssdp cache list (multiple ssdp_messages)
+ * to a single JSON blob
+ * @param ssdp_cache The SSDP messages to convert
+ * @param json_message The buffer to write to
+ * @param json_buffer_size The buffer size
+ *
+ * @return The number of byter written
+ */
+static unsigned int cache_to_json(ssdp_cache_s *ssdp_cache,
+                                  char *json_buffer,
+                                  unsigned int json_buffer_size,
+                                  BOOL fetch_info) {
+  unsigned int used_buffer = 0;
+
+  /* Point at the beginning */
+  ssdp_cache = ssdp_cache->first;
+
+  /* For every element in the ssdp cache */
+  used_buffer = snprintf(json_buffer,
+                         json_buffer_size,
+                         "root {\n");
+  while(ssdp_cache) {
+    used_buffer += to_json(ssdp_cache->ssdp_message,
+                          FALSE,
+                          fetch_info,
+                          FALSE,
+                          (json_buffer + used_buffer),
+                          (json_buffer_size - used_buffer));
+    ssdp_cache = ssdp_cache->next;
+  }
+  used_buffer += snprintf((json_buffer + used_buffer),
+                          (json_buffer_size - used_buffer),
+                          "}\n");
+  return used_buffer;
+}
+
+/**
+ * Convert a ssdp cache list (multiple ssdp_messages)
+ * to a single XML blob
+ * @param ssdp_cache The SSDP messages to convert
+ * @param xml_message The buffer to write to
+ * @param xml_buffer_size The buffer size
+ *
+ * @return The number of byter written
+ */
+static unsigned int cache_to_xml(ssdp_cache_s *ssdp_cache,
+                                 char *xml_buffer,
+                                 unsigned int xml_buffer_size,
+                                 BOOL fetch_info) {
+  unsigned int used_buffer = 0;
+
+  if(NULL == ssdp_cache) {
+    PRINT_ERROR("No valid SSDP cache given (NULL)");
+    return 0;
+  }
+
+  /* Point at the beginning */
+  ssdp_cache = ssdp_cache->first;
+
+  /* For every element in the ssdp cache */
+  used_buffer = snprintf(xml_buffer,
+                         xml_buffer_size,
+                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n");
+  while(ssdp_cache) {
+    PRINT_DEBUG("cache_to_xml buffer used: %d; left: %d", used_buffer, xml_buffer_size - used_buffer);
+    used_buffer += to_xml(ssdp_cache->ssdp_message,
+                          FALSE,
+                          fetch_info,
+                          FALSE,
+                          (xml_buffer + used_buffer),
+                          (xml_buffer_size - used_buffer));
+    ssdp_cache = ssdp_cache->next;
+  }
+  used_buffer += snprintf((xml_buffer + used_buffer),
+                          (xml_buffer_size - used_buffer),
+                          "</root>\n");
+  return used_buffer;
 }
 
 /**
@@ -632,9 +721,9 @@ static void usage() {
   printf("\t-U                Perform an active search for UPnP devices\n");
   printf("\t-a <ip>:<port>    Forward the events to the specified ip and port,\n");
   printf("\t                  also works in combination with -u.\n");
-  printf("\t-R                Output unparsed raw data\n");
   printf("\t-F                Do not try to parse the \"Location\" header and fetch device info\n");
-  printf("\t-x                Convert results to XML before sending or outputing\n");
+  //printf("\t-j                Convert results to JSON before sending\n");
+  printf("\t-x                Convert results to XML before sending\n");
   //printf("\t-4                Force the use of the IPv4 protocol\n");
   //printf("\t-6                Force the use of the IPv6 protocol\n");
   printf("\t-q                Be quiet!\n");
@@ -647,31 +736,30 @@ static void set_default_configuration(configuration_s *c) {
   /* Default configuration */
   memset(c->interface, '\0', IPv6_STR_MAX_SIZE);
   memset(c->ip, '\0', IPv6_STR_MAX_SIZE);
-  c->run_as_daemon =         FALSE;
-  c->run_as_server =         FALSE;
+  c->run_as_daemon         = FALSE;
+  c->run_as_server         = FALSE;
   c->listen_for_upnp_notif = FALSE;
   c->scan_for_upnp_devices = FALSE;
-  c->forward_enabled =       FALSE;
-  c->raw_output =            FALSE;
-  c->gather =                FALSE;
-  c->gather_silent =         FALSE;
-  c->fetch_info =            TRUE;
-  c->xml_output =            FALSE;
-  c->ttl =                   1;
-  c->filter =                NULL;
-  c->ignore_search_msgs =    TRUE;
-  c->use_ipv4 =              FALSE;
-  c->use_ipv6 =              FALSE;
-  c->quiet_mode =            FALSE;
-  c->upnp_timeout =          MULTICAST_TIMEOUT;
-  c->enable_loopback =       FALSE;
+  c->forward_enabled       = FALSE;
+  c->ssdp_cache_size       = 10;
+  c->fetch_info            = TRUE;
+  c->json_output           = FALSE;
+  c->xml_output            = FALSE;
+  c->ttl                   = 1;
+  c->filter                = NULL;
+  c->ignore_search_msgs    = TRUE;
+  c->use_ipv4              = FALSE;
+  c->use_ipv6              = FALSE;
+  c->quiet_mode            = FALSE;
+  c->upnp_timeout          = MULTICAST_TIMEOUT;
+  c->enable_loopback       = FALSE;
 }
 
 /* Parse arguments */
 static void parse_args(const int argc, char * const *argv, configuration_s *conf) {
   int opt;
 
-  while ((opt = getopt(argc, argv, "C:i:I:t:f:MSduUmgGa:RFx64qT:L")) > 0) {
+  while ((opt = getopt(argc, argv, "C:i:I:t:f:MSduUma:RFc:jx64qT:L")) > 0) {
     char *pend = NULL;
 
     switch (opt) {
@@ -691,6 +779,7 @@ static void parse_args(const int argc, char * const *argv, configuration_s *conf
       break;
 
     case 't':
+      // TODO: errorhandling
       pend = NULL;
       conf->ttl = (unsigned char)strtol(optarg, &pend, 10);
       break;
@@ -736,36 +825,33 @@ static void parse_args(const int argc, char * const *argv, configuration_s *conf
       free_stuff();
       exit(EXIT_SUCCESS);
 
-    case 'g':
-      conf->gather = TRUE;
-      break;
-
-    case 'G':
-      conf->gather_silent = TRUE;
-      break;
-
-    case 'R':
-      conf->raw_output = TRUE;
-      break;
-
     case 'F':
       conf->fetch_info = FALSE;
       break;
 
+    case 'c':
+      // TODO: errorhandling
+      pend = NULL;
+      conf->ssdp_cache_size = (int)strtol(optarg, &pend, 10);
+      break;
+
+    case 'j':
+      conf->xml_output = FALSE;
+      conf->json_output = TRUE;
+      break;
+
     case 'x':
+      conf->json_output = FALSE;
       conf->xml_output = TRUE;
       break;
 
     case '4':
-      if(conf->use_ipv6) {
-        PRINT_ERROR("Cannot use both mutualy exclusive arguments -4 and -6\n");
-        free_stuff();
-        exit(EXIT_FAILURE);
-      }
+      conf->use_ipv6 = FALSE;
       conf->use_ipv4 = TRUE;
       break;
 
     case '6':
+      conf->use_ipv4 = FALSE;
       conf->use_ipv6 = TRUE;
       break;
 
@@ -793,7 +879,6 @@ static void parse_args(const int argc, char * const *argv, configuration_s *conf
 
 int main(int argc, char **argv) {
   struct sockaddr_storage notif_client_addr;
-  ssdp_message_s ssdp_message;
   int recvLen = 1;
 
   signal(SIGTERM, &exitSig);
@@ -863,9 +948,6 @@ int main(int argc, char **argv) {
   if(conf.listen_for_upnp_notif) {
     PRINT_DEBUG("listen_for_upnp_notif start");
 
-    /* Create a list for keeping/caching SSDP messages */
-    ssdp_cache_s ssdp_cache;
-
     /* Init buffer for receiving messages */
     char notif_string[NOTIF_RECV_BUFFER];
 
@@ -894,142 +976,174 @@ int main(int argc, char **argv) {
 
     /* Child process server loop */
     PRINT_DEBUG("Strating infinite loop");
+    ssdp_message_s *ssdp_message;
     BOOL drop_message;
+
+    /* Create a list for keeping/caching SSDP messages */
+    ssdp_cache_s *ssdp_cache = NULL;
+
     while(TRUE) {
       drop_message = FALSE;
+      ssdp_message = NULL;
 
       memset(notif_string, '\0', NOTIF_RECV_BUFFER);
-      #ifndef DEBUG_MSG___
       int size = sizeof(notif_client_addr);
       PRINT_DEBUG("loop: ready to receive");
 
-      // TODO: If gather mode then set timeout to 10 sec
-      if(conf.gather) {
-        if(!set_receive_timeout(notif_server_sock, 10)) {
-          PRINT_ERROR("Failed to set the receive timeout");
-          free_stuff();
-          exit(EXIT_FAILURE);
-        }
+      /* Set a timeout limit when waiting for ssdp messages */
+      if(!set_receive_timeout(notif_server_sock, 10)) {
+        PRINT_ERROR("Failed to set the receive timeout");
+        free_stuff();
+        exit(EXIT_FAILURE);
       }
 
       recvLen = recvfrom(notif_server_sock, notif_string, NOTIF_RECV_BUFFER, 0,
                         (struct sockaddr *) &notif_client_addr, (socklen_t *)&size);
 
-      PRINT_DEBUG("**** RECEIVED %d bytes ****\n%s", recvLen, notif_string);
-      PRINT_DEBUG("************************");
-
-
-      /* If in gather mode */
-      if(conf.gather) {
-
-        /* If timeout reached then go through the 
-          ssdp_cache list and see if anything needs
-          to be sent */
-        if(recvLen < 0) {
-          // TODO: flush(send) list
-          
-          continue;
-        }
-
-      }
-      #else
-      // DEV/TEST STUFF, DELETE AFTERWARDS
-      sleep(DEBUG_MSG_FREQ___);
-      PRINT_DEBUG("using fake UPnP messages");
-      strcpy(notif_string, "NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\n");
-      strcat(notif_string, "CACHE-CONTROL: max-age=1800\r\nLOCATION: ");
-      strcat(notif_string, DEBUG_MSG_LOCATION_HEADER);
-      strcat(notif_string, "\r\nOPT: \"http://schemas.upnp.org/upnp/1/0/\"; ns=01\r\n01-NLS: 1966d9e6-1dd2-11b2-aa65-a2d9092ea049\r\n");
-      strcat(notif_string, "NT: urn:axis-com:service:BasicService:1\r\nNTS: ssdp:alive\r\n");
-      strcat(notif_string, "SERVER: Linux/3.4.0, UPnP/1.0, Portable SDK for UPnP devices/1.6.18\r\nX-User-Agent: redsonic\r\n");
-      strcat(notif_string, "USN: uuid:Upnp-BasicDevice-1_0-00408C184D0E::urn:axis-com:service:BasicService:1\r\n\r\n");
-
-      PRINT_DEBUG("Setting IP for fake sender");
-      notif_client_addr.ss_family = AF_INET;
-      if(inet_pton(AF_INET,
-                   "10.0.0.2",
-                   (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr) < 1) {
-        PRINT_ERROR("Error setting IP for fake sender (%d)", errno);
+      #ifdef __DEBUG
+      if(recvLen > 0) {
+        PRINT_DEBUG("**** RECEIVED %d bytes ****\n%s", recvLen, notif_string);
+        PRINT_DEBUG("************************");
       }
       #endif
 
-      /* init ssdp_message */
-      init_ssdp_message(&ssdp_message);
-
-      /* Retrieve IP address from socket */
-      char tmp_ip[IPv6_STR_MAX_SIZE];
-      if(!inet_ntop(notif_client_addr.ss_family,
-                    (notif_client_addr.ss_family == AF_INET ?
-                      (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr :
-                      (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr),
-                    tmp_ip,
-                    IPv6_STR_MAX_SIZE)) {
-        PRINT_ERROR("Erroneous IP from sender");
-        free_ssdp_message(&ssdp_message);
+      /* If timeout reached then go through the 
+        ssdp_cache list and see if anything needs
+        to be sent */
+      if(recvLen < 1) {
+        PRINT_DEBUG("Timed-out waiting for a SSDP message");
+        if(!ssdp_cache || *ssdp_cache->ssdp_messages_count == 0) {
+          PRINT_DEBUG("No messages in the SSDP cache, continuing to listen");
+        }
+        else {
+          /* If forwarding has been enabled, send the cached
+             SSDP messages and empty the list*/
+          if(conf.forward_enabled) {
+            PRINT_DEBUG("Forwarding cached SSDP messages");
+            // TODO: send, free and initialise ssdp_cache
+            PRINT_DEBUG("\n\n(UNFINISHED SEND BY TIMEOUT)\n\n");
+          }
+          /* Else just display the cached messages in a table */
+          else {
+            PRINT_DEBUG("Displaying cached SSDP messages");
+            // TODO: list ssdp_cache
+            printf("\n\n(UNFINISHED DISPLAY BY TIMEOUT)\n\n");
+          }
+        }
         continue;
       }
+      /* Else a new ssdp message has been received */
+      else {
 
-      /* Retrieve MAC address from socket (if possible, else NULL) */
-      char *tmp_mac = NULL;
-      tmp_mac = get_mac_address_from_socket(notif_server_sock, (struct sockaddr_storage *)&notif_client_addr, NULL);
-
-      /* Build the ssdp message struct */
-      BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
-      free(tmp_mac);
-
-      if(!build_success) {
-        free_ssdp_message(&ssdp_message);
-        continue;
-      }
-
-      // TODO: Make it recognize both AND and OR (search for ; inside a ,)!!!
-
-      /* If -M set check if it is a M-SEARCH message
-         and drop it */
-      if(conf.ignore_search_msgs && (strstr(ssdp_message.request, "M-SEARCH") != NULL)) {
-          PRINT_DEBUG("Message contains a M-SEARCH request, dropping message");
-          free_ssdp_message(&ssdp_message);
+        /* init ssdp_message */
+        if(!init_ssdp_message(&ssdp_message)) {
+          PRINT_ERROR("Failed to initialize the SSDP message buffer");
           continue;
-      }
-
-      /* Check if notification should be used (if any filters have been set) */
-      if(filters_factory != NULL) {
-        drop_message = filter(&ssdp_message, filters_factory);
-      }
-
-      if(filters_factory == NULL || !drop_message) {
-
-        char results[XML_BUFFER_SIZE];
-
-        /* Handle the messages */
-        if(conf.gather) {
-          PRINT_DEBUG("Gathering mode is not supported yet!");
-          //add_ssdp_message_to_cache(ssdp_message, &ssdp_cache);
         }
-        else if(conf.raw_output) {
-          snprintf(results, strlen(notif_string) + 4, "\n\n%s\n\n", notif_string);
+ 
+        /* Retrieve IP address from socket */
+        char tmp_ip[IPv6_STR_MAX_SIZE];
+        if(!inet_ntop(notif_client_addr.ss_family,
+                      (notif_client_addr.ss_family == AF_INET ?
+                        (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr :
+                        (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr),
+                      tmp_ip,
+                      IPv6_STR_MAX_SIZE)) {
+          PRINT_ERROR("Erroneous IP from sender");
+          free_ssdp_message(ssdp_message);
+          continue;
         }
-        else if(conf.xml_output) {
-          to_xml(&ssdp_message, conf.fetch_info, FALSE, results, XML_BUFFER_SIZE);
+  
+        /* Retrieve MAC address from socket (if possible, else NULL) */
+        char *tmp_mac = NULL;
+        tmp_mac = get_mac_address_from_socket(notif_server_sock, (struct sockaddr_storage *)&notif_client_addr, NULL);
+  
+        /* Build the ssdp message struct */
+        BOOL build_success = build_ssdp_message(ssdp_message, tmp_ip, tmp_mac, recvLen, notif_string);
+        free(tmp_mac);
+  
+        if(!build_success) {
+          PRINT_ERROR("Failed to build the SSDP message");
+          free_ssdp_message(ssdp_message);
+          continue;
         }
-        else if(!create_plain_text_message(results, XML_BUFFER_SIZE, &ssdp_message, conf.fetch_info)) {
-            PRINT_ERROR("Failed creating plain-text message");
+  
+        // TODO: Make it recognize both AND and OR (search for ; inside a ,)!!!
+  
+        /* If -M is not set check if it is a M-SEARCH message
+           and drop it */
+        if(conf.ignore_search_msgs && (strstr(ssdp_message->request, "M-SEARCH") != NULL)) {
+            PRINT_DEBUG("Message contains a M-SEARCH request, dropping message");
+            free_ssdp_message(ssdp_message);
             continue;
         }
-
-        /* Check if forwarding ('-a') is enabled */
-        if(conf.forward_enabled) {
-          send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
+  
+        /* Check if notification should be used (if any filters have been set) */
+        if(filters_factory != NULL) {
+          drop_message = filter(ssdp_message, filters_factory);
         }
-        /* Else just display results on console */
-        else {
-          printf("\n\n%s", results);
+
+        /* If message is not filtered then use it */
+        if(filters_factory == NULL || !drop_message) {
+
+          /* Add ssdp_message to ssdp_cache */
+          if(!add_ssdp_message_to_cache(&ssdp_cache, ssdp_message)) {
+            PRINT_ERROR("Failed adding SSDP message to SSDP cache, skipping");
+            continue;
+          }
+          ssdp_message = NULL;
+
+          int results_size = *ssdp_cache->ssdp_messages_count * XML_BUFFER_SIZE;
+          char results[results_size];
+
+          /* Check if forwarding ('-a') is enabled */
+          if(conf.forward_enabled) {
+
+            /* If max ssdp cache size reached then it is time to flush */
+            if(*ssdp_cache->ssdp_messages_count >= conf.ssdp_cache_size) {
+
+              /* If -j then convert all messages to one JSON blob */
+              if(conf.json_output) {
+                if(1 > cache_to_json(ssdp_cache, results, results_size, TRUE)) {
+                  PRINT_ERROR("Failed creating JSON blob from ssdp cache");
+                  continue;
+                }
+              }
+
+              /* If -x then convert all messages to one XML blob */
+              if(conf.xml_output) {
+                if(1 > cache_to_xml(ssdp_cache, results, results_size, TRUE)) {
+                  PRINT_ERROR("Failed creating XML blob from ssdp cache");
+                  continue;
+                }
+              }
+
+              // TODO: make it create a list instead of single plain message
+              else if(!create_plain_text_message(results, XML_BUFFER_SIZE, ssdp_cache->ssdp_message, conf.fetch_info)) {
+                PRINT_ERROR("Failed creating plain-text message");
+                continue;
+              }
+
+              /* Send the converted cache list to the recipient (-a) */
+              send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
+
+              /* When the ssdp_cache has been sent
+                 then free/empty the cache list */
+              free_ssdp_cache(&ssdp_cache);
+              
+            }
+            else {
+              PRINT_DEBUG("Cache max size not reached, not sending yet");
+            }
+          }
+
+          /* Display results on console */
+          // TODO: display
+          printf("\n\n(UNFINISHED DISPLAY SECTION)\n\n");
         }
       }
 
-      PRINT_DEBUG("loop done");
-
-      free_ssdp_message(&ssdp_message);
+      PRINT_DEBUG("loop: done");
     }
 
   /* We can never get this far */
@@ -1039,6 +1153,7 @@ int main(int argc, char **argv) {
   start scanning but never continue
   to do any other work the parent should be doing */
   if(conf.scan_for_upnp_devices) {
+    //TODO: TOO OLD CODE! REWRITE!
     PRINT_DEBUG("scan_for_upnp_devices begin");
 
     /* init sending socket */
@@ -1161,6 +1276,7 @@ int main(int argc, char **argv) {
       exit(EXIT_FAILURE);
     }
     PRINT_DEBUG("reciving responses");
+    ssdp_message_s *ssdp_message;
     do {
       /* Wait for an answer */
       memset(response, '\0', NOTIF_RECV_BUFFER);
@@ -1172,15 +1288,20 @@ int main(int argc, char **argv) {
         continue;
       }
 
+      ssdp_message = NULL;
+
       /* init ssdp_message */
-      init_ssdp_message(&ssdp_message);
+      if(!init_ssdp_message(&ssdp_message)) {
+        PRINT_ERROR("Failed to initialize SSDP message holder structure");
+        continue;
+      }
 
       /* Extract IP */
       char *tmp_ip = (char*)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
       memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
       if(!inet_ntop(notif_client_addr.ss_family, (notif_client_addr.ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr : (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
         PRINT_ERROR("inet_ntop(): (%d) %s", errno, strerror(errno));
-        free_ssdp_message(&ssdp_message);
+        free_ssdp_message(ssdp_message);
         free_stuff();
         exit(EXIT_FAILURE);
       }
@@ -1189,22 +1310,19 @@ int main(int argc, char **argv) {
       memset(tmp_mac, '\0', MAC_STR_MAX_SIZE);
       tmp_mac = get_mac_address_from_socket(notif_server_sock, &notif_client_addr, NULL);
 
-      BOOL build_success = build_ssdp_message(&ssdp_message, tmp_ip, tmp_mac, recvLen, response);
+      BOOL build_success = build_ssdp_message(ssdp_message, tmp_ip, tmp_mac, recvLen, response);
       if(!build_success) {
-        if(conf.raw_output) {
-          printf("\n\n\n%s\n", response);
-        }
         continue;
       }
 
       // TODO: Make it recognize both AND and OR (search for ; inside a ,)!!!
       // TODO: add "request" string filtering
       /* Check if notification should be used (to print and possibly send to the given destination) */
-      ssdp_header_s *ssdp_headers = ssdp_message.headers;
+      ssdp_header_s *ssdp_headers = ssdp_message->headers;
       if(filters_factory != NULL) {
         int fc;
         for(fc = 0; fc < filters_factory->filters_count; fc++) {
-          if(strcmp(filters_factory->filters[fc].header, "ip") == 0 && strstr(ssdp_message.ip, filters_factory->filters[fc].value) == NULL) {
+          if(strcmp(filters_factory->filters[fc].header, "ip") == 0 && strstr(ssdp_message->ip, filters_factory->filters[fc].value) == NULL) {
             drop_message = TRUE;
             break;
           }
@@ -1216,7 +1334,7 @@ int main(int argc, char **argv) {
             }
             ssdp_headers = ssdp_headers->next;
           }
-          ssdp_headers = ssdp_message.headers;
+          ssdp_headers = ssdp_message->headers;
 
           if(drop_message) {
             break;;
@@ -1227,32 +1345,23 @@ int main(int argc, char **argv) {
       if(filters_factory == NULL || !drop_message) {
 
         /* Print the message */
-        if(conf.gather) {
-          PRINT_DEBUG("Gathering mode is not coded yet!\n");
-        }
-        else if(conf.gather_silent) {
-          PRINT_DEBUG("Silent gathering mode is not coded yet!\n");
-        }
-        else if(conf.raw_output) {
-          printf("\n\n\n%s\n", response);
-        }
-        else if(conf.xml_output) {
+        if(conf.xml_output) {
           char *xml_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
-          to_xml(&ssdp_message, conf.fetch_info, FALSE, xml_string, XML_BUFFER_SIZE);
+          to_xml(ssdp_message, TRUE, conf.fetch_info, FALSE, xml_string, XML_BUFFER_SIZE);
           printf("%s\n", xml_string);
           free(xml_string);
         }
         else {
           printf("\n\n\n----------BEGIN NOTIFICATION------------\n");
-          printf("Time received: %s\n", ssdp_message.datetime);
-          printf("Origin-MAC: %s\n", (ssdp_message.mac != NULL ? ssdp_message.mac : "(Could not be determined)"));
-          printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message.ip, ssdp_message.message_length);
-          printf("Request: %s\nProtocol: %s\n", ssdp_message.request, ssdp_message.protocol);
+          printf("Time received: %s\n", ssdp_message->datetime);
+          printf("Origin-MAC: %s\n", (ssdp_message->mac != NULL ? ssdp_message->mac : "(Could not be determined)"));
+          printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message->ip, ssdp_message->message_length);
+          printf("Request: %s\nProtocol: %s\n", ssdp_message->request, ssdp_message->protocol);
           if(conf.fetch_info) {
             int bytes_fetched = 0;
             char *fetched_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
             memset(fetched_string, '\0', XML_BUFFER_SIZE);
-            bytes_fetched = fetch_upnp_device_info(&ssdp_message, fetched_string, XML_BUFFER_SIZE);
+            bytes_fetched = fetch_upnp_device_info(ssdp_message, fetched_string, XML_BUFFER_SIZE);
             if(bytes_fetched > 0) {
               printf("%s", fetched_string);
             }
@@ -1273,7 +1382,7 @@ int main(int argc, char **argv) {
 
       }
 
-      free_ssdp_message(&ssdp_message);
+      free_ssdp_message(ssdp_message);
     } while(recvLen > 0);
     free(response);
     free_stuff();
@@ -1590,6 +1699,7 @@ static unsigned char strcount(const char *haystack, const char *needle) {
 }
 
 // TODO: remove port, it is contained in **pp_address
+// TODO: make it not use global variables (conf.interface, conf.ip)
 static int send_stuff(const char *url, const char *data, const struct sockaddr_storage *da, int port, int timeout) {
 
   if(url == NULL || strlen(url) < 1) {
@@ -1662,7 +1772,7 @@ static int send_stuff(const char *url, const char *data, const struct sockaddr_s
   memset(ip, '\0', IPv6_STR_MAX_SIZE);
   inet_ntop(da->ss_family, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr), ip, IPv6_STR_MAX_SIZE);
 
-  int request_size = 5096;
+  int request_size = strlen(data) + 150;
   char *request = (char *)malloc(sizeof(char) * request_size);
   memset(request, '\0', request_size);
 
@@ -2323,37 +2433,70 @@ static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info
 }
 
 /**
+* Converts a UPnP message to a JSON string
+*
+* @param ssdp_message The message to be converted
+* @param full_json Whether to contain the JSON opening hash
+* @param fetch_info Whether to follow the Location header to fetch additional data
+* @param hide_headers Whether to include the ssdp headers in the resulting JSON document
+* @param json_buffer The JSON buffer to write the JSON document to
+* @param json_size The size of the passed buffer (json_buffer)
+*/
+static unsigned int to_json(const ssdp_message_s *ssdp_message,
+                            BOOL full_json,
+                            BOOL fetch_info,
+                            BOOL hide_headers,
+                            char *json_buffer,
+                            int json_buffer_size) {
+  int used_length = 0;
+
+  // TODO: write it!
+
+  return used_length;
+}
+
+/**
 * Converts a UPnP message to a XML string
 *
-* @param ssdp_message_s * The message to be converted
-*
-* @return char * A string containing the message in XML format
+* @param ssdp_message The message to be converted
+* @param full_xml Whether to contain the XML declaration and the root tag
+* @param fetch_info Whether to follow the Location header to fetch additional data
+* @param hide_headers Whether to include the ssdp headers in the resulting XML document
+* @param xml_buffer The XML buffer to write the XML document to
+* @param xml_buffer_size The size of the passed buffer (xml_buffer)
 */
-static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hide_headers, char *xml_message, int xml_size) {
-  int usedLength = 0;
+static unsigned int to_xml(const ssdp_message_s *ssdp_message,
+                           BOOL full_xml,
+                           BOOL fetch_info,
+                           BOOL hide_headers,
+                           char *xml_buffer,
+                           int xml_buffer_size) {
+  int used_length = 0;
 
-  if(xml_message == NULL) {
+  if(xml_buffer == NULL) {
   PRINT_ERROR("to_xml(): No XML message buffer specified");
   }
   else if(ssdp_message == NULL) {
   PRINT_ERROR("to_xml(): No SSDP message specified");
   }
-  else if(xml_size < XML_BUFFER_SIZE) {
-  PRINT_ERROR("to_xml(): XML buffer is too small (given %d, min allowed is %d)", xml_size, XML_BUFFER_SIZE);
+  else if(xml_buffer_size < XML_BUFFER_SIZE) {
+  PRINT_ERROR("to_xml(): XML buffer is too small (given %d, min allowed is %d)", xml_buffer_size, XML_BUFFER_SIZE);
   }
 
-  memset(xml_message, '\0', sizeof(char) * xml_size);
-  usedLength = snprintf(xml_message, xml_size,
-  "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n");
-  usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+  memset(xml_buffer, '\0', sizeof(char) * xml_buffer_size);
+  if(full_xml) {
+    used_length = snprintf(xml_buffer, xml_buffer_size,
+    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n");
+  }
+  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
   "\t<message length=\"%d\">\n", ssdp_message->message_length);
-  usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
   "\t\t<mac>\n\t\t\t%s\n\t\t</mac>\n", ssdp_message->mac);
-  usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
   "\t\t<ip>\n\t\t\t%s\n\t\t</ip>\n", ssdp_message->ip);
-  usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
   "\t\t<request protocol=\"%s\">\n\t\t\t%s\n\t\t</request>\n", ssdp_message->protocol, ssdp_message->request);
-  usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
   "\t\t<datetime>\n\t\t\t%s\n\t\t</datetime>\n", ssdp_message->datetime);
 
   if(fetch_info) {
@@ -2395,17 +2538,17 @@ static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hid
 
     /* Check if buffer has enought room */
     #ifdef DEBUG___
-    int left   = xml_size - usedLength;
+    int left   = xml_buffer_size - used_length;
     int needed = fetched_length - fields_size + tags_size;
     PRINT_DEBUG("buffer size check: %d < %d = %s (fetched_length = %d)", left, needed, (left < needed ? "TRUE (FAIL)" : "FALSE (OK)"), fetched_length);
     #endif
-    if((fetched_length > 0) && (xml_size - usedLength < fetched_length - fields_size + tags_size)) {
+    if((fetched_length > 0) && (xml_buffer_size - used_length < fetched_length - fields_size + tags_size)) {
       PRINT_ERROR("to_xml(): Not enought memory in the buffer when formatting device info , skipping\n");
     }
     else if(fetched_length > 0) {
 
       /* Convert to XML format */
-      usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
       "\t\t<custom_fields count=\"%d\">\n", fields_count);
 
       char *tmp_pointer = NULL;
@@ -2418,16 +2561,16 @@ static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hid
           tmp_pointer +=  strlen(fields[i]) + 2;
           tmp_pointer_end = strchr(tmp_pointer, '\n');
           strncpy(tmp_string, tmp_pointer, (int)(tmp_pointer_end - tmp_pointer));
-          usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+          used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
             "\t\t\t<custom_field name=\"%s\">\n\t\t\t\t%s\n\t\t\t</custom_field>\n", tags[i], tmp_string);
         }
       }
       free(tmp_string);
       tmp_string = NULL;
 
-      usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
       "\t\t</custom_fields>\n");
-      PRINT_DEBUG("actual bytes: %d", (int)strlen(xml_message));
+      PRINT_DEBUG("actual bytes: %d", (int)strlen(xml_buffer));
     }
 
     free(fetched_string);
@@ -2437,19 +2580,26 @@ static void to_xml(const ssdp_message_s *ssdp_message, BOOL fetch_info, BOOL hid
   if(!hide_headers) {
     ssdp_header_s *ssdp_headers = ssdp_message->headers;
 
-    usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+    used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
     "\t\t<headers count=\"%d\">\n", (unsigned int)ssdp_message->header_count);
     while(ssdp_headers) {
-      usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
       "\t\t\t<header typeInt=\"%d\" typeStr=\"%s\">\n", ssdp_headers->type, get_header_string(ssdp_headers->type, ssdp_headers));
-      usedLength += snprintf(xml_message + usedLength, xml_size - usedLength,
+      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
       "\t\t\t\t%s\n\t\t\t</header>\n", ssdp_headers->contents);
       ssdp_headers = ssdp_headers->next;
     }
     ssdp_headers = NULL;
   }
-  snprintf(xml_message + usedLength, xml_size - usedLength,
-  "\t\t</headers>\n\t</message>\n</root>\n");
+
+  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
+                          "\t\t</headers>\n\t</message>\n");
+  if(full_xml) {
+    used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
+                            "</root>\n");
+  }
+
+  return used_length;
 }
 
 // TODO: remove ip_size ?
@@ -3557,22 +3707,71 @@ static BOOL is_address_multicast(const char *address) {
 *
 * @param message The message to initialize
 */
-static void init_ssdp_message(ssdp_message_s *message) {
+static BOOL init_ssdp_message(ssdp_message_s **message_pointer) {
+  if(NULL == *message_pointer) {
+    *message_pointer = (ssdp_message_s *)malloc(sizeof(ssdp_message_s));
+    if(!*message_pointer) {
+      return FALSE;
+    }
+    memset(*message_pointer, 0, sizeof(ssdp_message_s));
+  }
+  ssdp_message_s *message = *message_pointer;
   message->mac = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
+  if(NULL == message->mac) {
+    free(message);
+    return FALSE;
+  }
   memset(message->mac, '\0', MAC_STR_MAX_SIZE);
   message->ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+  if(NULL == message->ip) {
+    free(message->mac);
+    free(message);
+    return TRUE;
+  }
   memset(message->ip, '\0', IPv6_STR_MAX_SIZE);
   message->datetime = (char *)malloc(sizeof(char) * 20);
+  if(NULL == message->datetime) {
+    free(message->mac);
+    free(message->ip);
+    free(message);
+    return TRUE;
+  }
   memset(message->datetime, '\0', 20);
   message->request = (char *)malloc(sizeof(char) * 1024);
+  if(NULL == message->request) {
+    free(message->mac);
+    free(message->ip);
+    free(message->datetime);
+    free(message);
+    return FALSE;
+  }
   memset(message->request, '\0', 1024);
   message->protocol = (char *)malloc(sizeof(char) * 48);
+  if(NULL == message->protocol) {
+    free(message->mac);
+    free(message->ip);
+    free(message->datetime);
+    free(message->request);
+    free(message);
+    return FALSE;
+  }
   memset(message->protocol, '\0', sizeof(char) * 48);
   message->answer = (char *)malloc(sizeof(char) * 1024);
+  if(NULL == message->answer) {
+    free(message->mac);
+    free(message->ip);
+    free(message->datetime);
+    free(message->request);
+    free(message->protocol);
+    free(message);
+    return FALSE;
+  }
   memset(message->answer, '\0', sizeof(char) * 1024);
   message->info = NULL;
   message->message_length = 0;
   message->header_count = 0;
+
+  return TRUE;
 }
 
 /**
@@ -3656,6 +3855,7 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
 
   /* Initialize the list if needed */
   if(NULL == *ssdp_cache_pointer) {
+    PRINT_DEBUG("Initializing the SSDP cache");
     *ssdp_cache_pointer = (ssdp_cache_s *) malloc(sizeof(ssdp_cache_s));
     if(NULL == *ssdp_cache_pointer) {
       PRINT_ERROR("Failed to allocate memory for the ssdp cache list");
@@ -3663,6 +3863,13 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
       exit(EXIT_FAILURE);
     }
     memset(*ssdp_cache_pointer, 0, sizeof(ssdp_cache_s));
+
+    /* Set the ->first to point to this element */
+    (*ssdp_cache_pointer)->first = *ssdp_cache_pointer;
+
+    /* Set ->new to point to NULL */
+    (*ssdp_cache_pointer)->next = NULL;
+
     /* Set the counter to 0 */
     (*ssdp_cache_pointer)->ssdp_messages_count = (unsigned int *)malloc(sizeof(unsigned int));
     *(*ssdp_cache_pointer)->ssdp_messages_count = 0;
@@ -3674,7 +3881,7 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
   /* Make sure we are at the end of the linked list
      and move to last if needed*/
   if(NULL != ssdp_cache->next) {
-    PRINT_ERROR("Wrong pointer to the SSDP cache has been provided");
+    PRINT_DEBUG("Given SSDP Cache list is not pointing to the last element");
     while(NULL != ssdp_cache->next) {
       PRINT_DEBUG("Moving to the next element in the cache list");
       ssdp_cache = ssdp_cache->next;
@@ -3686,8 +3893,11 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
      set the 'first' field to the first element
      and move to the new element */
   if(NULL != ssdp_cache->ssdp_message) {
+    PRINT_DEBUG("Creating a new element in the SSDP cache list");
     ssdp_cache->next = (ssdp_cache_s *) malloc(sizeof(ssdp_cache_s));
+    memset(ssdp_cache->next, 0, sizeof(ssdp_cache_s));
     ssdp_cache->next->first = ssdp_cache->first;
+    ssdp_cache->next->next = NULL;
     ssdp_cache->next->ssdp_messages_count = ssdp_cache->ssdp_messages_count;
     ssdp_cache = ssdp_cache->next;
   }
@@ -3695,7 +3905,11 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
   /* Point to the ssdp_message from the element
      and increase the counter */
   (*ssdp_cache->ssdp_messages_count)++;
+  PRINT_DEBUG("SSDP cache counter increased to %d", *ssdp_cache->ssdp_messages_count);
   ssdp_cache->ssdp_message = ssdp_message;
+
+  /* Set the passed ssdp_cache to point to the last element */
+  *ssdp_cache_pointer = ssdp_cache;
 
   return TRUE;
 }
@@ -3731,6 +3945,8 @@ static void free_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer) {
     /* Loop through elements and free them */
     do {
 
+      PRINT_DEBUG("Freeing one cache element");
+
       /* Free the ssdp_message */
       if(NULL != ssdp_cache->ssdp_message) {
         free_ssdp_message(ssdp_cache->ssdp_message);
@@ -3746,7 +3962,13 @@ static void free_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer) {
     /* Finally set the list to NULL */
     *ssdp_cache_pointer = NULL;
   }
+  #ifdef __DEBUG
+  else {
+    PRINT_DEBUG("*ssdp_cache_pointer is NULL");
+  }
+  #endif
 }
+
 #ifdef DEBUG___
 /**
 * Counts the number of times needle occurs in haystack
@@ -3779,7 +4001,7 @@ static int chr_count(char *haystack, char needle) {
 
 static void print_debug(FILE *std, const char *color, const char* file, int line, char *va_format, ...) {
   va_list va;
-  char message[10240];
+  char message[20480];
   int message_used = 0;
   char *from_pointer = va_format;
   char header[50];
@@ -3798,7 +4020,7 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
     return;
   }
 
-  int message_length = 10240;
+  int message_length = 20480;
   memset(message, '\0', sizeof(char) * message_length);
   message_length -= 50; // compensate for additional chars in the message
   va_start(va, va_format);
