@@ -325,7 +325,7 @@ static unsigned char get_header_type(const char *);
 static const char *get_header_string(const unsigned int, const ssdp_header_s *);
 static int strpos(const char*, const char *);
 static int send_stuff(const char *, const char *, const struct sockaddr_storage *, int, int);
-static void free_ssdp_message(ssdp_message_s *);
+static void free_ssdp_message(ssdp_message_s **);
 static int fetch_upnp_device_info(const ssdp_message_s *, char *, int);
 static unsigned int to_json(const ssdp_message_s *, BOOL, BOOL, BOOL, char *, int);
 static unsigned int to_xml(const ssdp_message_s *, BOOL, BOOL, BOOL, char *, int);
@@ -1050,7 +1050,7 @@ int main(int argc, char **argv) {
                       tmp_ip,
                       IPv6_STR_MAX_SIZE)) {
           PRINT_ERROR("Erroneous IP from sender");
-          free_ssdp_message(ssdp_message);
+          free_ssdp_message(&ssdp_message);
           continue;
         }
   
@@ -1064,7 +1064,7 @@ int main(int argc, char **argv) {
   
         if(!build_success) {
           PRINT_ERROR("Failed to build the SSDP message");
-          free_ssdp_message(ssdp_message);
+          free_ssdp_message(&ssdp_message);
           continue;
         }
   
@@ -1074,7 +1074,7 @@ int main(int argc, char **argv) {
            and drop it */
         if(conf.ignore_search_msgs && (strstr(ssdp_message->request, "M-SEARCH") != NULL)) {
             PRINT_DEBUG("Message contains a M-SEARCH request, dropping message");
-            free_ssdp_message(ssdp_message);
+            free_ssdp_message(&ssdp_message);
             continue;
         }
   
@@ -1301,7 +1301,7 @@ int main(int argc, char **argv) {
       memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
       if(!inet_ntop(notif_client_addr.ss_family, (notif_client_addr.ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr : (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
         PRINT_ERROR("inet_ntop(): (%d) %s", errno, strerror(errno));
-        free_ssdp_message(ssdp_message);
+        free_ssdp_message(&ssdp_message);
         free_stuff();
         exit(EXIT_FAILURE);
       }
@@ -1382,7 +1382,7 @@ int main(int argc, char **argv) {
 
       }
 
-      free_ssdp_message(ssdp_message);
+      free_ssdp_message(&ssdp_message);
     } while(recvLen > 0);
     free(response);
     free_stuff();
@@ -1772,8 +1772,8 @@ static int send_stuff(const char *url, const char *data, const struct sockaddr_s
   memset(ip, '\0', IPv6_STR_MAX_SIZE);
   inet_ntop(da->ss_family, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr), ip, IPv6_STR_MAX_SIZE);
 
-  int request_size = strlen(data) + 150;
-  char *request = (char *)malloc(sizeof(char) * request_size);
+    int request_size = strlen(data) + 150;
+    char *request = (char *)malloc(sizeof(char) * request_size);
   memset(request, '\0', request_size);
 
   int used_length = 0;
@@ -1834,13 +1834,15 @@ static int send_stuff(const char *url, const char *data, const struct sockaddr_s
 *
 * @param ssdp_message_s *message The message to free allocations for
 */
-static void free_ssdp_message(ssdp_message_s *message) {
+static void free_ssdp_message(ssdp_message_s **message_pointer) {
   ssdp_header_s *next_header = NULL;
 
-  if(!message) {
+  if(!message_pointer || !*message_pointer) {
     PRINT_ERROR("Message was empty, nothing to free");
     return;
   }
+
+  ssdp_message_s *message = *message_pointer;
 
   if(message->mac != NULL) {
     free(message->mac);
@@ -1895,6 +1897,9 @@ static void free_ssdp_message(ssdp_message_s *message) {
     next_header = NULL;
 
   } while(message->headers);
+
+  free(message);
+  *message_pointer = NULL;
   
 }
 
@@ -3949,7 +3954,7 @@ static void free_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer) {
 
       /* Free the ssdp_message */
       if(NULL != ssdp_cache->ssdp_message) {
-        free_ssdp_message(ssdp_cache->ssdp_message);
+        free_ssdp_message(&ssdp_cache->ssdp_message);
       }
 
       /* Point to the next element in the list */

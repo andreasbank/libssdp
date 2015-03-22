@@ -28,7 +28,7 @@
 #define FALSE 0
 #define SPAM_PORT 1900
 #define SPAM_GROUP_ADDRESS "239.255.255.250"
-#define SPAM_INTERVAL 0.2
+#define SPAM_INTERVAL 1
 #define SEND_BUFFER 1024
 
 void cleanup();
@@ -57,7 +57,8 @@ int main(int argc, char **argv) {
   strcat(message, "Host:239.255.255.250:1900\r\n");
   strcat(message, "NT:urn:microsoft.com:service:X_MS_MediaReceiverRegistrar:1\r\n");
   strcat(message, "NTS:ssdp:alive\r\n");
-  strcat(message, "Location:http://10.83.128.16:2869/upnphost/udhisapi.dll?content=uuid:d910f885-192e-4344-baa7-610083434017\r\n");
+  strcat(message, "Location:http://10.0.0.2:80/upnphost/udhisapi.dll?content=uuid:d910f885-192e-4344-baa7-610083434017\r\n");
+//  strcat(message, "Location:http://10.83.128.16:2869/upnphost/udhisapi.dll?content=uuid:d910f885-192e-4344-baa7-610083434017\r\n");
   strcat(message, "USN:uuid:d910f885-192e-4344-baa7-610083434017::urn:microsoft.com:service:X_MS_MediaReceiverRegistrar:1\r\n");
   strcat(message, "Cache-Control:max-age=900\r\n");
   strcat(message, "Server:Microsoft-Windows-NT/5.1 UPnP/1.0 UPnP-Device-Host/1.0\r\n");

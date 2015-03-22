@@ -120,7 +120,7 @@
     AND `firmware_version`=v_firmware_version;
     IF found_id IS NULL THEN
       INSERT INTO `model_firmware` (`model_name`, `firmware_version`, `last_updated`)
-      VALUES(v_model_name, v_firmware_version), NOW();
+      VALUES(v_model_name, v_firmware_version, NOW());
     END IF;
     SELECT `id`
     FROM `model_firmware`
@@ -129,7 +129,7 @@
   END//
   DELIMITER ;
 
-  DELIMITER ;
+  DELIMITER //
   CREATE PROCEDURE `is_model_firmware_probed`(IN `v_model_firmware_id` INT)
     SQL SECURITY INVOKER
   BEGIN
