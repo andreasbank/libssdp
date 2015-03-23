@@ -353,6 +353,7 @@ static void daemonize();
 static BOOL filter(ssdp_message_s *, filters_factory_s *);
 static unsigned int cache_to_json(ssdp_cache_s *, char *, unsigned int, BOOL);
 static unsigned int cache_to_xml(ssdp_cache_s *, char *, unsigned int, BOOL);
+static BOOL flush_ssdp_cache(ssdp_cache_s **, const char *, struct sockaddr_storage *, int, int, BOOL);
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
@@ -561,6 +562,51 @@ static unsigned int cache_to_xml(ssdp_cache_s *ssdp_cache,
                           (xml_buffer_size - used_buffer),
                           "</root>\n");
   return used_buffer;
+}
+
+/**
+ * Send and free the passed SSDP cache
+ */
+static BOOL flush_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer,
+                             const char *url,
+                             struct sockaddr_storage *sockaddr_recipient,
+                             int port,
+                             int timeout,
+                             BOOL fetch_info) {
+  ssdp_cache_s *ssdp_cache = *ssdp_cache_pointer;
+  int results_size = *ssdp_cache->ssdp_messages_count * XML_BUFFER_SIZE;
+  char results[results_size];
+
+  /* If -j then convert all messages to one JSON blob */
+  if(conf.json_output) {
+    if(1 > cache_to_json(ssdp_cache, results, results_size, fetch_info)) {
+      PRINT_ERROR("Failed creating JSON blob from ssdp cache");
+      return FALSE;
+    }
+  }
+
+  /* If -x then convert all messages to one XML blob */
+  if(conf.xml_output) {
+    if(1 > cache_to_xml(ssdp_cache, results, results_size, fetch_info)) {
+      PRINT_ERROR("Failed creating XML blob from ssdp cache");
+      return FALSE;
+    }
+  }
+
+  // TODO: make it create a list instead of single plain message
+  else if(!create_plain_text_message(results, XML_BUFFER_SIZE, ssdp_cache->ssdp_message, fetch_info)) {
+    PRINT_ERROR("Failed creating plain-text message");
+    return FALSE;
+  }
+
+  /* Send the converted cache list to the recipient (-a) */
+  send_stuff(url, results, sockaddr_recipient, port, timeout);
+
+  /* When the ssdp_cache has been sent
+     then free/empty the cache list */
+  free_ssdp_cache(ssdp_cache_pointer);
+
+  return TRUE;
 }
 
 /**
@@ -1020,8 +1066,15 @@ int main(int argc, char **argv) {
              SSDP messages and empty the list*/
           if(conf.forward_enabled) {
             PRINT_DEBUG("Forwarding cached SSDP messages");
-            // TODO: send, free and initialise ssdp_cache
-            PRINT_DEBUG("\n\n(UNFINISHED SEND BY TIMEOUT)\n\n");
+            if(!flush_ssdp_cache(&ssdp_cache,
+                                 "/abused/post.php",
+                                 notif_recipient_addr,
+                                 80,
+                                 1,
+                                 conf.fetch_info)) {
+              PRINT_DEBUG("Failed flushing SSDP cache");
+              continue;
+            }
           }
           /* Else just display the cached messages in a table */
           else {
@@ -1093,44 +1146,21 @@ int main(int argc, char **argv) {
           }
           ssdp_message = NULL;
 
-          int results_size = *ssdp_cache->ssdp_messages_count * XML_BUFFER_SIZE;
-          char results[results_size];
-
           /* Check if forwarding ('-a') is enabled */
           if(conf.forward_enabled) {
 
             /* If max ssdp cache size reached then it is time to flush */
             if(*ssdp_cache->ssdp_messages_count >= conf.ssdp_cache_size) {
-
-              /* If -j then convert all messages to one JSON blob */
-              if(conf.json_output) {
-                if(1 > cache_to_json(ssdp_cache, results, results_size, TRUE)) {
-                  PRINT_ERROR("Failed creating JSON blob from ssdp cache");
-                  continue;
-                }
-              }
-
-              /* If -x then convert all messages to one XML blob */
-              if(conf.xml_output) {
-                if(1 > cache_to_xml(ssdp_cache, results, results_size, TRUE)) {
-                  PRINT_ERROR("Failed creating XML blob from ssdp cache");
-                  continue;
-                }
-              }
-
-              // TODO: make it create a list instead of single plain message
-              else if(!create_plain_text_message(results, XML_BUFFER_SIZE, ssdp_cache->ssdp_message, conf.fetch_info)) {
-                PRINT_ERROR("Failed creating plain-text message");
+              PRINT_DEBUG("Cache max size reached, sending and emptying");
+              if(!flush_ssdp_cache(&ssdp_cache,
+                               "/abused/post.php",
+                               notif_recipient_addr,
+                               80,
+                               1,
+                               conf.fetch_info)) {
+                PRINT_DEBUG("Failed flushing SSDP cache");
                 continue;
               }
-
-              /* Send the converted cache list to the recipient (-a) */
-              send_stuff("/abused/post.php", results, notif_recipient_addr, 80, 1);
-
-              /* When the ssdp_cache has been sent
-                 then free/empty the cache list */
-              free_ssdp_cache(&ssdp_cache);
-              
             }
             else {
               PRINT_DEBUG("Cache max size not reached, not sending yet");
@@ -2210,7 +2240,6 @@ static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_stor
     return NULL;
   }
 
-  PRINT_DEBUG("sprintf()");
   sprintf(mac_string, "%x:%x:%x:%x:%x:%x", *mac, *(mac + 1), *(mac + 2), *(mac + 3), *(mac + 4), *(mac + 5));
   mac = NULL;
   #endif

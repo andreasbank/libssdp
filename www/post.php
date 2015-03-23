@@ -72,7 +72,7 @@ foreach($abused_results as $abused_result) {
 
     // TODO: make it work with NASes
     /* If it isn't an AXIS device then continue */
-    if(false === strstr(strtolower($model_name), 'axis')) {
+    if(false === stripos($model_name, 'axis')) {
       continue;
     }
 
