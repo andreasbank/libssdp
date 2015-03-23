@@ -343,7 +343,7 @@ class CapabilityManager {
   public function has_pir() {
     for($i = 0; $i < 4; $i++) {
       try {
-        if('PIR sensor' == $this->get_axis_device_parameter(sprintf("IOPort.I%d.Input", $i))) {
+        if('PIR sensor' == $this->get_axis_device_parameter(sprintf("IOPort.I%d.Input.Name", $i))) {
           return true;
         }
       } catch(Exception $e) {
@@ -371,22 +371,39 @@ class CapabilityManager {
     return true;
   }
 
+  public function has_ptz_driver_installed() {
+    try {
+      if(1 == explode('=', $this->get_axis_device_parameter('PTZ.CamPorts'))[1]) {
+        return true;
+      }
+    } catch(Exception $e) {
+      /* Do nothing */
+    }
+    return false;
+  }
+
   public function has_ptz() {
     try {
-      $this->get_axis_device_parameter('PTZ');
+      if(('true' == $this->get_axis_device_parameter('PTZ.ImageSource.I0.PTZEnabled')) &&
+         !$this->has_dptz() &&
+         $this->has_ptz_driver_installed()) {
+        return true;
+      }
     } catch(Exception $e) {
-      return false;
+      /* Do nothing */
     }
-    return true;
+    return false;
   }
 
   public function has_dptz() {
     try {
-      $this->get_axis_device_parameter('Properties.PTZ.DigitalPTZ');
+      if('yes' == $this->get_axis_device_parameter('Properties.PTZ.DigitalPTZ')) {
+        return true;
+      }
     } catch(Exception $e) {
-      return false;
+      /* Do nothing */
     }
-    return true;
+    return false;
   }
 
   public function has_audio() {

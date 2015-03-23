@@ -1,4 +1,5 @@
 <?php
+require_once('SqlConnection.php');
 
 function randomPleasingColor() {
   $red = rand(128, 256);
@@ -6,6 +7,21 @@ function randomPleasingColor() {
   $blue = rand(128, 256);
 
   return sprintf("rgb(%d, %d, %d)", $red, $green, $blue);
+}
+
+/* MySQL credentials */
+$host     = 'localhost';
+$database = 'abused';
+$username = 'abused';
+$password = 'abusedpass';
+
+/* Connect to MySQL */
+try {
+  $sql = new SqlConnection($host, $database, $username, $password);
+}
+catch(Exception $e) {
+  printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+  exit(1);
 }
 
 $action = NULL;
@@ -20,33 +36,21 @@ else {
   exit(0);
 }
 
-$host     = 'localhost';
-$database = 'abused';
-$username = 'abused';
-$password = 'abusedpass';
-
-$h_sql = new mysqli($host, $username, $password, $database);
-if ($h_sql->connect_errno) {
-  printf("Failed to connect to MySQL: %s", $h_sql->connect_error);
-  exit(1);
-}
-
 switch($action) {
 
 /* List devices */
 case 'list':
-  $res = $h_sql->query('SELECT d.id, d.ipv4, mf.model_name, mf.firmware_version, d.last_update
-                        FROM `devices` d, `model_firmware` mf
-                        WHERE d.model_firmware_id=mf.id;');
-  if(false === $res) {
-    printf("Failed to query MySQL: %s", $h_sql->error);
+  try {
+    $results = $sql->query('SELECT d.id, d.ipv4, mf.model_name, mf.firmware_version, d.last_update
+                            FROM `devices` d, `model_firmware` mf
+                            WHERE d.model_firmware_id=mf.id;');
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
     exit(1);
   }
   header('HTTP/1.0 200 Ok');
-  $results = array();
-  while($row = $res->fetch_assoc()) {
-    $results[] = $row;
-  }
   printf("<!DOCTYPE html>\n");
   printf("<html>\n<head>\n\t<title>List of devices</title>\n</head>\n<body>\n");
   printf("<table style=\"background-color: %s; padding: 1em; border: solid 2px black; border-radius: 1em;\">\n", randomPleasingColor());
@@ -83,24 +87,23 @@ case 'list_by_capability':
     printf("No capability specified.");
     exit(0);
   }
-  $res = $h_sql->query(sprintf("SELECT d.id, d.ipv4, mf.model_name, mf.firmware_version, d.last_update
-                                FROM `devices` d,
-                                     `model_firmware` mf,
-                                     `model_firmware_capability` mfc,
-                                     `capabilities` c
-                                WHERE d.model_firmware_id=mf.id
-                                AND d.model_firmware_id=mfc.model_firmware_id
-                                AND mfc.capability_id=c.id
-                                AND c.name='%s';", $capability));
-  if(false === $res) {
-    printf("Failed to query MySQL: %s", $h_sql->error);
+  try {
+    $results = $sql->query(sprintf("SELECT d.id, d.ipv4, mf.model_name, mf.firmware_version, d.last_update
+                                    FROM `devices` d,
+                                         `model_firmware` mf,
+                                         `model_firmware_capability` mfc,
+                                         `capabilities` c
+                                    WHERE d.model_firmware_id=mf.id
+                                    AND d.model_firmware_id=mfc.model_firmware_id
+                                    AND mfc.capability_id=c.id
+                                    AND c.name='%s';", $capability));
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
     exit(1);
   }
   header('HTTP/1.0 200 Ok');
-  $results = array();
-  while($row = $res->fetch_assoc()) {
-    $results[] = $row;
-  }
   printf("<!DOCTYPE html>\n");
   printf("<html>\n<head>\n\t<title>List devices with capability '%s'</title>\n</head>\n<body>\n", $capability);
   printf("<table style=\"background-color: %s; padding: 1em; border: solid 2px black; border-radius: 1em;\">\n", randomPleasingColor());
@@ -123,13 +126,111 @@ case 'list_by_capability':
   printf("</table>\n");
   printf("</body>\n</html>\n");
   break;
+
+/* Lock a device by its ID if possible */
+case 'lock_device_by_id':
+  $device_id = NULL;
+  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+    $device_id = $_POST['device_id'];
+  }
+  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+    $device_id = $_GET['device_id'];
+  }
+  else {
+    printf("No device ID specified.");
+    exit(0);
+  }
+  $user = NULL;
+  if(isset($_POST['user']) && !empty($_POST['user'])) {
+    $user = $_POST['user'];
+  }
+  else if(isset($_GET['user']) && !empty($_GET['user'])) {
+    $user = $_GET['user'];
+  }
+  else {
+    printf("No user specified.");
+    exit(0);
+  }
+  try {
+    $results = $sql->call(sprintf("call lock_device_by_id('%s', '%s')", $device_id, $user));
+    header('Content-type: application/json; charset=utf-8');
+    printf("%s", json_encode($results[0]));
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+  break;
+
 /* Lock the device if possible */
-case 'lock_device':
-  // TODO: do it.
-  //header('HTTP/1.0 200 Ok');
-  //header('HTTP/1.0 409 Resource is in use');
-  //header('HTTP/1.0 410 Resource is no longer present');
-  //header('HTTP/1.0 404 Not Found');
+case 'lock_device_by_capability':
+  $capability = NULL;
+  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
+    $capability = $_POST['capability'];
+  }
+  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
+    $capability = $_GET['capability'];
+  }
+  else {
+    printf("No capability specified.");
+    exit(0);
+  }
+  $user = NULL;
+  if(isset($_POST['user']) && !empty($_POST['user'])) {
+    $user = $_POST['user'];
+  }
+  else if(isset($_GET['user']) && !empty($_GET['user'])) {
+    $user = $_GET['user'];
+  }
+  else {
+    printf("No user specified.");
+    exit(0);
+  }
+  $age = NULL;
+  if(isset($_POST['age']) && !empty($_POST['age'])) {
+    $age = $_POST['age'];
+  }
+  else if(isset($_GET['age']) && !empty($_GET['age'])) {
+    $age = $_GET['age'];
+  }
+  else {
+    printf("No age specified.");
+    exit(0);
+  }
+  try {
+    $results = $sql->call(sprintf("call lock_device_by_capability('%s', '%s', '%d')", $capability, $user, $age));
+    header('Content-type: application/json; charset=utf-8');
+    printf("%s", json_encode($results[0]));
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+  break;
+
+/* Unlock a device by its ID */
+case 'unlock_device':
+  $device_id = NULL;
+  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+    $device_id = $_POST['device_id'];
+  }
+  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+    $device_id = $_GET['device_id'];
+  }
+  else {
+    printf("No device ID specified.");
+    exit(0);
+  }
+  try {
+    $results = $sql->call(sprintf("call unlock_device('%s')", $device_id));
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
   break;
 
 /* Inform that the action is invalid */

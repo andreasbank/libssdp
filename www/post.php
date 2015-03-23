@@ -369,7 +369,7 @@ foreach($abused_results as $abused_result) {
 
   } catch(Exception $e) {
     /* Do noting */
-    echo $e->getMessage();
+    printf("%S", $e->getMessage());
     continue;
   }
 
