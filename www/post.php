@@ -3,212 +3,8 @@ require_once('CapabilityManager.php');
 require_once('AbusedResult.php');
 require_once('SqlConnection.php');
 
-$test_xml = <<<EOT
-<?xml version="1.0" encoding="utf-8"?>
-<root>
-
-  <message length="358">
-    <mac>
-      0:40:8c:18:39:fb
-    </mac>
-    <ip>
-      192.168.0.35
-    </ip>
-    <request protocol="HTTP/1.1 200 OK">
-      MSEARCH *
-    </request>
-    <datetime>
-      2015-03-20 11:45:45
-    </datetime>
-    <custom_fields count="7">
-      <custom_field name="serialNumber">
-        00408C1839FB
-      </custom_field>
-      <custom_field name="friendlyName">
-        AXIS M1031-W - 00408C1839FB
-      </custom_field>
-      <custom_field name="manufacturer">
-        AXIS
-      </custom_field>
-      <custom_field name="manufacturerURL">
-        http://www.axis.com/
-      </custom_field>
-      <custom_field name="modelName">
-        AXIS M1031-W
-      </custom_field>
-      <custom_field name="modelNumber">
-        M1031-W
-      </custom_field>
-      <custom_field name="modelURL">
-        http://www.axis.com/
-      </custom_field>
-    </custom_fields>
-    <headers count="8">
-      <header typeInt="0" typeStr="CACHE-CONTROL">
-         max-age=1800
-      </header>
-      <header typeInt="0" typeStr="DATE">
-         Fri, 20 Mar 2015 10:45:45 GMT
-      </header>
-      <header typeInt="6" typeStr="location">
-         http://192.168.0.35:49152/rootdesc1.xml
-      </header>
-      <header typeInt="11" typeStr="nts">
-         ssdp:alive
-      </header>
-      <header typeInt="12" typeStr="server">
-         Linux/2.6.31, UPnP/1.0, Portable SDK for UPnP devices/1.4.1
-      </header>
-      <header typeInt="13" typeStr="x-user-agent">
-         redsonic
-      </header>
-      <header typeInt="2" typeStr="st">
-         urn:axis-com:service:BasicService:1
-      </header>
-      <header typeInt="14" typeStr="usn">
-         uuid:Upnp-BasicDevice-1_0-00408C1839FB::urn:axis-com:service:BasicService:1
-      </header>
-    </headers>
-  </message>
-  <message length="359">
-    <mac>
-      0:40:8c:d5:a6:77
-    </mac>
-    <ip>
-      192.168.0.40
-    </ip>
-    <request protocol="HTTP/1.1 200 OK">
-      NOTIFY *
-    </request>
-    <datetime>
-      2015-03-20 11:45:45
-    </datetime>
-    <custom_fields count="7">
-      <custom_field name="serialNumber">
-        00408CD5A677
-      </custom_field>
-      <custom_field name="friendlyName">
-        AXIS M5014 - 00408CD5A677
-      </custom_field>
-      <custom_field name="manufacturer">
-        AXIS
-      </custom_field>
-      <custom_field name="manufacturerURL">
-        http://www.axis.com/
-      </custom_field>
-      <custom_field name="modelName">
-        AXIS M5014
-      </custom_field>
-      <custom_field name="modelNumber">
-        M5014
-      </custom_field>
-      <custom_field name="modelURL">
-        http://www.axis.com/
-      </custom_field>
-    </custom_fields>
-    <headers count="8">
-      <header typeInt="0" typeStr="CACHE-CONTROL">
-         max-age=1800
-      </header>
-      <header typeInt="0" typeStr="DATE">
-         Fri, 20 Mar 2015 10:45:45 GMT
-      </header>
-      <header typeInt="11" typeStr="nts">
-         ssdp:alive
-      </header>
-      <header typeInt="6" typeStr="location">
-         http://192.168.0.40:49152/rootdesc1.xml
-      </header>
-      <header typeInt="12" typeStr="server">
-         Linux/2.6.35+, UPnP/1.0, Portable SDK for UPnP devices/1.4.1
-      </header>
-      <header typeInt="13" typeStr="x-user-agent">
-         redsonic
-      </header>
-      <header typeInt="2" typeStr="st">
-         urn:axis-com:service:BasicService:1
-      </header>
-      <header typeInt="14" typeStr="usn">
-         uuid:Upnp-BasicDevice-1_0-00408CD5A677::urn:axis-com:service:BasicService:1
-      </header>
-    </headers>
-  </message>
-  <message length="458">
-    <mac>
-      0:40:8c:d5:a6:87
-    </mac>
-    <ip>
-      192.168.0.41
-    </ip>
-    <request protocol="HTTP/1.1">
-      NOTIFY *
-    </request>
-    <datetime>
-      2015-03-19 12:24:26
-    </datetime>
-    <custom_fields count="7">
-      <custom_field name="serialNumber">
-        00408CD5A687
-      </custom_field>
-      <custom_field name="friendlyName">
-        AXIS P3367 - 00408CD5A687
-      </custom_field>
-      <custom_field name="manufacturer">
-        AXIS
-      </custom_field>
-      <custom_field name="manufacturerURL">
-        http://www.axis.com/
-      </custom_field>
-      <custom_field name="modelName">
-        AXIS P3367
-      </custom_field>
-      <custom_field name="modelNumber">
-        P3367
-      </custom_field>
-      <custom_field name="modelURL">
-        http://www.axis.com/
-      </custom_field>
-    </custom_fields>
-    <headers count="10">
-      <header typeInt="1" typeStr="host">
-         239.255.255.250:1900
-      </header>
-      <header typeInt="0" typeStr="CACHE-CONTROL">
-         max-age=1800
-      </header>
-      <header typeInt="6" typeStr="location">
-         http://192.168.0.41:51040/rootdesc1.xml
-      </header>
-      <header typeInt="8" typeStr="opt">
-         "http://schemas.upnp.org/upnp/1/0/"; ns=01
-      </header>
-      <header typeInt="9" typeStr="01-nls">
-         0fb26636-1dd2-11b2-a53c-f62ae0ef4d8c
-      </header>
-      <header typeInt="10" typeStr="nt">
-         urn:axis-com:service:BasicService:1
-      </header>
-      <header typeInt="11" typeStr="nts">
-         ssdp:alive
-      </header>
-      <header typeInt="12" typeStr="server">
-         Linux/2.6.35, UPnP/1.0, Portable SDK for UPnP devices/1.6.18
-      </header>
-      <header typeInt="13" typeStr="x-user-agent">
-         redsonic
-      </header>
-      <header typeInt="14" typeStr="usn">
-         uuid:Upnp-BasicDevice-1_0-00408CD5A687::urn:axis-com:service:BasicService:1
-      </header>
-    </headers>
-  </message>
-</root>
-EOT;
-
 /* Get the XML from the POST data */
 $raw_xml = file_get_contents('php://input');
-// TESTING WITH DUMMY XML DATA
-//$raw_xml = $test_xml;
 
 /* MySQL credentials */
 $host     = 'localhost';
@@ -273,6 +69,13 @@ foreach($abused_results as $abused_result) {
     }
 
     $model_name = $abused_result->get_custom_field_modelName();
+
+    // TODO: make it work with NASes
+    /* If it isn't an AXIS device then continue */
+    if(false === strstr(strtolower($model_name), 'axis')) {
+      continue;
+    }
+
     $cm = new CapabilityManager(($ipv4 ? $ipv4 : $ipv6),
                                 $axis_device_default_username,
                                 $axis_device_default_password);

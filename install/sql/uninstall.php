@@ -5,24 +5,30 @@
  *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-$htmlHeader = "<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"sv\" xml:lang=\"sv\">\n" .
-				"<head>\n\t<title>Uninstall the ABUSED DB</title>\n".
-				"\t<style type=\"text/css\">\n\ttd {\n\t\ttext-align:left;\n\t}\n\t</style>\n</head>\n<body style=\"text-align: center;\">\n";
+$htmlHeader = "<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"sv\" xml:lang=\"sv\">\n";
+$htmlHeader = sprintf("%s<head>\n\t<title>Uninstall the ABUSED DB</title>\n", $htmlHeader);
+$htmlHeader = sprintf("%s\t<style type=\"text/css\">\n\ttd {\n\t\ttext-align:left;\n\t}\n\t</style>\n</head>\n<body style=\"text-align: center;\">\n", $htmlHeader);
 $htmlFooter = "</body>\n</html>";
 
 if(isset($_POST['clearMysql'])) {
 	$errorMessage = "\nan error occurred:<br />\n";
-	if(@mysql_connect($_POST['mysqlHost'], $_POST['mysqlUsername'], $_POST['mysqlPassword']) == false)
-		echo $htmlHeader.$errorMessage." (connect) ".mysql_error()."\n".$htmlFooter;
-	else if(@mysql_query("drop database `".$_POST['mysqlDatabase']."`") == false)
-		echo $htmlHeader.$errorMessage."(drop database) ".mysql_error()."\n".$htmlFooter;
+
+	if(@mysql_connect($_POST['mysqlHost'], $_POST['mysqlUsername'], $_POST['mysqlPassword']) == false) {
+		printf("%s%s (connect) %s\n%s", $htmlHeader, $errorMessage, mysql_error(), $htmlFooter);
+  }
+	else if(@mysql_query(sprintf("DROP DATABASE `%s`;", $_POST['mysqlDatabase'])) == false) {
+		printf("%s%s (drop database) %s\n%s", $htmlHeader, $errorMessage, mysql_error(), $htmlFooter);
+  }
+	else if(@mysql_query(sprintf("DROP USER `abused`;")) == false) {
+		printf("%s%s (drop database) %s\n%s", $htmlHeader, $errorMessage, mysql_error(), $htmlFooter);
+  }
 	else {
-		echo "<span style=\"color:green;\">Success! All data has been removed!</span>";
+		printf("<span style=\"color:green;\">Success! All data has been removed!</span>");
 		mysql_close();
 	}
 }
 else {
-	echo $htmlHeader;
+	printf("%s", $htmlHeader);
 ?>
 	<p>
 		Welcome to the uninstallation of the ABUSED DB!<br />
@@ -59,6 +65,6 @@ else {
 	</table>
 	</form>
 <?php
-	echo $htmlFooter;
+	printf("%s", $htmlFooter);
 }
 ?>

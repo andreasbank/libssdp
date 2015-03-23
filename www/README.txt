@@ -226,44 +226,45 @@
 
   DELIMITER //
   CREATE PROCEDURE `lock_device_by_capability`(IN `v_capability` VARCHAR(255),
-                                               IN `v_user` VARCHAR(255))
+                                               IN `v_user` VARCHAR(255),
+                                               IN `v_age` INT)
     SQL SEQURITY INVOKER
   BEGIN
-  DECLARE v_found_id VARCHAR(12) DEFAULT NULL;
-  SELECT d.`id` INTO v_found_id
-  FROM `devices` d,
-       `model_firmware` mf,
-       `model_firmware_capability` mfc,
-       `capabilities` c
-  WHERE d.model_firmware_id=mf.id
-  AND d.`model_firmware_id`=mfc.`model_firmware_id`
-  AND mfc.`capability_id`=c.`id`
-  AND c.`name`=v_capability
-  AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
-  AND d.`id` NOT IN (
-    SELECT ld.`device_id`
-    FROM `locked_devices` ld
-    WHERE ld.`device_id`=d.`id`
-    AND ld.`locked`=1)
-  LIMIT 1;
-  IF v_found_id IS NOT NULL THEN
-    INSERT INTO `locked_devices`
-    VALUES(v_found_id, 1, v_user, NOW());
-  END IF;
-  SELECT d.`id`,
-         d.`ipv4`,
-         mf.`model_name`,
-         mf.`firmware_version`,
-         d.`last_update`
-  FROM `devices` d,
-       `model_firmware` mf,
-       `model_firmware_capability` mfc,
-       `capabilities` c
-  WHERE d.`model_firmware_id`=mf.`id`
-  AND d.`model_firmware_id`=mfc.`model_firmware_id`
-  AND mfc.`capability_id`=c.`id`
-  AND c.`name`=v_capability
-  AND d.`id`=v_found_id;
+    DECLARE v_found_id VARCHAR(12) DEFAULT NULL;
+    SELECT d.`id` INTO v_found_id
+    FROM `devices` d,
+         `model_firmware` mf,
+         `model_firmware_capability` mfc,
+         `capabilities` c
+    WHERE d.model_firmware_id=mf.id
+    AND d.`model_firmware_id`=mfc.`model_firmware_id`
+    AND mfc.`capability_id`=c.`id`
+    AND c.`name`=v_capability
+    AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
+    AND d.`id` NOT IN (
+      SELECT ld.`device_id`
+      FROM `locked_devices` ld
+      WHERE ld.`device_id`=d.`id`
+      AND ld.`locked`=1)
+    LIMIT 1;
+    IF v_found_id IS NOT NULL THEN
+      INSERT INTO `locked_devices`
+      VALUES(v_found_id, 1, v_user, NOW());
+    END IF;
+    SELECT d.`id`,
+           d.`ipv4`,
+           mf.`model_name`,
+           mf.`firmware_version`,
+           d.`last_update`
+    FROM `devices` d,
+         `model_firmware` mf,
+         `model_firmware_capability` mfc,
+         `capabilities` c
+    WHERE d.`model_firmware_id`=mf.`id`
+    AND d.`model_firmware_id`=mfc.`model_firmware_id`
+    AND mfc.`capability_id`=c.`id`
+    AND c.`name`=v_capability
+    AND d.`id`=v_found_id;
   END
   DELIMITER ;
 
