@@ -4190,7 +4190,7 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
   else {
     fh = fopen(debug_file, "a");
   }
-  
+
   if(NULL == fh) {
     fprintf(stderr, "%s[%d][%s:%d] Failed to create debug file%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, DEBUG_COLOR_END);
   }
@@ -4201,7 +4201,7 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
   #else
   fprintf(std, "%s%s%s\n", header, message, DEBUG_COLOR_END);
   #endif
-  
+
 }
 #endif
 
