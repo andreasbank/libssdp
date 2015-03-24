@@ -210,6 +210,73 @@ case 'lock_device_by_capability':
   }
   break;
 
+/* Lock the device if possible */
+case 'lock_device':
+  $capability = NULL;
+  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
+    $capability = $_POST['capability'];
+  }
+  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
+    $capability = $_GET['capability'];
+  }
+
+  $model_name = NULL;
+  if(isset($_POST['model_name']) && !empty($_POST['model_name'])) {
+    $model_name = $_POST['model_name'];
+  }
+  else if(isset($_GET['model_name']) && !empty($_GET['model_name'])) {
+    $model_name = $_GET['model_name'];
+  }
+
+  $firmware_version = NULL;
+  if(isset($_POST['firmware_version']) && !empty($_POST['firmware_version'])) {
+    $firmware_version = $_POST['firmware_version'];
+  }
+  else if(isset($_GET['firmware_version']) && !empty($_GET['firmware_version'])) {
+    $firmware_version = $_GET['firmware_version'];
+  }
+
+  $user = NULL;
+  if(isset($_POST['user']) && !empty($_POST['user'])) {
+    $user = $_POST['user'];
+  }
+  else if(isset($_GET['user']) && !empty($_GET['user'])) {
+    $user = $_GET['user'];
+  }
+  else {
+    printf("No user specified.");
+    exit(0);
+  }
+
+  $age = NULL;
+  if(isset($_POST['age']) && !empty($_POST['age'])) {
+    $age = $_POST['age'];
+  }
+  else if(isset($_GET['age']) && !empty($_GET['age'])) {
+    $age = $_GET['age'];
+  }
+  else {
+    printf("No age specified.");
+    exit(0);
+  }
+
+  try {
+    $results = $sql->call(sprintf("call lock_device(%s, %s, %s, '%s', %d)",
+                                  ($capability ? sprintf("'%s'", $capability): 'NULL'),
+                                  ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
+                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                                  $user,
+                                  $age));
+    header('Content-type: application/json; charset=utf-8');
+    printf("%s", json_encode($results[0]));
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+  break;
+
 /* Unlock a device by its ID */
 case 'unlock_device':
   $device_id = NULL;

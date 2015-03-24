@@ -58,24 +58,20 @@
   GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';
 
   DELIMITER //
-  CREATE PROCEDURE `add_capability_if_not_exist`(IN `v_capability_name` VARCHAR(255),
-                                                 IN `v_capability_group` VARCHAR(255))
+  CREATE PROCEDURE `add_capability_if_not_exist`(IN `v_capability_name` VARCHAR(255))
     SQL SECURITY INVOKER
   BEGIN
       DECLARE found_id INT DEFAULT NULL;
       SELECT `id` INTO found_id
         FROM `capabilities`
-        WHERE `name`=v_capability_name
-          AND `group`=v_capability_group;
+        WHERE `name`=v_capability_name;
       IF found_id IS NULL THEN
-        INSERT INTO `capabilities` (`name`, `group`)
-          VALUES(v_capability_name, v_capability_group);
+        INSERT INTO `capabilities` (`name`)
+        VALUES(v_capability_name);
       END IF;
       SELECT `id`
-        FROM `capabilities`
-        WHERE `name`=v_capability_name
-          AND `group`=v_capability_group;
-  
+      FROM `capabilities`
+      WHERE `name`=v_capability_name;
   END//
   DELIMITER ;
 
@@ -199,9 +195,9 @@
   CREATE PROCEDURE `unlock_device`(IN `v_device_id` VARCHAR(255))
     SQL SECURITY INVOKER
   BEGIN
-    DELETE FROM `locked_devices`
-    WHERE `locked`=1
-    AND `device_id`=v_device_id;
+    UPDATE `locked_devices`
+    SET `locked`=0
+    WHERE `device_id`=v_device_id;
   END//
   DELIMITER ;
 
@@ -225,21 +221,34 @@
   DELIMITER ;
 
   DELIMITER //
-  CREATE PROCEDURE `lock_device_by_capability`(IN `v_capability` VARCHAR(255),
-                                               IN `v_user` VARCHAR(255),
-                                               IN `v_age` INT)
-    SQL SEQURITY INVOKER
+  CREATE PROCEDURE `lock_device`(IN `v_capability` VARCHAR(255),
+                                 IN `v_model_name` VARCHAR(255),
+                                 IN `v_firmware_version` VARCHAR(255),
+                                 IN `v_user` VARCHAR(255),
+                                 IN `v_age` INT)
+    SQL SECURITY INVOKER
   BEGIN
-    DECLARE v_found_id VARCHAR(12) DEFAULT NULL;
+    DECLARE v_found_id VARCHAR(13) DEFAULT NULL;
+    IF v_capability IS NULL OR v_capability = '' THEN
+      SET v_capability = '%%';
+    END IF;
+    IF v_model_name IS NULL OR v_model_name = '' THEN
+      SET v_model_name = '%%';
+    END IF;
+    IF v_firmware_version IS NULL OR v_firmware_version = '' THEN
+      SET v_firmware_version = '%%';
+    END IF;
     SELECT d.`id` INTO v_found_id
     FROM `devices` d,
          `model_firmware` mf,
          `model_firmware_capability` mfc,
          `capabilities` c
-    WHERE d.model_firmware_id=mf.id
+    WHERE d.`model_firmware_id`=mf.`id`
     AND d.`model_firmware_id`=mfc.`model_firmware_id`
-    AND mfc.`capability_id`=c.`id`
-    AND c.`name`=v_capability
+    AND mfc.`capability_id`=c.`id` 
+    AND c.`name` LIKE v_capability
+    AND mf.`model_name` LIKE v_model_name
+    AND mf.`firmware_version` LIKE v_firmware_version
     AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
     AND d.`id` NOT IN (
       SELECT ld.`device_id`
@@ -257,13 +266,8 @@
            mf.`firmware_version`,
            d.`last_update`
     FROM `devices` d,
-         `model_firmware` mf,
-         `model_firmware_capability` mfc,
-         `capabilities` c
+         `model_firmware` mf
     WHERE d.`model_firmware_id`=mf.`id`
-    AND d.`model_firmware_id`=mfc.`model_firmware_id`
-    AND mfc.`capability_id`=c.`id`
-    AND c.`name`=v_capability
     AND d.`id`=v_found_id;
   END
   DELIMITER ;
@@ -286,6 +290,7 @@
 
   GRANT EXECUTE ON PROCEDURE abused.lock_device_by_id TO 'abused'@'%';
 
+  GRANT EXECUTE ON PROCEDURE abused.lock_device TO 'abused'@'%';
+
   GRANT EXECUTE ON PROCEDURE abused.unlock_device TO 'abused'@'%';
 
-  GRANT EXECUTE ON PROCEDURE abused.lock_device_by_capability TO 'abused'@'%';

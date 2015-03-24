@@ -109,23 +109,20 @@ else if(isset($_POST['mysql'])) {
     /* Stored Procedures */
 
     /* add_capability_if_not_exist */
-    $query =         "CREATE PROCEDURE `add_capability_if_not_exist`(IN `v_capability_name` VARCHAR(255),";
-    $query = sprintf("%s                                             IN `v_capability_group` VARCHAR(255))\n", $query);
+    $query =         "CREATE PROCEDURE `add_capability_if_not_exist`(IN `v_capability_name` VARCHAR(255))";
     $query = sprintf("%s SQL SECURITY INVOKER\n", $query);
     $query = sprintf("%sBEGIN\n", $query);
     $query = sprintf("%s  DECLARE found_id INT DEFAULT NULL;\n", $query);
     $query = sprintf("%s  SELECT `id` INTO found_id\n", $query);
     $query = sprintf("%s    FROM `capabilities`\n", $query);
-    $query = sprintf("%s    WHERE `name`=v_capability_name\n", $query);
-    $query = sprintf("%s      AND `group`=v_capability_group;\n", $query);
+    $query = sprintf("%s    WHERE `name`=v_capability_name;\n", $query);
     $query = sprintf("%s  IF found_id IS NULL THEN\n", $query);
-    $query = sprintf("%s    INSERT INTO `capabilities` (`name`, `group`)\n", $query);
-    $query = sprintf("%s      VALUES(v_capability_name, v_capability_group);\n", $query);
+    $query = sprintf("%s    INSERT INTO `capabilities` (`name`)\n", $query);
+    $query = sprintf("%s    VALUES(v_capability_name);\n", $query);
     $query = sprintf("%s  END IF;\n", $query);
     $query = sprintf("%s  SELECT `id`\n", $query);
-    $query = sprintf("%s    FROM `capabilities`\n", $query);
-    $query = sprintf("%s    WHERE `name`=v_capability_name\n", $query);
-    $query = sprintf("%s      AND `group`=v_capability_group;\n", $query);
+    $query = sprintf("%s  FROM `capabilities`\n", $query);
+    $query = sprintf("%s  WHERE `name`=v_capability_name;\n", $query);
     $query = sprintf("%sEND;\n", $query);
     query($sql, $query);
 
@@ -245,57 +242,64 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%sEND;\n", $query);
     query($sql, $query);
 
-    /* lock_device_by_capability */
-    $query =         "CREATE PROCEDURE `lock_device_by_capability`(IN `v_capability` VARCHAR(255),\n";
-    $query = sprintf("%s                                             IN `v_user` VARCHAR(255),\n", $query);
-    $query = sprintf("%s                                             IN `v_age` INT)\n", $query);
-    $query = sprintf("%s SQL SECURITY INVOKER\n", $query);
+    /* lock_device */
+    $query =         "CREATE PROCEDURE `lock_device`(IN `v_capability` VARCHAR(255),\n";
+    $query = sprintf("%s                                           IN `v_model_name` VARCHAR(255),\n", $query);
+    $query = sprintf("%s                                           IN `v_firmware_version` VARCHAR(255),\n", $query);
+    $query = sprintf("%s                                           IN `v_user` VARCHAR(255),\n", $query);
+    $query = sprintf("%s                                           IN `v_age` INT)\n", $query);
     $query = sprintf("%sBEGIN\n", $query);
-    $query = sprintf("%s   DECLARE v_found_id VARCHAR(12) DEFAULT NULL;\n", $query);
-    $query = sprintf("%s   SELECT d.`id` INTO v_found_id\n", $query);
-    $query = sprintf("%s   FROM `devices` d,\n", $query);
-    $query = sprintf("%s        `model_firmware` mf,\n", $query);
-    $query = sprintf("%s        `model_firmware_capability` mfc,\n", $query);
-    $query = sprintf("%s        `capabilities` c\n", $query);
-    $query = sprintf("%s   WHERE d.model_firmware_id=mf.id\n", $query);
-    $query = sprintf("%s   AND d.`model_firmware_id`=mfc.`model_firmware_id`\n", $query);
-    $query = sprintf("%s   AND mfc.`capability_id`=c.`id`\n", $query);
-    $query = sprintf("%s   AND c.`name`=v_capability\n", $query);
-    $query = sprintf("%s   AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)\n", $query);
-    $query = sprintf("%s   AND d.`id` NOT IN (\n", $query);
-    $query = sprintf("%s     SELECT ld.`device_id`\n", $query);
-    $query = sprintf("%s     FROM `locked_devices` ld\n", $query);
-    $query = sprintf("%s     WHERE ld.`device_id`=d.`id`\n", $query);
-    $query = sprintf("%s     AND ld.`locked`=1)\n", $query);
-    $query = sprintf("%s   LIMIT 1;\n", $query);
-    $query = sprintf("%s   IF v_found_id IS NOT NULL THEN\n", $query);
-    $query = sprintf("%s     INSERT INTO `locked_devices`\n", $query);
-    $query = sprintf("%s     VALUES(v_found_id, 1, v_user, NOW());\n", $query);
-    $query = sprintf("%s   END IF;\n", $query);
-    $query = sprintf("%s   SELECT d.`id`,\n", $query);
-    $query = sprintf("%s          d.`ipv4`,\n", $query);
-    $query = sprintf("%s          mf.`model_name`,\n", $query);
-    $query = sprintf("%s          mf.`firmware_version`,\n", $query);
-    $query = sprintf("%s          d.`last_update`\n", $query);
-    $query = sprintf("%s   FROM `devices` d,\n", $query);
-    $query = sprintf("%s        `model_firmware` mf,\n", $query);
-    $query = sprintf("%s        `model_firmware_capability` mfc,\n", $query);
-    $query = sprintf("%s        `capabilities` c\n", $query);
-    $query = sprintf("%s   WHERE d.`model_firmware_id`=mf.`id`\n", $query);
-    $query = sprintf("%s   AND d.`model_firmware_id`=mfc.`model_firmware_id`\n", $query);
-    $query = sprintf("%s   AND mfc.`capability_id`=c.`id`\n", $query);
-    $query = sprintf("%s   AND c.`name`=v_capability\n", $query);
-    $query = sprintf("%s   AND d.`id`=v_found_id;\n", $query);
-    $query = sprintf("%sEND;\n", $query);
+    $query = sprintf("%s DECLARE v_found_id VARCHAR(13) DEFAULT NULL;\n", $query);
+    $query = sprintf("%s IF v_capability IS NULL OR v_capability = '' THEN\n", $query);
+    $query = sprintf("%s   SET v_capability = '%%';\n", $query);
+    $query = sprintf("%s END IF;\n", $query);
+    $query = sprintf("%s IF v_model_name IS NULL OR v_model_name = '' THEN\n", $query);
+    $query = sprintf("%s   SET v_model_name = '%%';\n", $query);
+    $query = sprintf("%s END IF;\n", $query);
+    $query = sprintf("%s IF v_firmware_version IS NULL OR v_firmware_version = '' THEN\n", $query);
+    $query = sprintf("%s   SET v_firmware_version = '%%';\n", $query);
+    $query = sprintf("%s END IF;\n", $query);
+    $query = sprintf("%s SELECT d.`id` INTO v_found_id\n", $query);
+    $query = sprintf("%s FROM `devices` d,\n", $query);
+    $query = sprintf("%s      `model_firmware` mf,\n", $query);
+    $query = sprintf("%s      `model_firmware_capability` mfc,\n", $query);
+    $query = sprintf("%s      `capabilities` c\n", $query);
+    $query = sprintf("%s WHERE d.`model_firmware_id`=mf.`id`\n", $query);
+    $query = sprintf("%s AND d.`model_firmware_id`=mfc.`model_firmware_id`\n", $query);
+    $query = sprintf("%s AND mfc.`capability_id`=c.`id` \n", $query);
+    $query = sprintf("%s AND c.`name` LIKE v_capability\n", $query);
+    $query = sprintf("%s AND mf.`model_name` LIKE v_model_name\n", $query);
+    $query = sprintf("%s AND mf.`firmware_version` LIKE v_firmware_version\n", $query);
+    $query = sprintf("%s AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)\n", $query);
+    $query = sprintf("%s AND d.`id` NOT IN (\n", $query);
+    $query = sprintf("%s   SELECT ld.`device_id`\n", $query);
+    $query = sprintf("%s   FROM `locked_devices` ld\n", $query);
+    $query = sprintf("%s   WHERE ld.`device_id`=d.`id`\n", $query);
+    $query = sprintf("%s   AND ld.`locked`=1)\n", $query);
+    $query = sprintf("%s LIMIT 1;\n", $query);
+    $query = sprintf("%s IF v_found_id IS NOT NULL THEN\n", $query);
+    $query = sprintf("%s   INSERT INTO `locked_devices`\n", $query);
+    $query = sprintf("%s   VALUES(v_found_id, 1, v_user, NOW());\n", $query);
+    $query = sprintf("%s END IF;\n", $query);
+    $query = sprintf("%s SELECT d.`id`,\n", $query);
+    $query = sprintf("%s        d.`ipv4`,\n", $query);
+    $query = sprintf("%s        mf.`model_name`,\n", $query);
+    $query = sprintf("%s        mf.`firmware_version`,\n", $query);
+    $query = sprintf("%s        d.`last_update`\n", $query);
+    $query = sprintf("%s FROM `devices` d,\n", $query);
+    $query = sprintf("%s      `model_firmware` mf\n", $query);
+    $query = sprintf("%s WHERE d.`model_firmware_id`=mf.`id`\n", $query);
+    $query = sprintf("%s AND d.`id`=v_found_id;\n", $query);
+    $query = sprintf("%sEND\n", $query);
     query($sql, $query);
 
     /* unlock_device */
     $query =         "CREATE PROCEDURE `unlock_device`(IN `v_device_id` VARCHAR(255))\n";
     $query = sprintf("%s SQL SECURITY INVOKER\n", $query);
     $query = sprintf("%sBEGIN\n", $query);
-    $query = sprintf("%s DELETE FROM `locked_devices`\n", $query);
-    $query = sprintf("%s WHERE `locked`=1\n", $query);
-    $query = sprintf("%s AND `device_id`=v_device_id;\n", $query);
+    $query = sprintf("%s UPDATE `locked_devices`\n", $query);
+    $query = sprintf("%s SET `locked`=0\n", $query);
+    $query = sprintf("%s WHERE `device_id`=v_device_id;\n", $query);
     $query = sprintf("%sEND;\n", $query);
     query($sql, $query);
 
@@ -328,7 +332,7 @@ else if(isset($_POST['mysql'])) {
     query($sql, $query);
     $query = "GRANT SELECT, INSERT, UPDATE ON `abused`.`model_firmware_capability` TO 'abused'@'%';";
     query($sql, $query);
-    $query = " GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';";
+    $query = "GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';";
     query($sql, $query);
     $query = "GRANT SELECT, INSERT, UPDATE ON `abused`.`locked_devices` TO 'abused'@'%';";
     query($sql, $query);
@@ -354,9 +358,12 @@ else if(isset($_POST['mysql'])) {
     query($sql, $query);
     $query = "GRANT EXECUTE ON PROCEDURE abused.lock_device_by_capability TO 'abused'@'%';";
     query($sql, $query);
+    $query = "GRANT EXECUTE ON PROCEDURE abused.lock_device TO 'abused'@'%';";
+    query($sql, $query);
     $query = "GRANT EXECUTE ON PROCEDURE abused.unlock_device TO 'abused'@'%';";
     query($sql, $query);
 
+    printf("<span style=\"color: green;\">The installation has completed</span>");
   }
   catch(Exception $e) {
     printf("SQL query failed: [%d] %s\n", $e->getCode(), $e->getMessage());
