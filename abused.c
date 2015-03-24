@@ -109,8 +109,8 @@
 
 /* Uncomment the line below to enable detailed debug information */
 #define DEBUG___
-/* Uncomment the line below to also enable writing debug to a file */
-//#define DEBUG_TO_FILE___
+/* Uncomment the line below to write to a to a file instead of stdout */
+#define DEBUG_TO_FILE___
 
 #define DEBUG_COLOR_BEGIN "\x1b[0;32m"
 #define ERROR_COLOR_BEGIN "\x1b[0;31m"
@@ -121,6 +121,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -354,6 +355,10 @@ static BOOL filter(ssdp_message_s *, filters_factory_s *);
 static unsigned int cache_to_json(ssdp_cache_s *, char *, unsigned int, BOOL);
 static unsigned int cache_to_xml(ssdp_cache_s *, char *, unsigned int, BOOL);
 static BOOL flush_ssdp_cache(ssdp_cache_s **, const char *, struct sockaddr_storage *, int, int, BOOL);
+static void display_ssdp_cache();
+#ifdef DEBUG_TO_FILE___
+static int fsize(const char *);
+#endif
 #ifdef DEBUG___
 static int chr_count(char *, char);
 static void print_debug(FILE *, const char *, const char*, int, char *, ...);
@@ -923,6 +928,14 @@ static void parse_args(const int argc, char * const *argv, configuration_s *conf
   }
 }
 
+/**
+ * Displays the SSDP cache list as a table
+ */
+static void display_ssdp_cache() {
+  // NOTE for clearing screen: printf("\033[2J");
+  printf("unfinished display section\n");
+}
+
 int main(int argc, char **argv) {
   struct sockaddr_storage notif_client_addr;
   int recvLen = 1;
@@ -932,8 +945,8 @@ int main(int argc, char **argv) {
   signal(SIGINT, &exitSig);
 
   #ifdef DEBUG___
-  printf("%sDebug color%s\n", DEBUG_COLOR_BEGIN, DEBUG_COLOR_END);
-  printf("%sError color%s\n", ERROR_COLOR_BEGIN, DEBUG_COLOR_END);
+  PRINT_DEBUG("%sDebug color%s", DEBUG_COLOR_BEGIN, DEBUG_COLOR_END);
+  PRINT_DEBUG("%sError color%s", ERROR_COLOR_BEGIN, DEBUG_COLOR_END);
   #endif
 
   set_default_configuration(&conf);
@@ -1018,7 +1031,7 @@ int main(int argc, char **argv) {
 
     /* Parse the filters */
     PRINT_DEBUG("parse_filters()");
-    parse_filters(conf.filter, &filters_factory, TRUE);
+    parse_filters(conf.filter, &filters_factory, TRUE & (~conf.quiet_mode));
 
     /* Child process server loop */
     PRINT_DEBUG("Strating infinite loop");
@@ -1079,8 +1092,7 @@ int main(int argc, char **argv) {
           /* Else just display the cached messages in a table */
           else {
             PRINT_DEBUG("Displaying cached SSDP messages");
-            // TODO: list ssdp_cache
-            printf("\n\n(UNFINISHED DISPLAY BY TIMEOUT)\n\n");
+            display_ssdp_cache();
           }
         }
         continue;
@@ -1166,10 +1178,10 @@ int main(int argc, char **argv) {
               PRINT_DEBUG("Cache max size not reached, not sending yet");
             }
           }
-
-          /* Display results on console */
-          // TODO: display
-          printf("\n\n(UNFINISHED DISPLAY SECTION)\n\n");
+          else {
+            /* Display results on console */
+            display_ssdp_cache();
+          }
         }
       }
 
@@ -1201,7 +1213,7 @@ int main(int argc, char **argv) {
 
     /* Parse the filters */
     PRINT_DEBUG("parse_filters()");
-    parse_filters(conf.filter, &filters_factory, TRUE);
+    parse_filters(conf.filter, &filters_factory, TRUE & (~conf.quiet_mode));
 
     char *response = (char *)malloc(sizeof(char) * NOTIF_RECV_BUFFER);
     char *request = (char *)malloc(sizeof(char) * 2048);
@@ -2008,8 +2020,8 @@ static void parse_filters(char *raw_filter, filters_factory_s **filters_factory,
   }
 
   if(print_filters) {
-  printf("\nFilters applied:\n");
-  int c;
+    printf("\nFilters applied:\n");
+    int c;
     for(c = 0; c < filters_count; c++) {
       printf("%d: %s = %s\n", c, ff->filters[c].header, ff->filters[c].value);
     }
@@ -4005,13 +4017,13 @@ static void free_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer) {
 
 #ifdef DEBUG___
 /**
-* Counts the number of times needle occurs in haystack
-*
-* @param haystack The string to search in
-* @param needle The character to search for
-*
-* @return int The number of occurrences
-*/
+ * Counts the number of times needle occurs in haystack
+ *
+ * @param haystack The string to search in
+ * @param needle The character to search for
+ *
+ * @return int The number of occurrences
+ */
 static int chr_count(char *haystack, char needle) {
   int count = 0;
   int len = strlen(haystack);
@@ -4024,14 +4036,33 @@ static int chr_count(char *haystack, char needle) {
   return count;
 }
 
+#ifdef DEBUG_TO_FILE___
 /**
-* Prints a debug message, mimicking printf-like function, supports only %d, %s and %c
-*
-* @param const char* file The file the debug message generated in
-* @param int line The line number in the file the debug message generated at
-* @param const char* message The debug message to be displayed
-* @param ... variable number of optional arguments that match with the va_format
-*/
+ * Retrieves the size of a file
+ *
+ * @param file The file to stat
+ *
+ * @return The size of the file in Bytes
+ */
+static int fsize(const char *file) {
+  struct stat st;
+
+  if(stat(file, &st) == 0) {
+    return st.st_size;
+  }
+
+  return -1;
+}
+#endif
+
+/**
+ * Prints a debug message, mimicking printf-like function, supports only %d, %s and %c
+ *
+ * @param const char* file The file the debug message generated in
+ * @param int line The line number in the file the debug message generated at
+ * @param const char* message The debug message to be displayed
+ * @param ... variable number of optional arguments that match with the va_format
+ */
 
 static void print_debug(FILE *std, const char *color, const char* file, int line, char *va_format, ...) {
   va_list va;
@@ -4145,8 +4176,21 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
   }
 
   #ifdef DEBUG_TO_FILE___
-  /* Write to debug file */
-  FILE *fh = fopen("debug.log", "a");
+  /* Debug file to write to */
+  const char debug_file[] = "debug.log";
+  FILE *fh = NULL;
+  int file_size = fsize(debug_file);
+  /* Max file size is 500 KB */
+  int max_size = 512000;
+  /* If file is larger than 500KB then trunkate it */
+  if(file_size > max_size) {
+    fh = fopen(debug_file, "w");
+  }
+  /* Else continue writing to it */
+  else {
+    fh = fopen(debug_file, "a");
+  }
+  
   if(NULL == fh) {
     fprintf(stderr, "%s[%d][%s:%d] Failed to create debug file%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, DEBUG_COLOR_END);
   }
@@ -4154,9 +4198,9 @@ static void print_debug(FILE *std, const char *color, const char* file, int line
     fprintf(fh, "%s%s%s\n", header, message, DEBUG_COLOR_END);
     fclose(fh);
   }
-  #endif
-
+  #else
   fprintf(std, "%s%s%s\n", header, message, DEBUG_COLOR_END);
+  #endif
   
 }
 #endif
