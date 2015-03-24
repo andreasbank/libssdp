@@ -55,11 +55,11 @@ case 'list':
   printf("<html>\n<head>\n\t<title>List of devices</title>\n</head>\n<body>\n");
   printf("<table style=\"background-color: %s; padding: 1em; border: solid 2px black; border-radius: 1em;\">\n", randomPleasingColor());
   printf("\t<tr>\n");
-  printf("\t\t<td style=\"font-weight: bold; border-bottom: solid 2px black;\">id</td>\n");
-  printf("\t\t<td style=\"font-weight: bold; border-bottom: solid 2px black;\">ip</td>\n");
-  printf("\t\t<td style=\"font-weight: bold; border-bottom: solid 2px black;\">model</td>\n");
-  printf("\t\t<td style=\"font-weight: bold; border-bottom: solid 2px black;\">fw</td>\n");
-  printf("\t\t<td style=\"font-weight: bold; border-bottom: solid 2px black;\">last updated</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">id</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">ip</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">model</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">fw</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">last updated</td>\n");
   printf("\t</tr\n");
   foreach($results as $result) {
     printf("\t<tr>\n");

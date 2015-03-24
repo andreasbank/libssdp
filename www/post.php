@@ -47,7 +47,7 @@ foreach($abused_results as $abused_result) {
                          array(':00:', '00:'),
                          $mac);
       $id = str_replace(':', '', $id);
-      $id = strtohigher($id);
+      $id = strtoupper($id);
     }
     $ipv4 = $abused_result->get_ip();
     $ipv6 = NULL;
