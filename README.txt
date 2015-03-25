@@ -10,36 +10,25 @@ BUILD & INSTALL:
   3. Then run `chmod 755 abused´
   4. At last run `sudo cp <path-to-download-directory>/abused /usr/local/bin´
 
+BUILD & INSTALL AS A DAEMON:
 
-USAGE:
+To install the abused daemon open a terminal and run:
 
-  abused [OPTIONS] [interface]
+  1. cd <path-to-downloaded-files>/install
+  2. sudo ./install.sh
 
-  -C <file.conf>    Configuration file to use
-  -i                Interface to use, default is all
-  -I                Interface IP address to use, default is a bind-all address
-  -t                TTL value (routers to hop), default is 1
-  -f <string>       Filter for capturing, 'grep'-like effect. Also works
-                    for -u and -U where you can specify a list of
-                    comma separated filters
-  -M                Don't ignore UPnP M-SEARCH messages
-  -S                Run as a server,
-                    listens on port 43210 and returns a
-                    bonjour scan result (formatted list) for AXIS devices
-                    upon receiving the string 'abused'
-  -d                Run as a UNIX daemon,
-                    only works in combination with -S
-  -u                Listen for local UPnP (SSDP) notifications
-  -U                Perform an active search for UPnP devices
-  -a <ip>:<port>    Forward the events to the specified ip and port,
-                    also works in combination with -u.
-  -R                Output unparsed raw data
-  -F                Do not try to parse the "Location" header to get more device info
-  -x                Convert results to XML before use or output
-  -4                Force the use of the IPv4 protocol
-  -6                Force the use of the IPv6 protocol
-  -q                Be quiet!
-  -T                The time to wait for a device to answer a query
-  -L                Enable multicast loopback traffic
+To uninstall the abused daemon:
+
+  1. cd <path-to-downloaded-files>/install
+  2. sudo ./install.sh uninstall
 
 
+What the install process does is:
+ -compile the executable
+ -copy the executable to /usr/local/bin
+ -copy the init.d script (for boot startup)
+ -configure for start boot on runlevels 2, 3, 4 and 5
+
+The uninstall process undoes the steps the install process does.
+
+If you encounter an error please contact me on andreas.mikael.bank@gmail.com.
