@@ -185,7 +185,7 @@
       SELECT 0 AS `success`;
     ELSE
       INSERT INTO `locked_devices`
-        VALUES(v_device_id, 1, NOW(), v_locked_by);
+        VALUES(v_device_id, 1, v_locked_by, NOW());
       SELECT 1 AS `success`;
     END IF;
   END//

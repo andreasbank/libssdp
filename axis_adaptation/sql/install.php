@@ -227,7 +227,7 @@ else if(isset($_POST['mysql'])) {
 
     /* lock_device */
     $query =         "CREATE PROCEDURE `lock_device_by_id`(IN `v_device_id` VARCHAR(255),\n";
-    $query = sprintf("%s                               IN `v_locked_by` VARCHAR(255))\n", $query);
+    $query = sprintf("%s                                   IN `v_locked_by` VARCHAR(255))\n", $query);
     $query = sprintf("%s SQL SECURITY INVOKER\n", $query);
     $query = sprintf("%sBEGIN \n", $query);
     $query = sprintf("%s DECLARE is_locked INT DEFAULT 0;\n", $query);
@@ -236,7 +236,7 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s   SELECT 0 AS `success`;\n", $query);
     $query = sprintf("%s ELSE\n", $query);
     $query = sprintf("%s   INSERT INTO `locked_devices`\n", $query);
-    $query = sprintf("%s     VALUES(v_device_id, 1, NOW(), v_locked_by);\n", $query);
+    $query = sprintf("%s     VALUES(v_device_id, 1, v_locked_by, NOW());\n", $query);
     $query = sprintf("%s   SELECT 1 AS `success`;\n", $query);
     $query = sprintf("%s END IF;\n", $query);
     $query = sprintf("%sEND;\n", $query);
@@ -244,10 +244,10 @@ else if(isset($_POST['mysql'])) {
 
     /* lock_device */
     $query =         "CREATE PROCEDURE `lock_device`(IN `v_capability` VARCHAR(255),\n";
-    $query = sprintf("%s                                           IN `v_model_name` VARCHAR(255),\n", $query);
-    $query = sprintf("%s                                           IN `v_firmware_version` VARCHAR(255),\n", $query);
-    $query = sprintf("%s                                           IN `v_user` VARCHAR(255),\n", $query);
-    $query = sprintf("%s                                           IN `v_age` INT)\n", $query);
+    $query = sprintf("%s                             IN `v_model_name` VARCHAR(255),\n", $query);
+    $query = sprintf("%s                             IN `v_firmware_version` VARCHAR(255),\n", $query);
+    $query = sprintf("%s                             IN `v_user` VARCHAR(255),\n", $query);
+    $query = sprintf("%s                             IN `v_age` INT)\n", $query);
     $query = sprintf("%sBEGIN\n", $query);
     $query = sprintf("%s DECLARE v_found_id VARCHAR(13) DEFAULT NULL;\n", $query);
     $query = sprintf("%s IF v_capability IS NULL OR v_capability = '' THEN\n", $query);
