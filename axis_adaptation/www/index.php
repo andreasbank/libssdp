@@ -49,13 +49,35 @@ switch($action) {
 
 /* List devices */
 case 'list':
+  $capability = NULL;
+  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
+    $capability = $_POST['capability'];
+  }
+  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
+    $capability = $_GET['capability'];
+  }
+
+  $model_name = NULL;
+  if(isset($_POST['model_name']) && !empty($_POST['model_name'])) {
+    $model_name = $_POST['model_name'];
+  }
+  else if(isset($_GET['model_name']) && !empty($_GET['model_name'])) {
+    $model_name = $_GET['model_name'];
+  }
+
+  $firmware_version = NULL;
+  if(isset($_POST['firmware_version']) && !empty($_POST['firmware_version'])) {
+    $firmware_version = $_POST['firmware_version'];
+  }
+  else if(isset($_GET['firmware_version']) && !empty($_GET['firmware_version'])) {
+    $firmware_version = $_GET['firmware_version'];
+  }
+
   try {
-    $results = $sql->query('SELECT d.id, d.ipv4, mf.model_name, mf.firmware_version, d.last_update
-                            FROM `devices` d, `model_firmware` mf
-                            WHERE d.model_firmware_id=mf.id;');
-//    $locked_results = $sql->query('SELECT ld.device_id, ld.locked_by, ld.locked_date
-//                                   FROM `locked_evices` ld
-//                                   WHERE ld.locked=1;');
+    $results = $sql->call(sprintf("call list_devices(%s, %s, %s);",
+                                  ($capability ? sprintf("'%s'", $capability) : 'NULL'),
+                                  ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
+                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL')))[0];
   }
   catch(Exception $e) {
     header('HTTP/1.0 500');
@@ -67,11 +89,14 @@ case 'list':
   printf("<html>\n<head>\n\t<title>List of devices</title>\n</head>\n<body>\n");
   printf("<table style=\"background-color: %s; padding: 1em; border: solid 2px black; border-radius: 1em;\">\n", randomPleasingColor());
   printf("\t<tr>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">id</td>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">ip</td>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">model</td>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">fw</td>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">last updated</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">ID</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">IP (v4)</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Model</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Firmware version</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Capabilities</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Last updated</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Locked by</td>\n");
+  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Locked date</td>\n");
   printf("\t</tr\n");
   foreach($results as $result) {
     printf("\t<tr>\n");
@@ -79,60 +104,10 @@ case 'list':
     printf("\t\t<td style=\"padding-right: 1em;\"><a target=\"_blank\" href=\"http://%s\">%s</a></td>\n", $result['ipv4'], $result['ipv4']);
     printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['model_name']);
     printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['firmware_version']);
-    printf("\t\t<td>%s</td>\n", $result['last_update']);
-    printf("\t</tr>\n");
-  }
-  printf("</table>\n");
-  printf("</body>\n</html>\n");
-  break;
-
-/* List devices for given capability */
-case 'list_by_capability':
-  $capability = NULL;
-  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
-    $capability = $_POST['capability'];
-  }
-  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
-    $capability = $_GET['capability'];
-  }
-  else {
-    printf("No capability specified.");
-    exit(0);
-  }
-  try {
-    $results = $sql->query(sprintf("SELECT d.id, d.ipv4, mf.model_name, mf.firmware_version, d.last_update
-                                    FROM `devices` d,
-                                         `model_firmware` mf,
-                                         `model_firmware_capability` mfc,
-                                         `capabilities` c
-                                    WHERE d.model_firmware_id=mf.id
-                                    AND d.model_firmware_id=mfc.model_firmware_id
-                                    AND mfc.capability_id=c.id
-                                    AND c.name='%s';", $capability));
-  }
-  catch(Exception $e) {
-    header('HTTP/1.0 500');
-    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-    exit(1);
-  }
-  header('HTTP/1.0 200 Ok');
-  printf("<!DOCTYPE html>\n");
-  printf("<html>\n<head>\n\t<title>List devices with capability '%s'</title>\n</head>\n<body>\n", $capability);
-  printf("<table style=\"background-color: %s; padding: 1em; border: solid 2px black; border-radius: 1em;\">\n", randomPleasingColor());
-  printf("\t<tr>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">id</td>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">ip</td>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">model</td>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">fw</td>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">last updated</td>\n");
-  printf("\t</tr\n");
-  foreach($results as $result) {
-    printf("\t<tr>\n");
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['id']);
-    printf("\t\t<td style=\"padding-right: 1em;\"><a target=\"_blank\" href=\"http://%s\">%s</a></td>\n", $result['ipv4'], $result['ipv4']);
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['model_name']);
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['firmware_version']);
-    printf("\t\t<td>%s</td>\n", $result['last_update']);
+    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['capabilities']);
+    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['last_update']);
+    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['locked_by']);
+    printf("\t\t<td>%s</td>\n", $result['locked_date']);
     printf("\t</tr>\n");
   }
   printf("</table>\n");

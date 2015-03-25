@@ -304,8 +304,8 @@ else if(isset($_POST['mysql'])) {
     query($sql, $query);
 
     /* is_device_locked */
-    $query =         "CREATE PROCEDURE `is_device_locked` (IN `v_device_id` INT)";
-    $query = sprintf("%s SQL SECURITY DEFINER\n", $query);
+    $query =         "CREATE PROCEDURE `is_device_locked` (IN `v_device_id` INT)\n";
+    $query = sprintf("%s SQL SECURITY INVOKER\n", $query);
     $query = sprintf("%sBEGIN\n", $query);
     $query = sprintf("%s DECLARE is_locked TINYINT DEFAULT 0;\n", $query);
     $query = sprintf("%s SELECT `locked`\n", $query);
@@ -319,6 +319,49 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s   SELECT 'no' AS `locked`;\n", $query);
     $query = sprintf("%s END IF;\n", $query);
     $query = sprintf("%sEND;\n", $query);
+    query($sql, $query);
+
+    /* list_devices */
+    $query =         "CREATE PROCEDURE `list_devices`(IN `v_capability` VARCHAR(255),\n";
+    $query = sprintf("%s                              IN `v_model_name` VARCHAR(255),\n", $query);
+    $query = sprintf("%s                              IN `v_firmware_version` VARCHAR(255))\n", $query);
+    $query = sprintf("%s  SQL SECURITY INVOKER\n", $query);
+    $query = sprintf("%sBEGIN\n", $query);
+    $query = sprintf("%s  IF v_capability IS NULL OR v_capability = '' THEN\n", $query);
+    $query = sprintf("%s    SET v_capability = '%%';\n", $query);
+    $query = sprintf("%s  END IF;\n", $query);
+    $query = sprintf("%s  IF v_model_name IS NULL OR v_model_name = '' THEN\n", $query);
+    $query = sprintf("%s    SET v_model_name = '%%';\n", $query);
+    $query = sprintf("%s  END IF;\n", $query);
+    $query = sprintf("%s  IF v_firmware_version IS NULL OR v_firmware_version = '' THEN\n", $query);
+    $query = sprintf("%s    SET v_firmware_version = '%%';\n", $query);
+    $query = sprintf("%s  END IF;\n", $query);
+    $query = sprintf("%s  SELECT DISTINCT d.`id`,\n", $query);
+    $query = sprintf("%s         d.`ipv4`,\n", $query);
+    $query = sprintf("%s         mf.`model_name`,\n", $query);
+    $query = sprintf("%s         mf.`firmware_version`,\n", $query);
+    $query = sprintf("%s         (SELECT GROUP_CONCAT(c2.`name` SEPARATOR ', ')\n", $query);
+    $query = sprintf("%s          FROM `model_firmware_capability` mfc2,\n", $query);
+    $query = sprintf("%s               `capabilities` c2\n", $query);
+    $query = sprintf("%s          WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`\n", $query);
+    $query = sprintf("%s          AND c2.`id` = mfc2.`capability_id`\n", $query);
+    $query = sprintf("%s          GROUP BY mfc2.`model_firmware_id`\n", $query);
+    $query = sprintf("%s         ) AS `capabilities`,\n", $query);
+    $query = sprintf("%s         d.`last_update`,\n", $query);
+    $query = sprintf("%s         ld.`locked_by`,\n", $query);
+    $query = sprintf("%s         ld.`locked_date`\n", $query);
+    $query = sprintf("%s  FROM `devices` d\n", $query);
+    $query = sprintf("%s  LEFT OUTER JOIN `locked_devices` ld\n", $query);
+    $query = sprintf("%s  ON d.`id` = ld.`device_id`\n", $query);
+    $query = sprintf("%s  AND ld.`locked` = 1,\n", $query);
+    $query = sprintf("%s       `model_firmware` mf,\n", $query);
+    $query = sprintf("%s       `model_firmware_capability` mfc,\n", $query);
+    $query = sprintf("%s       `capabilities` c\n", $query);
+    $query = sprintf("%s  WHERE mf.`id` = d.`model_firmware_id`\n", $query);
+    $query = sprintf("%s  AND mfc.`model_firmware_id` = d.`model_firmware_id`\n", $query);
+    $query = sprintf("%s  AND mfc.`capability_id` = c.`id`\n", $query);
+    $query = sprintf("%s  AND c.`name` LIKE v_capability;\n", $query);
+    $query = sprintf("%sEND\n", $query);
     query($sql, $query);
 
     /* Create user */
@@ -361,6 +404,8 @@ else if(isset($_POST['mysql'])) {
     $query = "GRANT EXECUTE ON PROCEDURE abused.lock_device TO 'abused'@'%';";
     query($sql, $query);
     $query = "GRANT EXECUTE ON PROCEDURE abused.unlock_device TO 'abused'@'%';";
+    query($sql, $query);
+    $query = "GRANT EXECUTE ON PROCEDURE abused.list_devices TO 'abused'@'%';";
     query($sql, $query);
 
     printf("<span style=\"color: green;\">The installation has completed</span>");

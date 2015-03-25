@@ -272,6 +272,49 @@
   END
   DELIMITER ;
 
+  DELIMITER //
+  CREATE PROCEDURE `list_devices`(IN `v_capability` VARCHAR(255),
+                                  IN `v_model_name` VARCHAR(255),
+                                  IN `v_firmware_version` VARCHAR(255))
+    SQL SECURITY INVOKER
+  BEGIN
+    IF v_capability IS NULL OR v_capability = '' THEN
+      SET v_capability = '%';
+    END IF;
+    IF v_model_name IS NULL OR v_model_name = '' THEN
+      SET v_model_name = '%';
+    END IF;
+    IF v_firmware_version IS NULL OR v_firmware_version = '' THEN
+      SET v_firmware_version = '%';
+    END IF;
+    SELECT DISTINCT d.`id`,
+           d.`ipv4`,
+           mf.`model_name`,
+           mf.`firmware_version`,
+           (SELECT GROUP_CONCAT(c2.`name` SEPARATOR ', ')
+            FROM `model_firmware_capability` mfc2,
+                 `capabilities` c2
+            WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`
+            AND c2.`id` = mfc2.`capability_id`
+            GROUP BY mfc2.`model_firmware_id`
+           ) AS `capabilities`,
+           d.`last_update`,
+           ld.`locked_by`,
+           ld.`locked_date`
+    FROM `devices` d
+    LEFT OUTER JOIN `locked_devices` ld
+    ON d.`id` = ld.`device_id`
+    AND ld.`locked` = 1,
+         `model_firmware` mf,
+         `model_firmware_capability` mfc,
+         `capabilities` c
+    WHERE mf.`id` = d.`model_firmware_id`
+    AND mfc.`model_firmware_id` = d.`model_firmware_id`
+    AND mfc.`capability_id` = c.`id`
+    AND c.`name` LIKE v_capability;
+  END
+  DELIMITER ;
+
   GRANT EXECUTE ON PROCEDURE abused.add_capability_if_not_exist TO 'abused'@'%';
 
   GRANT EXECUTE ON PROCEDURE abused.add_model_firmware_if_not_exist TO 'abused'@'%';
@@ -293,4 +336,6 @@
   GRANT EXECUTE ON PROCEDURE abused.lock_device TO 'abused'@'%';
 
   GRANT EXECUTE ON PROCEDURE abused.unlock_device TO 'abused'@'%';
+
+  GRANT EXECUTE ON PROCEDURE abused.list_devices TO 'abused'@'%';
 

@@ -242,7 +242,6 @@ foreach($abused_results as $abused_result) {
 
     /* Else if device type isn't supported then skip it */
     else {
-      printf("Unsupported, skipping");
       continue;
     }
 
