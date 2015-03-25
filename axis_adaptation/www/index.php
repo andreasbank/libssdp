@@ -77,7 +77,13 @@ case 'list':
     $results = $sql->call(sprintf("call list_devices(%s, %s, %s);",
                                   ($capability ? sprintf("'%s'", $capability) : 'NULL'),
                                   ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
-                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL')))[0];
+                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL')));
+    if(is_array($results) && count($results) > 0) {
+      $results = $results[0];
+    }
+    else {
+      $results = NULL;
+    }
   }
   catch(Exception $e) {
     header('HTTP/1.0 500');
@@ -87,9 +93,9 @@ case 'list':
   header('HTTP/1.0 200 Ok');
   printf("<!DOCTYPE html>\n");
   printf("<html>\n<head>\n\t<title>List of devices</title>\n</head>\n<body>\n");
-  printf("<table style=\"background-color: %s; padding: 1em; border: solid 2px black; border-radius: 1em;\">\n", randomPleasingColor());
+  printf("<table style=\"border-spacing: 0; background-color: %s; padding: 1em; border: solid 2px black; border-radius: 1em;\">\n", randomPleasingColor());
   printf("\t<tr>\n");
-  printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">ID</td>\n");
+  printf("\t\t<td style=\"border-top-left-radius: .5em; border-top-right-radius: .5em; background-color: white; text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">ID</td>\n");
   printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">IP (v4)</td>\n");
   printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Model</td>\n");
   printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Firmware version</td>\n");
@@ -97,17 +103,25 @@ case 'list':
   printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Last updated</td>\n");
   printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Locked by</td>\n");
   printf("\t\t<td style=\"text-shadow: 1px 1px 2px grey; font-weight: bold; border-bottom: solid 2px black;\">Locked date</td>\n");
-  printf("\t</tr\n");
+  printf("\t</tr>\n");
+  $results_size = count($results);
+  $results_index = 0;
   foreach($results as $result) {
+    $round_borders = '';
+    $bottom_padding = '';
+    if($results_index++ == $results_size - 1) {
+      $round_borders = 'border-bottom-left-radius: .5em; border-bottom-right-radius: .5em; ';
+      $bottom_padding = ' padding-bottom: .5em;';
+    }
     printf("\t<tr>\n");
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['id']);
+    printf("\t\t<td style=\"%sbackground-color: white; padding: 0 .5em;\">%s</td>\n", $round_borders, $result['id']);
     printf("\t\t<td style=\"padding-right: 1em;\"><a target=\"_blank\" href=\"http://%s\">%s</a></td>\n", $result['ipv4'], $result['ipv4']);
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['model_name']);
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['firmware_version']);
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['capabilities']);
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['last_update']);
-    printf("\t\t<td style=\"padding-right: 1em;\">%s</td>\n", $result['locked_by']);
-    printf("\t\t<td>%s</td>\n", $result['locked_date']);
+    printf("\t\t<td style=\"padding: 0 .5em;\">%s</td>\n", $result['model_name']);
+    printf("\t\t<td style=\"padding: 0 .5em;\">%s</td>\n", $result['firmware_version']);
+    printf("\t\t<td style=\"padding: 0 .5em;\">%s</td>\n", $result['capabilities']);
+    printf("\t\t<td style=\"padding: 0 .5em;\">%s</td>\n", $result['last_update']);
+    printf("\t\t<td style=\"padding: 0 .5em;\">%s</td>\n", $result['locked_by']);
+    printf("\t\t<td style=\"padding: 0 .5em;%s\">%s</td>\n", $bottom_padding, $result['locked_date']);
     printf("\t</tr>\n");
   }
   printf("</table>\n");
@@ -141,7 +155,12 @@ case 'lock_device_by_id':
   try {
     $results = $sql->call(sprintf("call lock_device_by_id('%s', '%s')", $device_id, $user));
     header('Content-type: application/json; charset=utf-8');
-    printf("%s", json_encode($results[0]));
+    if(is_array($results) && count()) {
+      printf("%s", json_encode($results[0]));
+    }
+    else {
+      printf("[]");
+    }
   }
   catch(Exception $e) {
     header('HTTP/1.0 500');
@@ -208,7 +227,12 @@ case 'lock_device':
                                   $user,
                                   $age));
     header('Content-type: application/json; charset=utf-8');
-    printf("%s", json_encode($results[0]));
+    if(is_array($results) && count($results) > 0) {
+      printf("%s", json_encode($results[0]));
+    }
+    else {
+      printf("[]");
+    }
   }
   catch(Exception $e) {
     header('HTTP/1.0 500');
