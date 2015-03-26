@@ -170,6 +170,11 @@ foreach($abused_results as $abused_result) {
           $sqlconnection->call(sprintf("call add_capability_to_model_firmware('%s', '%s');",
                                        $model_firmware_id,
                                        $capability_id));
+          $capability_state = $cm->get_sd_disk_status();
+          $sqlconnection->call(sprintf("call add_or_update_model_firmware_capability_state('%s', '%s', '%s');",
+                                       $model_firmware_id,
+                                       $capability_id,
+                                       $capability_state));
         }
         if($cm->has_local_storage()) {
           $capability_id = $sqlconnection->call('call add_capability_if_not_exist(\'local_storage\');')[0][0]['id'];
@@ -247,7 +252,7 @@ foreach($abused_results as $abused_result) {
 
 
   } catch(Exception $e) {
-    /* Do noting */
+    /* Print and continue */
     printf("Error: [%d] %s", $e->getCode(), $e->getMessage());
     continue;
   }

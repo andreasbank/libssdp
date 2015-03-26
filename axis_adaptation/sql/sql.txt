@@ -23,7 +23,14 @@
                                             FOREIGN KEY (`capability_id`)
                                               REFERENCES `capabilities`(`id`),
                                             PRIMARY KEY(`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
- 
+
+  CREATE TABLE `model_firmware_capability_state` (`model_firmware_id` INT NOT NULL,
+                                                  `capability_id` INT NOT NULL,
+                                                  `state` VARCHAR(255) NOT NULL,
+                                                  FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware_capability` (`model_firmware_id`),
+                                                  FOREIGN KEY (`capability_id`) REFERENCES `model_firmware_capability` (`capability_id`),
+                                                  PRIMARY KEY (`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
+
   CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL,
                           `mac` VARCHAR(255) NOT NULL,
                           `ipv4` VARCHAR(15),
@@ -52,6 +59,8 @@
   GRANT SELECT, INSERT, UPDATE ON `abused`.`model_firmware` TO 'abused'@'%';
 
   GRANT SELECT, INSERT, UPDATE ON `abused`.`model_firmware_capability` TO 'abused'@'%';
+
+  GRANT SELECT, INSERT, UPDATE ON `abused`.`model_firmware_capability_state` TO 'abused'@'%';
 
   GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';
 
@@ -275,24 +284,40 @@
   DELIMITER //
   CREATE PROCEDURE `list_devices`(IN `v_capability` VARCHAR(255),
                                   IN `v_model_name` VARCHAR(255),
-                                  IN `v_firmware_version` VARCHAR(255))
+                                  IN `v_firmware_version` VARCHAR(255),
+                                  IN `v_age` INT,
+                                  IN `v_locked_by` VARCHAR(255),
+                                  IN `v_device_id` VARCHAR(255))
     SQL SECURITY INVOKER
+  DELIMITER ;
   BEGIN
     IF v_capability IS NULL OR v_capability = '' THEN
-      SET v_capability = '%';
+      SET v_capability = '%%';
     END IF;
     IF v_model_name IS NULL OR v_model_name = '' THEN
-      SET v_model_name = '%';
+      SET v_model_name = '%%';
     END IF;
     IF v_firmware_version IS NULL OR v_firmware_version = '' THEN
-      SET v_firmware_version = '%';
+      SET v_firmware_version = '%%';
     END IF;
+    IF v_device_id IS NULL OR v_device_id = '' THEN
+      SET v_device_id = '%%';
+    END IF;
+    CREATE TEMPORARY TABLE IF NOT EXISTS `tmp_tbl` AS (
     SELECT DISTINCT d.`id`,
            d.`ipv4`,
            mf.`model_name`,
            mf.`firmware_version`,
-           (SELECT GROUP_CONCAT(c2.`name` SEPARATOR ', ')
-            FROM `model_firmware_capability` mfc2,
+           (SELECT GROUP_CONCAT(CONCAT(c2.`name`, IF(mfcs.`state` IS NULL,
+                                                  '',
+                                                  CONCAT(' (',
+                                                         mfcs.`state`,
+                                                         ')')))
+                                SEPARATOR ', ')
+            FROM `model_firmware_capability` mfc2
+            LEFT OUTER JOIN `model_firmware_capability_state` mfcs
+            ON mfc2.`model_firmware_id` = mfcs.`model_firmware_id`
+            AND mfc2.`capability_id` = mfcs.`capability_id`,
                  `capabilities` c2
             WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`
             AND c2.`id` = mfc2.`capability_id`
@@ -309,9 +334,28 @@
          `model_firmware_capability` mfc,
          `capabilities` c
     WHERE mf.`id` = d.`model_firmware_id`
+    AND d.`id` LIKE v_device_id
     AND mfc.`model_firmware_id` = d.`model_firmware_id`
     AND mfc.`capability_id` = c.`id`
-    AND c.`name` LIKE v_capability;
+    AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
+    AND c.`name` LIKE v_capability);
+    IF v_locked_by IS NOT NULL AND v_locked_by != '' THEN
+      SELECT *
+      FROM `tmp_tbl` tt
+      WHERE tt.`locked_by` LIKE v_locked_by;
+    ELSE
+      SELECT *
+      FROM `tmp_tbl`;
+    END IF;
+  END
+  DELIMITER //
+  CREATE PROCEDURE `add_or_update_model_firmware_capability_state`(IN `v_model_firmware_id` INT,
+                                                                   IN `v_capability_id` INT,
+                                                                   IN `v_state` VARCHAR(255))
+    SQL SECURITY INVOKER
+  BEGIN
+    INSERT INTO `model_firmware_capability_state`
+    VALUES (v_model_firmware_id, v_capability_id, v_state);
   END
   DELIMITER ;
 
@@ -323,6 +367,8 @@
 
   GRANT EXECUTE ON PROCEDURE abused.add_capability_to_model_firmware TO 'abused'@'%';
 
+  GRANT EXECUTE ON PROCEDURE abused.add_or_update_model_firmware_capability_state TO 'abused'@'%';
+
   GRANT EXECUTE ON PROCEDURE abused.add_or_update_device TO 'abused'@'%';
 
   GRANT EXECUTE ON PROCEDURE abused.is_device_locked TO 'abused'@'%';
@@ -330,8 +376,6 @@
   GRANT EXECUTE ON PROCEDURE abused.delete_inactive_devices TO 'abused'@'%';
 
   GRANT EXECUTE ON PROCEDURE abused.is_device_locked_internal TO 'abused'@'%';
-
-  GRANT EXECUTE ON PROCEDURE abused.lock_device_by_id TO 'abused'@'%';
 
   GRANT EXECUTE ON PROCEDURE abused.lock_device TO 'abused'@'%';
 

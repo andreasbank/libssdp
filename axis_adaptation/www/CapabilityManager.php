@@ -252,8 +252,35 @@ class CapabilityManager {
     /* Return the result excluding the group string */
     return trim(substr($result, strlen($parameter) + 1));
   }
- 
- 
+
+  public function parse_axis_device_xml($url, $parameter, $transport = 'http') {
+    $result = null;
+    $url = sprintf("%s://%s/%s",
+                   $transport,
+                   $this->ip,
+                   $url);
+
+    $result = $this->send_request($url);
+
+    /* Check if an error ocurred */
+    if(1 == preg_match('/^# Error:/', $result)) {
+      throw new Exception($result, 999);
+    }
+
+    $pattern = sprintf("/%s=\"([A-Za-z]+)\"/", $parameter);
+
+    $parsed_success = preg_match($pattern,
+                                 $result,
+                                 $parsed_matches);
+
+    if(!$parsed_success || count($parsed_matches) < 1) {
+      return 'unknown';
+    }
+
+    /* Return the result */
+    return $parsed_matches[1];
+  }
+
   /**
    * Enables/disables the SSH server on the device
    *
@@ -461,6 +488,15 @@ class CapabilityManager {
       return false;
     }
     return true;
+  }
+
+  public function get_sd_disk_status() {
+    try {
+      $status = $this->parse_axis_device_xml('axis-cgi/disks/list.cgi?diskid=SD_DISK&type=xml', 'status');
+    } catch(Exception $e) {
+      $status = 'unknown';
+    }
+    return $status;
   }
 
 }

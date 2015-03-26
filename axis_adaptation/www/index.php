@@ -49,7 +49,7 @@ else {
 switch($action) {
 
 /* List devices */
-case 'list':
+case 'list_devices':
   $capability = NULL;
   if(isset($_POST['capability']) && !empty($_POST['capability'])) {
     $capability = $_POST['capability'];
@@ -74,15 +74,23 @@ case 'list':
     $firmware_version = $_get['firmware_version'];
   }
 
-  $user = NULL;
-  if(isset($_POST['user']) && !empty($_POST['user'])) {
-    $user = $_POST['user'];
+  $locked_by = NULL;
+  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
+    $locked_by = $_POST['locked_by'];
   }
-  else if(isset($_GET['user']) && !empty($_GET['user'])) {
-    $user = $_GET['user'];
+  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
+    $locked_by = $_GET['locked_by'];
   }
 
-  $age = null;
+  $device_id = null;
+  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+    $device_id = $_POST['device_id'];
+  }
+  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+    $device_id = $_GET['device_id'];
+  }
+
+  $age = 3600;
   if(isset($_POST['age']) && !empty($_POST['age'])) {
     $age = $_POST['age'];
   }
@@ -91,10 +99,16 @@ case 'list':
   }
 
   try {
-    $results = $sql->call(sprintf("call list_devices(%s, %s, %s);",
-                                  ($capability ? sprintf("'%s'", $capability) : 'NULL'),
-                                  ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
-                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL')));
+    $query = sprintf("call list_devices(%s, %s, %s, %d, %s, %s);",
+                     ($capability ? sprintf("'%s'", $capability) : 'NULL'),
+                     ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
+                     ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                     $age,
+                     ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
+                     ($device_id ? sprintf("'%s'", $device_id) : 'NULL'));
+
+    $results = $sql->call($query);
+
     if(is_array($results) && count($results) > 0) {
       printf("%s", json_encode($results[0]));
     }
@@ -136,6 +150,14 @@ case 'gui_list':
     $firmware_version = $_get['firmware_version'];
   }
 
+  $locked_by = NULL;
+  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
+    $locked_by = $_POST['locked_by'];
+  }
+  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
+    $locked_by = $_GET['locked_by'];
+  }
+
   $user = NULL;
   if(isset($_POST['user']) && !empty($_POST['user'])) {
     $user = $_POST['user'];
@@ -148,23 +170,33 @@ case 'gui_list':
     exit(0);
   }
 
-  $age = null;
+  $device_id = null;
+  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+    $device_id = $_POST['device_id'];
+  }
+  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+    $device_id = $_GET['device_id'];
+  }
+
+  $age = 3600;
   if(isset($_POST['age']) && !empty($_POST['age'])) {
     $age = $_POST['age'];
   }
   else if(isset($_GET['age']) && !empty($_GET['age'])) {
     $age = $_GET['age'];
   }
-  else {
-    printf("No age specified.");
-    exit(0);
-  }
 
   try {
-    $results = $sql->call(sprintf("call list_devices(%s, %s, %s);",
-                                  ($capability ? sprintf("'%s'", $capability) : 'NULL'),
-                                  ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
-                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL')));
+    $query = sprintf("call list_devices(%s, %s, %s, %d, %s, %s);",
+                     ($capability ? sprintf("'%s'", $capability) : 'NULL'),
+                     ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
+                     ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                     $age,
+                     ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
+                     ($device_id ? sprintf("'%s'", $device_id) : 'NULL'));
+
+    $results = $sql->call($query);
+
     if(is_array($results) && count($results) > 0) {
       $results = $results[0];
     }
@@ -208,7 +240,7 @@ case 'gui_list':
   $results_index = 0;
   foreach($results as $result) {
     $lock_style = 'color: green;';
-    $lock_link = sprintf("%s?action=lock_device_by_id&amp;device_id=%s&amp;user=%s&amp;age=%s&amp;url=%s",
+    $lock_link = sprintf("%s?action=lock_device&amp;device_id=%s&amp;user=%s&amp;age=%s&amp;url=%s",
                          $current_script,
                          $result['id'],
                          $user,
@@ -276,60 +308,6 @@ case 'gui_list':
   printf("</body>\n</html>\n");
   break;
 
-/* Lock a device by its ID if possible */
-case 'lock_device_by_id':
-  $device_id = NULL;
-  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
-    $device_id = $_POST['device_id'];
-  }
-  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
-    $device_id = $_GET['device_id'];
-  }
-  else {
-    printf("No device ID specified.");
-    exit(0);
-  }
-
-  $user = NULL;
-  if(isset($_POST['user']) && !empty($_POST['user'])) {
-    $user = $_POST['user'];
-  }
-  else if(isset($_GET['user']) && !empty($_GET['user'])) {
-    $user = $_GET['user'];
-  }
-  else {
-    printf("No user specified.");
-    exit(0);
-  }
-
-  $url = null;
-  if(isset($_POST['url']) && !empty($_POST['url'])) {
-    $url = urldecode($_POST['url']);
-  }
-  else if(isset($_GET['url']) && !empty($_GET['url'])) {
-    $url = urldecode($_GET['url']);
-  }
-
-  try {
-    $results = $sql->call(sprintf("call lock_device_by_id('%s', '%s')", $device_id, $user));
-    header('Content-type: application/json; charset=utf-8');
-    if(!empty($url)) {
-      header(sprintf("Location: %s", $url));
-    }
-    else if(is_array($results) && count($results) > 0) {
-      printf("%s", json_encode($results[0]));
-    }
-    else {
-      printf("[]");
-    }
-  }
-  catch(Exception $e) {
-    header('HTTP/1.0 500');
-    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-    exit(1);
-  }
-  break;
-
 /* Lock the device if possible */
 case 'lock_device':
   $capability = NULL;
@@ -356,6 +334,30 @@ case 'lock_device':
     $firmware_version = $_GET['firmware_version'];
   }
 
+  $locked_by = NULL;
+  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
+    $locked_by = $_POST['locked_by'];
+  }
+  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
+    $locked_by = $_GET['locked_by'];
+  }
+
+  $device_id = null;
+  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+    $device_id = $_POST['device_id'];
+  }
+  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+    $device_id = $_GET['device_id'];
+  }
+
+  $age = 3600;
+  if(isset($_POST['age']) && !empty($_POST['age'])) {
+    $age = $_POST['age'];
+  }
+  else if(isset($_GET['age']) && !empty($_GET['age'])) {
+    $age = $_GET['age'];
+  }
+
   $user = NULL;
   if(isset($_POST['user']) && !empty($_POST['user'])) {
     $user = $_POST['user'];
@@ -376,25 +378,14 @@ case 'lock_device':
     $url = $_GET['url'];
   }
 
-  $age = null;
-  if(isset($_POST['age']) && !empty($_POST['age'])) {
-    $age = $_POST['age'];
-  }
-  else if(isset($_GET['age']) && !empty($_GET['age'])) {
-    $age = $_GET['age'];
-  }
-  else {
-    printf("No age specified.");
-    exit(0);
-  }
-
   try {
-    $results = $sql->call(sprintf("call lock_device(%s, %s, %s, '%s', %d)",
+    $results = $sql->call(sprintf("call lock_device(%s, %s, %s, '%s', %d, %s)",
                                   ($capability ? sprintf("'%s'", $capability): 'NULL'),
                                   ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
                                   ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
                                   $user,
-                                  $age));
+                                  $age,
+                                  ($device_id ? sprintf("'%s'", $device_id) : 'NULL')));
     header('Content-type: application/json; charset=utf-8');
     if(!empty($url)) {
       header(sprintf("Location: %s", $url));
