@@ -293,7 +293,7 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s IF v_found_id IS NOT NULL THEN\n", $query);
     $query = sprintf("%s   INSERT INTO `locked_devices`\n", $query);
     $query = sprintf("%s   VALUES(v_found_id, 1, v_user, NOW());\n", $query);
-    $query = sprintf("%s   CALL `list_devices`(NULL, NULL, NULL, 999999, NULL, v_device_id);\n", $query);
+    $query = sprintf("%s   CALL `list_devices`(NULL, NULL, NULL, 999999, NULL, v_found_id);\n", $query);
     $query = sprintf("%s END IF;\n", $query);
     $query = sprintf("%sEND;\n", $query);
     query($sql, $query);

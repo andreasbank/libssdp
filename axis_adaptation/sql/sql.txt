@@ -184,57 +184,12 @@
   DELIMITER ;
 
   DELIMITER //
-  CREATE PROCEDURE `lock_device_by_id`(IN `v_device_id` VARCHAR(255),
-                                       IN `v_locked_by` VARCHAR(255))
-    SQL SECURITY INVOKER
-  BEGIN 
-    DECLARE is_locked INT DEFAULT 0;
-    CALL `is_device_locked_internal`(v_device_id, is_locked);
-    IF is_locked=1 THEN
-      SELECT 0 AS `success`;
-    ELSE
-      INSERT INTO `locked_devices`
-        VALUES(v_device_id, 1, v_locked_by, NOW());
-      SELECT 1 AS `success`;
-    END IF;
-  END//
-  DELIMITER ;
-
-  DELIMITER //
-  CREATE PROCEDURE `unlock_device`(IN `v_device_id` VARCHAR(255))
-    SQL SECURITY INVOKER
-  BEGIN
-    UPDATE `locked_devices`
-    SET `locked`=0
-    WHERE `device_id`=v_device_id;
-  END//
-  DELIMITER ;
-
-  DELIMITER //
-  CREATE PROCEDURE `is_device_locked` (IN `v_device_id` INT)
-    SQL SECURITY INVOKER
-  BEGIN
-    DECLARE is_locked TINYINT DEFAULT 0;
-  
-    SELECT `locked`
-    INTO is_locked
-    FROM `locked_devices`
-    WHERE `device_id` = v_device_id
-    AND `locked` =1;
-    IF is_locked =1 THEN
-      SELECT 'yes' AS `locked` ;
-    ELSE
-      SELECT 'no' AS `locked` ;
-    END IF ;
-  END
-  DELIMITER ;
-
-  DELIMITER //
   CREATE PROCEDURE `lock_device`(IN `v_capability` VARCHAR(255),
                                  IN `v_model_name` VARCHAR(255),
                                  IN `v_firmware_version` VARCHAR(255),
                                  IN `v_user` VARCHAR(255),
-                                 IN `v_age` INT)
+                                 IN `v_age` INT,
+                                 IN `v_device_id` VARCHAR(255))
     SQL SECURITY INVOKER
   BEGIN
     DECLARE v_found_id VARCHAR(13) DEFAULT NULL;
@@ -268,16 +223,8 @@
     IF v_found_id IS NOT NULL THEN
       INSERT INTO `locked_devices`
       VALUES(v_found_id, 1, v_user, NOW());
+      CALL `list_devices`(NULL, NULL, NULL, 999999, NULL, v_found_id);
     END IF;
-    SELECT d.`id`,
-           d.`ipv4`,
-           mf.`model_name`,
-           mf.`firmware_version`,
-           d.`last_update`
-    FROM `devices` d,
-         `model_firmware` mf
-    WHERE d.`model_firmware_id`=mf.`id`
-    AND d.`id`=v_found_id;
   END
   DELIMITER ;
 
