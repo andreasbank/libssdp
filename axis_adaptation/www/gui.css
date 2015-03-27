@@ -1,0 +1,64 @@
+html {
+  font-family: Verdana, Sans-serif;
+}
+.round_table {
+  margin-left: auto;
+  margin-right: auto;
+  border-spacing: 0;
+  padding: 1em;
+  box-shadow: 2px 2px 2px black;
+  border-radius: 1em;
+}
+.header_table_td {
+  padding: 0 2em;
+}
+.cell_padding, .title_td_header_table, .title_td_result_table {
+  padding: 0 .5em;
+}
+.title_td_header_table, .title_td_result_table {
+  text-shadow: 1px 1px 2px grey;
+  font-weight: bold;
+}
+.title_td_result_table {
+  padding-top: .5em;
+  border-bottom: solid 2px black;
+}
+.title_td_header_table {
+  text-align: right;
+}
+.bottom_cell {
+  padding-bottom: .5em;
+}
+.white_bg {
+  background-color: white;
+}
+.div_device_bookable, .div_device_booked {
+  font-weight: bold;
+  cursor: pointer;
+}
+.div_device_bookable {
+  color: green;
+}
+.div_device_booked {
+  color: red;
+}
+.apply_button {
+  margin-right: 1em;
+  margin-left: 2em;
+  height: 5em;
+  width: 5em;
+  border: 0;
+  background: transparent center/5em no-repeat url('search_button.png');
+}
+.border_top_left_radius {
+  border-top-left-radius: .5em;
+}
+.border_top_right_radius {
+  border-top-right-radius: .5em;
+}
+.border_bottom_left_radius {
+  border-bottom-left-radius: .5em;
+}
+.border_bottom_right_radius {
+  border-bottom-right-radius: .5em;
+}
