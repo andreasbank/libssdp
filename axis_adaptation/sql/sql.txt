@@ -187,27 +187,43 @@
   CREATE PROCEDURE `lock_device`(IN `v_capability` VARCHAR(255),
                                  IN `v_model_name` VARCHAR(255),
                                  IN `v_firmware_version` VARCHAR(255),
+                                 IN `v_capability_state` VARCHAR(255),
                                  IN `v_user` VARCHAR(255),
                                  IN `v_age` INT,
                                  IN `v_device_id` VARCHAR(255))
     SQL SECURITY INVOKER
+  DELIMITER ;
   BEGIN
     DECLARE v_found_id VARCHAR(13) DEFAULT NULL;
     IF v_capability IS NULL OR v_capability = '' THEN
-      SET v_capability = '%%';
+      SET v_capability = '%';
     END IF;
     IF v_model_name IS NULL OR v_model_name = '' THEN
-      SET v_model_name = '%%';
+      SET v_model_name = '%';
     END IF;
     IF v_firmware_version IS NULL OR v_firmware_version = '' THEN
-      SET v_firmware_version = '%%';
+      SET v_firmware_version = '%';
+    END IF;
+    IF v_device_id IS NULL OR v_device_id = '' THEN
+      SET v_device_id = '%';
+    END IF;
+    IF v_capability_state IS NULL OR v_capability_state = '' THEN
+      SET v_capability_state = '%';
     END IF;
     SELECT d.`id` INTO v_found_id
     FROM `devices` d,
          `model_firmware` mf,
          `model_firmware_capability` mfc,
          `capabilities` c
+         LEFT OUTER JOIN `model_firmware_capability_state` mfcs
+         ON mfcs.`capability_id` = c.`id`
+         AND mfcs.`state` LIKE v_capability_state
     WHERE d.`model_firmware_id`=mf.`id`
+    AND IF(v_capability_state = '%',
+           (mfcs.`model_firmware_id` IS NULL
+           OR mfcs.`model_firmware_id` = d.`model_firmware_id`),
+           mfcs.`model_firmware_id` = d.`model_firmware_id`)
+    AND d.`id` LIKE v_device_id
     AND d.`model_firmware_id`=mfc.`model_firmware_id`
     AND mfc.`capability_id`=c.`id` 
     AND c.`name` LIKE v_capability
@@ -223,15 +239,14 @@
     IF v_found_id IS NOT NULL THEN
       INSERT INTO `locked_devices`
       VALUES(v_found_id, 1, v_user, NOW());
-      CALL `list_devices`(NULL, NULL, NULL, 999999, NULL, v_found_id);
+      CALL `list_devices`(NULL, NULL, NULL, NULL, 999999, NULL, v_found_id);
     END IF;
   END
-  DELIMITER ;
-
   DELIMITER //
   CREATE PROCEDURE `list_devices`(IN `v_capability` VARCHAR(255),
                                   IN `v_model_name` VARCHAR(255),
                                   IN `v_firmware_version` VARCHAR(255),
+                                  IN `v_capability_state` VARCHAR(255),
                                   IN `v_age` INT,
                                   IN `v_locked_by` VARCHAR(255),
                                   IN `v_device_id` VARCHAR(255))
@@ -239,53 +254,66 @@
   DELIMITER ;
   BEGIN
     IF v_capability IS NULL OR v_capability = '' THEN
-      SET v_capability = '%%';
+      SET v_capability = '%';
     END IF;
     IF v_model_name IS NULL OR v_model_name = '' THEN
-      SET v_model_name = '%%';
+      SET v_model_name = '%';
     END IF;
     IF v_firmware_version IS NULL OR v_firmware_version = '' THEN
-      SET v_firmware_version = '%%';
+      SET v_firmware_version = '%';
+    END IF;
+    IF v_age IS NULL OR v_age = '' THEN
+      SET v_age = '%';
     END IF;
     IF v_device_id IS NULL OR v_device_id = '' THEN
-      SET v_device_id = '%%';
+      SET v_device_id = '%';
+    END IF;
+    IF v_capability_state IS NULL OR v_capability_state = '' THEN
+      SET v_capability_state = '%';
     END IF;
     CREATE TEMPORARY TABLE IF NOT EXISTS `tmp_tbl` AS (
-    SELECT DISTINCT d.`id`,
-           d.`ipv4`,
-           mf.`model_name`,
-           mf.`firmware_version`,
-           (SELECT GROUP_CONCAT(CONCAT(c2.`name`, IF(mfcs.`state` IS NULL,
-                                                  '',
-                                                  CONCAT(' (',
-                                                         mfcs.`state`,
-                                                         ')')))
-                                SEPARATOR ', ')
-            FROM `model_firmware_capability` mfc2
-            LEFT OUTER JOIN `model_firmware_capability_state` mfcs
-            ON mfc2.`model_firmware_id` = mfcs.`model_firmware_id`
-            AND mfc2.`capability_id` = mfcs.`capability_id`,
-                 `capabilities` c2
-            WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`
-            AND c2.`id` = mfc2.`capability_id`
-            GROUP BY mfc2.`model_firmware_id`
-           ) AS `capabilities`,
-           d.`last_update`,
-           ld.`locked_by`,
-           ld.`locked_date`
-    FROM `devices` d
-    LEFT OUTER JOIN `locked_devices` ld
-    ON d.`id` = ld.`device_id`
-    AND ld.`locked` = 1,
-         `model_firmware` mf,
-         `model_firmware_capability` mfc,
-         `capabilities` c
-    WHERE mf.`id` = d.`model_firmware_id`
-    AND d.`id` LIKE v_device_id
-    AND mfc.`model_firmware_id` = d.`model_firmware_id`
-    AND mfc.`capability_id` = c.`id`
-    AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
-    AND c.`name` LIKE v_capability);
+      SELECT DISTINCT d.`id`,
+             d.`ipv4`,
+             mf.`model_name`,
+             mf.`firmware_version`,
+             (SELECT GROUP_CONCAT(CONCAT(c2.`name`, IF(mfcs.`state` IS NULL,
+                                                       '',
+                                                       CONCAT(' (',
+                                                              mfcs.`state`,
+                                                              ')')))
+                                  SEPARATOR ', ')
+              FROM `model_firmware_capability` mfc2
+              LEFT OUTER JOIN `model_firmware_capability_state` mfcs
+              ON mfc2.`model_firmware_id` = mfcs.`model_firmware_id`
+              AND mfc2.`capability_id` = mfcs.`capability_id`,
+                   `capabilities` c2
+              WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`
+              AND c2.`id` = mfc2.`capability_id`
+              GROUP BY mfc2.`model_firmware_id`
+             ) AS `capabilities`,
+             d.`last_update`,
+             ld.`locked_by`,
+             ld.`locked_date`
+      FROM `devices` d
+      LEFT OUTER JOIN `locked_devices` ld
+      ON d.`id` = ld.`device_id`
+      AND ld.`locked` = 1,
+           `model_firmware` mf,
+           `model_firmware_capability` mfc,
+           `capabilities` c
+           LEFT OUTER JOIN `model_firmware_capability_state` mfcs
+           ON mfcs.`capability_id` = c.`id`
+           AND mfcs.`state` LIKE v_capability_state
+      WHERE mf.`id` = d.`model_firmware_id`
+      AND IF(v_capability_state = '%',
+             (mfcs.`model_firmware_id` IS NULL
+             OR mfcs.`model_firmware_id` = d.`model_firmware_id`),
+             mfcs.`model_firmware_id` = d.`model_firmware_id`)
+      AND d.`id` LIKE v_device_id
+      AND mfc.`model_firmware_id` = d.`model_firmware_id`
+      AND mfc.`capability_id` = c.`id`
+      AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
+      AND c.`name` LIKE v_capability);
     IF v_locked_by IS NOT NULL AND v_locked_by != '' THEN
       SELECT *
       FROM `tmp_tbl` tt

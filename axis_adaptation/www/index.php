@@ -74,6 +74,14 @@ case 'list_devices':
     $firmware_version = $_get['firmware_version'];
   }
 
+  $capability_state = NULL;
+  if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
+    $capability_state = $_POST['capability_state'];
+  }
+  else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
+    $capability_state = $_GET['capability_state'];
+  }
+
   $locked_by = NULL;
   if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
     $locked_by = $_POST['locked_by'];
@@ -99,10 +107,11 @@ case 'list_devices':
   }
 
   try {
-    $query = sprintf("call list_devices(%s, %s, %s, %d, %s, %s);",
+    $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s);",
                      ($capability ? sprintf("'%s'", $capability) : 'NULL'),
                      ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
                      ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                     ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
                      $age,
                      ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
                      ($device_id ? sprintf("'%s'", $device_id) : 'NULL'));
@@ -150,6 +159,14 @@ case 'gui_list':
     $firmware_version = $_get['firmware_version'];
   }
 
+  $capability_state = NULL;
+  if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
+    $capability_state = $_POST['capability_state'];
+  }
+  else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
+    $capability_state = $_GET['capability_state'];
+  }
+
   $locked_by = NULL;
   if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
     $locked_by = $_POST['locked_by'];
@@ -187,10 +204,11 @@ case 'gui_list':
   }
 
   try {
-    $query = sprintf("call list_devices(%s, %s, %s, %d, %s, %s);",
+    $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s);",
                      ($capability ? sprintf("'%s'", $capability) : 'NULL'),
                      ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
                      ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                     ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
                      $age,
                      ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
                      ($device_id ? sprintf("'%s'", $device_id) : 'NULL'));
@@ -334,12 +352,12 @@ case 'lock_device':
     $firmware_version = $_GET['firmware_version'];
   }
 
-  $locked_by = NULL;
-  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
-    $locked_by = $_POST['locked_by'];
+  $capability_state = NULL;
+  if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
+    $capability_state = $_POST['capability_state'];
   }
-  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
-    $locked_by = $_GET['locked_by'];
+  else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
+    $capability_state = $_GET['capability_state'];
   }
 
   $device_id = null;
@@ -379,10 +397,11 @@ case 'lock_device':
   }
 
   try {
-    $results = $sql->call(sprintf("call lock_device(%s, %s, %s, '%s', %d, %s)",
+    $results = $sql->call(sprintf("call lock_device(%s, %s, %s, %s, '%s', %d, %s)",
                                   ($capability ? sprintf("'%s'", $capability): 'NULL'),
                                   ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
                                   ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                                  ($capability_state ? sprintf("'%s'", $capability_state): 'NULL'),
                                   $user,
                                   $age,
                                   ($device_id ? sprintf("'%s'", $device_id) : 'NULL')));
