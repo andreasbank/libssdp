@@ -39,6 +39,66 @@ function time_lapsed($datetime) {
     }
 }
 
+function get_tabs($count) {
+  $tabs = '';
+
+  for($i = 0; $i < $count; $i++) {
+    $tabs = sprintf("%s\t", $tabs);
+  }
+
+  return $tabs;
+}
+
+/**
+ * Builds the html code needed to represent the capabilities as icons
+ */
+function get_capabilities_icons($capabilities, $tabs_count = 0) {
+
+  $html = '';
+  $tabs = get_tabs($tabs_count);
+  $capabilities_array = explode(', ', $capabilities);
+  $capabilities_size = count($capabilities_array);
+
+  for($i = 0; $i < $capabilities_size; $i++) {
+    $c = $capabilities_array[$i];
+
+    switch($c) {
+
+    case 'sd_disk (OK)':
+    case 'sd_disk (connected)':
+      $c = 'sd_disk';
+      break;
+
+    case 'sd_disk (disconnected)':
+      $c = 'sd_disk_gray';
+      break;
+
+    default:
+      break;
+    }
+
+    $title = str_replace('_', ' ', sprintf("%s%s", strtoupper($c[0]), substr($c, 1)));
+    if($title == 'Sd disk') {
+      $title = 'SD DISK (SD DISK inserted)';
+    }
+    else if($title == 'Sd disk gray') {
+      $title = 'SD DISK (No SD DISK inserted)';
+    }
+    if($title == 'Mic') {
+      $title = 'Microphone or Line-in';
+    }
+
+    $html = sprintf("%s%s<div title=\"%s\" class=\"capability_icon_%s\">&nbsp;</div>%s",
+                    $html,
+                    $tabs,
+                    $title,
+                    $c,
+                    ($i + 1 == $capabilities_size ? '' : "\n"));
+  }
+
+  return $html;
+}
+
 /* MySQL credentials */
 $host     = 'localhost';
 $database = 'abused';
@@ -393,10 +453,10 @@ case 'gui_list':
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['firmware_version']);
-    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s\">\n%s\n\t\t</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
-           $result['capabilities']);
+           get_capabilities_icons($result['capabilities'], 3));
     printf("\t\t<td class=\"cell_padding%s%s\"><div title=\"%s\">%s</div></td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),

@@ -101,9 +101,70 @@ input[type=button]:active, input.cool_button:active {
 .border_bottom_right_radius {
   border-bottom-right-radius: .5em;
 }
-.icon_sd_disk_not_ok {
-  background: transparent center/1em no-repeat url('');
+.capability_icon_sd_disk_gray,
+.capability_icon_sd_disk,
+.capability_icon_local_storage,
+.capability_icon_pir,
+.capability_icon_light_control,
+.capability_icon_audio,
+.capability_icon_mic,
+.capability_icon_ptz,
+.capability_icon_dptz,
+.capability_icon_speaker,
+.capability_icon_wlan,
+.capability_icon_status_led,
+.capability_icon_ir,
+.capability_icon_nas,
+.capability_icon_stsnas {
+  float: left;
+  height: 2em;
+  width: 2em;
+  margin-left: 0;
+  margin-right: 0;
+  background: transparent center/2em no-repeat;
 }
-.icon_sd_disk_ok {
-  background: transparent center/1em no-repeat url('');
+.capability_icon_sd_disk_gray {
+  background-image: url('capability_icons/sd_disk_gray.png');
+}
+.capability_icon_sd_disk {
+  background-image: url('capability_icons/sd_disk.png');
+}
+.capability_icon_local_storage {
+  background-image: url('capability_icons/local_storage.png');
+}
+.capability_icon_pir {
+  background-image: url('capability_icons/pir.png');
+}
+.capability_icon_light_control {
+  background-image: url('capability_icons/light_control.png');
+}
+.capability_icon_audio {
+  background-image: url('capability_icons/audio.png');
+}
+.capability_icon_mic {
+  background-image: url('capability_icons/mic.png');
+}
+.capability_icon_ptz {
+  background-image: url('capability_icons/ptz.png');
+}
+.capability_icon_dptz {
+  background-image: url('capability_icons/dptz.png');
+}
+.capability_icon_speaker {
+  background-image: url('capability_icons/speaker.png');
+}
+.capability_icon_wlan {
+  background-image: url('capability_icons/wlan.png');
+}
+.capability_icon_status_led {
+  background-image: url('capability_icons/status_led.png');
+}
+.capability_icon_ir {
+  background-image: url('capability_icons/ir.png');
+}
+.capability_icon_nas {
+  background-image: url('capability_icons/nas.png');
+}
+.capability_icon_stsnas {
+  background-image: url('capability_icons/stsnas.png');
 }
