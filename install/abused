@@ -1,0 +1,80 @@
+#!/bin/sh
+#
+# /etc/init.d/abused
+# Subsystem file for "abused" server
+#
+# chkconfig: 2345 95 05
+# description: abused daemon
+#
+# processname: abused
+# pidfile: /var/run/abused.pid
+
+# source function library
+
+### BEGIN INIT INFO
+# Provides:          abused
+# Required-Start:    
+# Required-Stop:     
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start abused daemon at boot time
+# Description:       abused daemon for scanning UPnP devices.
+### END INIT INFO
+
+###
+# Author: Andreas Bank, andreas.mikael.bank@gmail.com
+# LSB (Debian) compatible init.d script for abused
+###
+
+RETVAL=0
+prog="abused"
+args=" -uxq -a 127.0.0.1:80 -d"
+
+start() {
+	echo -n $"Starting $prog:"
+	$prog$args
+	RETVAL=$?
+	[ "$RETVAL" = 0 ] && touch /var/lock/$prog
+	echo
+}
+
+stop() {
+	echo -n $"Stopping $prog:"
+	killall $prog
+	RETVAL=$?
+	[ "$RETVAL" = 0 ] && rm -f /var/lock/$prog
+	echo
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	restart)
+		stop
+		start
+		;;
+	reload)
+		stop
+		start
+		;;
+	condrestart)
+		if [ -f /var/lock/$prog ] ; then
+			stop
+			# avoid race
+			sleep 3
+			start
+		fi
+		;;
+	status)
+		status $prog
+		RETVAL=$?
+		;;
+	*)
+		echo $"Usage: $0 {start|stop|restart|reload|condrestart|status}"
+		RETVAL=1
+esac
+exit $RETVAL

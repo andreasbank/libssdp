@@ -108,9 +108,9 @@
 #define DEBUG_MSG_LOCATION_HEADER "http://127.0.0.1:80/udhisapi.xml"
 
 /* Uncomment the line below to enable detailed debug information */
-#define DEBUG___
+//#define DEBUG___
 /* Uncomment the line below to write to a to a file instead of stdout */
-#define DEBUG_TO_FILE___
+//#define DEBUG_TO_FILE___
 
 #define DEBUG_COLOR_BEGIN "\x1b[0;32m"
 #define ERROR_COLOR_BEGIN "\x1b[0;31m"
@@ -334,7 +334,7 @@ static BOOL parse_url(const char *, char *, int, int *, char *, int);
 static void parse_filters(char *, filters_factory_s **, BOOL);
 //static char *get_ip_address_from_socket(const SOCKET);
 static char *get_mac_address_from_socket(const SOCKET, struct sockaddr_storage *, char *);
-static BOOL parse_address(const char *, struct sockaddr_storage **, BOOL);
+static BOOL parse_address(const char *, struct sockaddr_storage **);
 static int find_interface(struct sockaddr_storage *, char *, char *);
 static SOCKET create_upnp_listener(char *, int, int);
 static BOOL set_send_timeout(SOCKET, int);
@@ -862,7 +862,7 @@ static void parse_args(const int argc, char * const *argv, configuration_s *conf
     case 'a':
       if(optarg != NULL && strlen(optarg) > 0) {
         PRINT_DEBUG("parse_address()");
-        if(!parse_address(optarg, &notif_recipient_addr, TRUE)) {
+        if(!parse_address(optarg, &notif_recipient_addr)) {
           usage();
           free_stuff();
           exit(EXIT_FAILURE);
@@ -951,6 +951,24 @@ int main(int argc, char **argv) {
 
   set_default_configuration(&conf);
   parse_args(argc, argv, &conf);
+
+  /* Output forward status */
+  if(!conf.quiet_mode && notif_recipient_addr) {
+    char ip[IPv6_STR_MAX_SIZE];
+    memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
+    inet_ntop(notif_recipient_addr->ss_family,
+              (notif_recipient_addr->ss_family == AF_INET ?
+                (void *)&(((struct sockaddr_in *)notif_recipient_addr)->sin_addr) :
+                (void *)&(((struct sockaddr_in6 *)notif_recipient_addr)->sin6_addr)),
+              ip,
+              sizeof(char) * IPv6_STR_MAX_SIZE);
+    printf("Forwarding is enabled, ");
+    printf("forwarding to IP %s on port %d\n",
+           ip,
+           ntohs((notif_recipient_addr->ss_family == AF_INET ?
+                   ((struct sockaddr_in *)notif_recipient_addr)->sin_port :
+                   ((struct sockaddr_in6 *)notif_recipient_addr)->sin6_port)));
+  }
 
   /* If missconfigured, stop and notify the user */
   if(conf.run_as_daemon &&
@@ -2741,7 +2759,7 @@ static BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *r
 *
 * @return BOOL TRUE on success
 */
-static BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address, BOOL print_results) {
+static BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address) {
   char *ip;
   struct sockaddr_storage *address = NULL;
   int colon_pos = 0;
@@ -2801,13 +2819,6 @@ static BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_
   }
   else {
     ((struct sockaddr_in *)address)->sin_port = htons(port);
-  }
-
-  if(print_results) {
-    memset(ip, '\0', sizeof(char) * IPv4_STR_MAX_SIZE);
-    inet_ntop(address->ss_family, (address->ss_family == AF_INET ? (void *)&(((struct sockaddr_in *)address)->sin_addr) : (void *)&(((struct sockaddr_in6 *)address)->sin6_addr)), ip, sizeof(char) * IPv6_STR_MAX_SIZE);
-    printf("Forwarding is enabled, ");
-    printf("forwarding to IP %s on port %d\n", ip, ntohs((address->ss_family == AF_INET ? ((struct sockaddr_in *)address)->sin_port : ((struct sockaddr_in6 *)address)->sin6_port)));
   }
 
   free(ip);
