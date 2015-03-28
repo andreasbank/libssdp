@@ -1,13 +1,12 @@
 <?php
 require_once('SqlConnection.php');
 
-function random_pleasing_colors() {
+function random_pleasing_color() {
   $red = rand(128, 236);
   $green = rand(128, 236);
   $blue = rand(128, 236);
 
-  return array(sprintf("rgb(%d, %d, %d)", $red, $green, $blue),
-               sprintf("rgb(%d, %d, %d)", $red + 20, $green + 20, $blue + 20));
+  return sprintf("rgb(%d, %d, %d)", $red, $green, $blue);
 }
 
 function get_device_locked_info($locked_list, $device_id) {
@@ -254,7 +253,7 @@ case 'gui_list':
   $current_script = $_SERVER['SCRIPT_NAME'];
 
   /* Create the random colors for the table */
-  $random_colors = random_pleasing_colors();
+  $random_color = random_pleasing_color();
 
   /* Print out the whole html document */
   header('HTTP/1.0 200 Ok');
@@ -262,7 +261,7 @@ case 'gui_list':
   printf("<html>\n<head>\n\t<title>List of devices</title>\n");
   printf("\t<link rel=\"stylesheet\" type=\"text/css\" href=\"gui.css\">\n");
   printf("</head>\n<body>\n");
-  printf("<table class=\"round_table\" style=\"background-color: %s\">\n", $random_colors[0]);
+  printf("<table class=\"round_table\" style=\"background-color: %s\">\n", $random_color);
   printf("\t<tr>\n");
   printf("\t\t<td colspan=\"8\" style=\"padding-bottom: 2em;\">\n");
   printf("\t\t\t<form methon=\"get\" action=\"\">\n");
@@ -288,7 +287,7 @@ case 'gui_list':
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td rowspan=\"3\" style=\"text-align: center;\">\n");
   printf("\t\t\t\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"gui_list\" />\n");
-  printf("\t\t\t\t\t\t\t<input type=\"submit\" class=\"apply_button\" title=\"Apply filters\" value=\"\" />\n");
+  printf("\t\t\t\t\t\t\t<input type=\"submit\" class=\"apply_button\" style=\"border: none; background-color: transparent; box-shadow: none; margin-left: 1em; margin-right: 2em;\" title=\"Apply filters\" value=\"\" />\n");
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t</tr>\n");
   printf("\t\t\t\t\t<tr>\n");
@@ -380,37 +379,37 @@ case 'gui_list':
            $lock_link,
            $result['id']);
     printf("\t\t</td>\n");
-    printf("\t\t<td class=\"cell_padding%s%s\" style=\"%s\"><a target=\"_blank\" href=\"http://%s\">%s</a></td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s\">%s</a></td>\n",
            $round_border_bottom_left,
            $bottom_padding,
-           ($results_index % 2 ? sprintf("background-color: %s;", $random_colors[1]) : ''),
+           ($results_index % 2 ? ' lighter_bg' : ''),
            $result['ipv4'],
            $result['ipv4']);
-    printf("\t\t<td class=\"cell_padding%s\" style=\"%s\">%s</td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
-           ($results_index % 2 ? sprintf("background-color: %s;", $random_colors[1]) : ''),
+           ($results_index % 2 ? ' lighter_bg' : ''),
            $result['model_name']);
-    printf("\t\t<td class=\"cell_padding%s\" style=\"%s\">%s</td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
-           ($results_index % 2 ? sprintf("background-color: %s;", $random_colors[1]) : ''),
+           ($results_index % 2 ? ' lighter_bg' : ''),
            $result['firmware_version']);
-    printf("\t\t<td class=\"cell_padding%s\" style=\"%s\">%s</td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
-           ($results_index % 2 ? sprintf("background-color: %s;", $random_colors[1]) : ''),
+           ($results_index % 2 ? ' lighter_bg' : ''),
            $result['capabilities']);
-    printf("\t\t<td class=\"cell_padding%s\" style=\"%s\"><div title=\"%s\">%s</div></td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s\"><div title=\"%s\">%s</div></td>\n",
            $bottom_padding,
-           ($results_index % 2 ? sprintf("background-color: %s;", $random_colors[1]) : ''),
+           ($results_index % 2 ? ' lighter_bg' : ''),
            $result['last_update'],
            ($result['last_update'] ? sprintf("%s ago", time_lapsed($result['last_update'])) : ''));
-    printf("\t\t<td class=\"cell_padding%s\" style=\"%s\">%s</td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
-           ($results_index % 2 ? sprintf("background-color: %s;", $random_colors[1]) : ''),
+           ($results_index % 2 ? ' lighter_bg' : ''),
            $result['locked_by']);
-    printf("\t\t<td class=\"cell_padding%s%s\" style=\"%s\"><div title=\"%s\">%s</div></td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s%s\"><div title=\"%s\">%s</div></td>\n",
            $round_border_bottom_right,
            $bottom_padding,
-           ($results_index % 2 ? sprintf("background-color: %s;", $random_colors[1]) : ''),
+           ($results_index % 2 ? ' lighter_bg' : ''),
            $result['locked_date'],
            ($result['locked_date'] ? sprintf("%s ago", time_lapsed($result['locked_date'])) : ''));
     printf("\t</tr>\n");
