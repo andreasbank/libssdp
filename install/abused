@@ -13,7 +13,7 @@
 
 ### BEGIN INIT INFO
 # Provides:          abused
-# Required-Start:    
+# Required-Start:    $network 
 # Required-Stop:     
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6

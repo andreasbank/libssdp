@@ -19,7 +19,7 @@ function get_device_locked_info($locked_list, $device_id) {
 }
 
 /* Get time lapsed in human-readable format */
-function time_lapsed($datetime) {
+function time_lapsed($datetime, $add_ago = true) {
 
     $datetime = time() - strtotime($datetime);
     $tokens = array (
@@ -35,7 +35,11 @@ function time_lapsed($datetime) {
     foreach($tokens as $unit => $text) {
         if($datetime < $unit) continue;
         $units = floor($datetime / $unit);
-        return sprintf("%s %s%s", $units, $text, (($units > 1) ? 's' : ''));
+        return sprintf("%s %s%s%s",
+                       $units,
+                       $text,
+                       (($units > 1) ? 's' : ''),
+                       ($add_ago ? ' ago' : ''));
     }
 }
 
@@ -331,7 +335,7 @@ case 'gui_list':
   printf("\t\t\t\t\t\t\tUsername:\n");
   printf("\t\t\t\t\t  </td>\n");
   printf("\t\t\t\t\t\t<td>\n");
-  printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"user\" value=\"%s\" />\n", $user);
+  printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"user\" readonly=\"true\" value=\"%s\" />\n", $user);
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
   printf("\t\t\t\t\t\t\tID: \n");
@@ -439,39 +443,56 @@ case 'gui_list':
            $lock_link,
            $result['id']);
     printf("\t\t</td>\n");
+
     printf("\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s\">%s</a></td>\n",
            $round_border_bottom_left,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['ipv4'],
            $result['ipv4']);
+
     printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['model_name']);
+
     printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['firmware_version']);
+
     printf("\t\t<td class=\"cell_padding%s%s\">\n%s\n\t\t</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            get_capabilities_icons($result['capabilities'], 3));
+
+           $time_lapsed = '';
+           if($result['last_update'] &&
+              empty($time_lapsed = time_lapsed($result['last_update']))) {
+             $time_lapsed = 'now';
+           }
     printf("\t\t<td class=\"cell_padding%s%s\"><div title=\"%s\">%s</div></td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['last_update'],
-           ($result['last_update'] ? sprintf("%s ago", time_lapsed($result['last_update'])) : ''));
+           $time_lapsed);
+
     printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['locked_by']);
+
+           $time_lapsed = '';
+           if($result['locked_date'] &&
+              empty($time_lapsed = time_lapsed($result['locked_date']))) {
+             $time_lapsed = 'now';
+           }
     printf("\t\t<td class=\"cell_padding%s%s%s\"><div title=\"%s\">%s</div></td>\n",
            $round_border_bottom_right,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['locked_date'],
-           ($result['locked_date'] ? sprintf("%s ago", time_lapsed($result['locked_date'])) : ''));
+           $time_lapsed);
     printf("\t</tr>\n");
   }
   printf("</table>\n");
