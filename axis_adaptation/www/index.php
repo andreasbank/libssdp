@@ -405,7 +405,7 @@ case 'gui_list':
   printf("\t\t<td class=\"title_td_result_table\">Firmware version</td>\n");
   printf("\t\t<td class=\"title_td_result_table\">Capabilities</td>\n");
   printf("\t\t<td class=\"title_td_result_table\">Last updated</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">Locked by</td>\n");
+  printf("\t\t<td class=\"title_td_result_table\">Occupant</td>\n");
   printf("\t\t<td class=\"title_td_result_table\">Locked date</td>\n");
   printf("\t</tr>\n");
   $results_size = count($results);
@@ -471,6 +471,13 @@ case 'gui_list':
               empty($time_lapsed = time_lapsed($result['last_update']))) {
              $time_lapsed = 'now';
            }
+
+//    printf("\t\t<td class=\"cell_padding%s%s\"><div title=\"%s (last UPnP message was '%s')\">%s</div></td>\n",
+//           $bottom_padding,
+//           ($results_index % 2 ? ' lighter_bg' : ''),
+//           $result['last_update'],
+//           $result['last_upnp_message'],
+//           $time_lapsed);
     printf("\t\t<td class=\"cell_padding%s%s\"><div title=\"%s\">%s</div></td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
