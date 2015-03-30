@@ -466,22 +466,41 @@ case 'gui_list':
            ($results_index % 2 ? ' lighter_bg' : ''),
            get_capabilities_icons($result['capabilities'], 3));
 
-           $time_lapsed = '';
-           if($result['last_update'] &&
-              empty($time_lapsed = time_lapsed($result['last_update']))) {
-             $time_lapsed = 'now';
-           }
-
+    $time_lapsed = '&nbsp;';
+    if($result['last_update']) {
+      $time_lapsed = time_lapsed($result['last_update']);
+      if(empty($time_lapsed)) {
+        $time_lapsed = 'now';
+      }
+      else {
+        $matched = preg_match('/(\d*) (.*) ago/', $time_lapsed, $matches);
+        if($matched) {
+          $time_lapsed_color = null;
+          if($matches[1] == '15' && $matches[2] == 'minutes') {
+            $time_lapsed_color = 'orange_color';
+          }
+          else if(($matches[1] > 15 && $matches[2] == 'minutes') ||
+                  false === strpos($matches[2], 'second') &&
+                  false === strpos($matches[2], 'minute')) {
+            $time_lapsed_color = 'red_color';
+          }
+        }
+        $time_lapsed = sprintf("<div title=\"%s\" class=\"%s%s\">%s</div>",
+                               $result['last_update'],
+                               ($time_lapsed_color ? 'text_center_shadow ' : ''),
+                               $time_lapsed_color,
+                               $time_lapsed);
+      }
+    }
 //    printf("\t\t<td class=\"cell_padding%s%s\"><div title=\"%s (last UPnP message was '%s')\">%s</div></td>\n",
 //           $bottom_padding,
 //           ($results_index % 2 ? ' lighter_bg' : ''),
 //           $result['last_update'],
 //           $result['last_upnp_message'],
 //           $time_lapsed);
-    printf("\t\t<td class=\"cell_padding%s%s\"><div title=\"%s\">%s</div></td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
-           $result['last_update'],
            $time_lapsed);
 
     printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
@@ -489,16 +508,37 @@ case 'gui_list':
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['locked_by']);
 
-           $time_lapsed = '';
-           if($result['locked_date'] &&
-              empty($time_lapsed = time_lapsed($result['locked_date']))) {
-             $time_lapsed = 'now';
-           }
-    printf("\t\t<td class=\"cell_padding%s%s%s\"><div title=\"%s\">%s</div></td>\n",
+    $time_lapsed = '&nbsp;';
+    if($result['locked_date']) {
+      $time_lapsed = time_lapsed($result['locked_date']);
+      if(empty($time_lapsed)) {
+        $time_lapsed = 'now';
+      }
+      else {
+        $matched = preg_match('/(\d*) (.*) ago/', $time_lapsed, $matches);
+        $time_lapsed_color = '';
+        if($matched) {
+          if($matches[1] > '1' && $matches[1] < 6 && $matches[2] == 'days') {
+            $time_lapsed_color = 'orange_color';
+          }
+          else if(($matches[1] > 5 && $matches[2] == 'days') ||
+                  false === strpos($matches[2], 'second') &&
+                  false === strpos($matches[2], 'minute') &&
+                  false === strpos($matches[2], 'day')) {
+            $time_lapsed_color = 'red_color';
+          }
+        }
+        $time_lapsed = sprintf("<div title=\"%s\" class=\"%s%s\">%s</div>",
+                               $result['locked_date'],
+                               ($time_lapsed_color ? 'text_center_shadow ' : ''),
+                               $time_lapsed_color,
+                               $time_lapsed);
+      }
+    }
+    printf("\t\t<td class=\"cell_padding%s%s%s\">%s</td>\n",
            $round_border_bottom_right,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
-           $result['locked_date'],
            $time_lapsed);
     printf("\t</tr>\n");
   }
