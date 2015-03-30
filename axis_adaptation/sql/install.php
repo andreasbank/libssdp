@@ -236,18 +236,58 @@ else if(isset($_POST['mysql'])) {
     /* lock_device */
     $query =         "CREATE PROCEDURE `lock_device_by_id`(IN `v_device_id` VARCHAR(255),\n";
     $query = sprintf("%s                                   IN `v_locked_by` VARCHAR(255))\n", $query);
-    $query = sprintf("%s SQL SECURITY INVOKER\n", $query);
+    $query = sprintf("%s  SQL SECURITY INVOKER\n", $query);
     $query = sprintf("%sBEGIN \n", $query);
-    $query = sprintf("%s DECLARE is_locked INT DEFAULT 0;\n", $query);
-    $query = sprintf("%s CALL `is_device_locked_internal`(v_device_id, is_locked);\n", $query);
-    $query = sprintf("%s IF is_locked=1 THEN\n", $query);
-    $query = sprintf("%s   SELECT 0 AS `success`;\n", $query);
-    $query = sprintf("%s ELSE\n", $query);
-    $query = sprintf("%s   INSERT INTO `locked_devices`\n", $query);
-    $query = sprintf("%s     VALUES(v_device_id, 1, v_locked_by, NOW());\n", $query);
-    $query = sprintf("%s   SELECT 1 AS `success`;\n", $query);
-    $query = sprintf("%s END IF;\n", $query);
+    $query = sprintf("%s  DECLARE is_locked INT DEFAULT 0;\n", $query);
+    $query = sprintf("%s  CALL `is_device_locked_internal`(v_device_id, is_locked);\n", $query);
+    $query = sprintf("%s  IF is_locked=1 THEN\n", $query);
+    $query = sprintf("%s    SELECT 0 AS `success`;\n", $query);
+    $query = sprintf("%s  ELSE\n", $query);
+    $query = sprintf("%s    INSERT INTO `locked_devices`\n", $query);
+    $query = sprintf("%s      VALUES(v_device_id, 1, v_locked_by, NOW());\n", $query);
+    $query = sprintf("%s    SELECT 1 AS `success`;\n", $query);
+    $query = sprintf("%s  END IF;\n", $query);
     $query = sprintf("%sEND;\n", $query);
+    query($sql, $query);
+
+     /* compare_version_strings */
+     $query =         "CREATE FUNCTION `compare_version_strings`(`s_ver` VARCHAR(255), `d_ver` VARCHAR(255)) RETURNS tinyint(2)\n";
+     $query = sprintf("%s  SQL SECURITY INVOKER\n", $query);
+     $query = sprintf("%sBEGIN\n", $query);
+     $query = sprintf("%s  DECLARE s_field VARCHAR(255) DEFAULT '';\n", $query);
+     $query = sprintf("%s  DECLARE d_field VARCHAR(255) DEFAULT '';\n", $query);
+     $query = sprintf("%s  DECLARE s_rest VARCHAR(255) DEFAULT '';\n", $query);
+     $query = sprintf("%s  DECLARE d_rest VARCHAR(255) DEFAULT '';\n", $query);
+     $query = sprintf("%s  DECLARE loop_index INT DEFAULT 0;\n", $query);
+     $query = sprintf("%s  DECLARE nr_s_fields INT DEFAULT 0;\n", $query);
+     $query = sprintf("%s  DECLARE nr_d_fields INT DEFAULT 0;\n", $query);
+     $query = sprintf("%s  DECLARE cmp_result INT DEFAULT 0;\n", $query);
+     $query = sprintf("%s  SET nr_s_fields = CHAR_LENGTH(s_ver) - CHAR_LENGTH(REPLACE(s_ver, '.', '')) + 1;\n", $query);
+     $query = sprintf("%s  SET nr_d_fields = CHAR_LENGTH(d_ver) - CHAR_LENGTH(REPLACE(d_ver, '.', '')) + 1;\n", $query);
+     $query = sprintf("%s\n", $query);
+     $query = sprintf("%s  SET s_rest = s_ver;\n", $query);
+     $query = sprintf("%s  SET d_rest = d_ver;\n", $query);
+     $query = sprintf("%s\n", $query);
+     $query = sprintf("%s  WHILE loop_index < nr_s_fields DO\n", $query);
+     $query = sprintf("%s    SET loop_index = loop_index + 1;\n", $query);
+     $query = sprintf("%s\n", $query);
+     $query = sprintf("%s    SET s_field = SUBSTRING_INDEX(s_rest, '.', 1);\n", $query);
+     $query = sprintf("%s    SET s_field = LPAD(s_field, 6, '0');\n", $query);
+     $query = sprintf("%s    SET d_field = SUBSTRING_INDEX(d_rest, '.', 1);\n", $query);
+     $query = sprintf("%s    SET d_field = LPAD(d_field, 6, '0');\n", $query);
+     $query = sprintf("%s\n", $query);
+     $query = sprintf("%s    SET s_rest = SUBSTRING_INDEX(s_rest, '.', loop_index - nr_s_fields);\n", $query);
+     $query = sprintf("%s    SET d_rest = SUBSTRING_INDEX(d_rest, '.', loop_index - nr_d_fields);\n", $query);
+     $query = sprintf("%s\n", $query);
+     $query = sprintf("%s    SET cmp_result = STRCMP(s_field, d_field);\n", $query);
+     $query = sprintf("%s\n", $query);
+     $query = sprintf("%s    IF cmp_result < 0 OR cmp_result > 0 THEN\n", $query);
+     $query = sprintf("%s      RETURN cmp_result;\n", $query);
+     $query = sprintf("%s    END IF;\n", $query);
+     $query = sprintf("%s\n", $query);
+     $query = sprintf("%s  END WHILE;\n", $query);
+     $query = sprintf("%s  RETURN 0;\n", $query);
+     $query = sprintf("%sEND\n", $query);
     query($sql, $query);
 
     /* lock_device */

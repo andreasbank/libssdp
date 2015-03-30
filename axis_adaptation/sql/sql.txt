@@ -184,6 +184,46 @@
   DELIMITER ;
 
   DELIMITER //
+  CREATE FUNCTION `compare_version_strings`(`s_ver` VARCHAR(255), `d_ver` VARCHAR(255)) RETURNS tinyint(2)
+    SQL SECURITY INVOKER
+  BEGIN
+    DECLARE s_field VARCHAR(255) DEFAULT '';
+    DECLARE d_field VARCHAR(255) DEFAULT '';
+    DECLARE s_rest VARCHAR(255) DEFAULT '';
+    DECLARE d_rest VARCHAR(255) DEFAULT '';
+    DECLARE loop_index INT DEFAULT 0;
+    DECLARE nr_s_fields INT DEFAULT 0;
+    DECLARE nr_d_fields INT DEFAULT 0;
+    DECLARE cmp_result INT DEFAULT 0;
+    SET nr_s_fields = CHAR_LENGTH(s_ver) - CHAR_LENGTH(REPLACE(s_ver, '.', '')) + 1;
+    SET nr_d_fields = CHAR_LENGTH(d_ver) - CHAR_LENGTH(REPLACE(d_ver, '.', '')) + 1;
+  
+    SET s_rest = s_ver;
+    SET d_rest = d_ver;
+  
+  WHILE loop_index < nr_s_fields DO
+      SET loop_index = loop_index + 1;
+  
+      SET s_field = SUBSTRING_INDEX(s_rest, '.', 1);
+      SET s_field = LPAD(s_field, 6, '0');
+      SET d_field = SUBSTRING_INDEX(d_rest, '.', 1);
+      SET d_field = LPAD(d_field, 6, '0');
+  
+      SET s_rest = SUBSTRING_INDEX(s_rest, '.', loop_index - nr_s_fields);
+      SET d_rest = SUBSTRING_INDEX(d_rest, '.', loop_index - nr_d_fields);
+  
+      SET cmp_result = STRCMP(s_field, d_field);
+  
+      IF cmp_result < 0 OR cmp_result > 0 THEN
+        RETURN cmp_result;
+      END IF;
+  
+    END WHILE;
+    RETURN 0;
+  END;
+  DELIMITER ;
+
+  DELIMITER //
   CREATE PROCEDURE `lock_device`(IN `v_capability` VARCHAR(255),
                                  IN `v_model_name` VARCHAR(255),
                                  IN `v_firmware_version` VARCHAR(255),

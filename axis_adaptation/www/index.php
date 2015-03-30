@@ -497,9 +497,9 @@ case 'gui_list':
            ($results_index % 2 ? ' lighter_bg' : ''),
            $time_lapsed);
 
-    $time_lapsed = '&nbsp;';
     $occupant_and_time_lapsed = '&nbsp';
     if($result['locked_date']) {
+      $time_lapsed_color = '';
       $time_lapsed = time_lapsed($result['locked_date']);
       if(empty($time_lapsed)) {
         $time_lapsed = 'now';
@@ -519,13 +519,13 @@ case 'gui_list':
             $time_lapsed_color = 'red_color';
           }
         }
-        $occupant_and_time_lapsed = sprintf("<div title=\"%s (%s)\" class=\"%s%s\">%s</div>",
-                               $time_lapsed,
-                               $result['locked_date'],
-                               ($time_lapsed_color ? 'text_center_shadow ' : ''),
-                               $time_lapsed_color,
-                               $result['locked_by']);
       }
+      $occupant_and_time_lapsed = sprintf("<div title=\"%s (%s)\" class=\"%s%s\">%s</div>",
+                             $time_lapsed,
+                             $result['locked_date'],
+                             ($time_lapsed_color ? 'text_center_shadow ' : ''),
+                             $time_lapsed_color,
+                             $result['locked_by']);
     }
     printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
