@@ -292,6 +292,7 @@
               GROUP BY mfc2.`model_firmware_id`
              ) AS `capabilities`,
              d.`last_update`,
+             d.`last_upnp_message`,
              ld.`locked_by`,
              ld.`locked_date`
       FROM `devices` d

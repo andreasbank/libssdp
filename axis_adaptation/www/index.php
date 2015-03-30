@@ -327,12 +327,12 @@ case 'gui_list':
   printf("</head>\n<body>\n");
   printf("<table class=\"round_table\" style=\"background-color: %s\">\n", $random_color);
   printf("\t<tr>\n");
-  printf("\t\t<td colspan=\"8\" style=\"padding-bottom: 2em;\">\n");
+  printf("\t\t<td colspan=\"7\" style=\"padding-bottom: 2em;\">\n");
   printf("\t\t\t<form methon=\"get\" action=\"\">\n");
   printf("\t\t\t\t<table style=\"margin-left: auto; margin-right: auto;\">\n");
   printf("\t\t\t\t\t<tr>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
-  printf("\t\t\t\t\t\t\tUsername:\n");
+  printf("\t\t\t\t\t\t\tLogged in as:\n");
   printf("\t\t\t\t\t  </td>\n");
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"user\" readonly=\"true\" value=\"%s\" />\n", $user);
@@ -404,9 +404,8 @@ case 'gui_list':
   printf("\t\t<td class=\"title_td_result_table\">Model</td>\n");
   printf("\t\t<td class=\"title_td_result_table\">Firmware version</td>\n");
   printf("\t\t<td class=\"title_td_result_table\">Capabilities</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">Last updated</td>\n");
+  printf("\t\t<td class=\"title_td_result_table\">Updated (UPnP)</td>\n");
   printf("\t\t<td class=\"title_td_result_table\">Occupant</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">Locked date</td>\n");
   printf("\t</tr>\n");
   $results_size = count($results);
   $results_index = 0;
@@ -485,30 +484,21 @@ case 'gui_list':
             $time_lapsed_color = 'red_color';
           }
         }
-        $time_lapsed = sprintf("<div title=\"%s\" class=\"%s%s\">%s</div>",
+        $time_lapsed = sprintf("<div title=\"%s (last UPnP message was '%s')\" class=\"%s%s\">%s</div>",
                                $result['last_update'],
+                               $result['last_upnp_message'],
                                ($time_lapsed_color ? 'text_center_shadow ' : ''),
                                $time_lapsed_color,
                                $time_lapsed);
       }
     }
-//    printf("\t\t<td class=\"cell_padding%s%s\"><div title=\"%s (last UPnP message was '%s')\">%s</div></td>\n",
-//           $bottom_padding,
-//           ($results_index % 2 ? ' lighter_bg' : ''),
-//           $result['last_update'],
-//           $result['last_upnp_message'],
-//           $time_lapsed);
     printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $time_lapsed);
 
-    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
-           $bottom_padding,
-           ($results_index % 2 ? ' lighter_bg' : ''),
-           $result['locked_by']);
-
     $time_lapsed = '&nbsp;';
+    $occupant_and_time_lapsed = '&nbsp';
     if($result['locked_date']) {
       $time_lapsed = time_lapsed($result['locked_date']);
       if(empty($time_lapsed)) {
@@ -524,22 +514,24 @@ case 'gui_list':
           else if(($matches[1] > 5 && $matches[2] == 'days') ||
                   false === strpos($matches[2], 'second') &&
                   false === strpos($matches[2], 'minute') &&
+                  false === strpos($matches[2], 'hour') &&
                   false === strpos($matches[2], 'day')) {
             $time_lapsed_color = 'red_color';
           }
         }
-        $time_lapsed = sprintf("<div title=\"%s\" class=\"%s%s\">%s</div>",
+        $occupant_and_time_lapsed = sprintf("<div title=\"%s (%s)\" class=\"%s%s\">%s</div>",
+                               $time_lapsed,
                                $result['locked_date'],
                                ($time_lapsed_color ? 'text_center_shadow ' : ''),
                                $time_lapsed_color,
-                               $time_lapsed);
+                               $result['locked_by']);
       }
     }
-    printf("\t\t<td class=\"cell_padding%s%s%s\">%s</td>\n",
-           $round_border_bottom_right,
+    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
-           $time_lapsed);
+           $occupant_and_time_lapsed);
+
     printf("\t</tr>\n");
   }
   printf("</table>\n");

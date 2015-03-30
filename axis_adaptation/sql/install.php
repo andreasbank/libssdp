@@ -386,6 +386,7 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s            GROUP BY mfc2.`model_firmware_id`\n", $query);
     $query = sprintf("%s           ) AS `capabilities`,\n", $query);
     $query = sprintf("%s           d.`last_update`,\n", $query);
+    $query = sprintf("%s           d.`last_upnp_message`,\n", $query);
     $query = sprintf("%s           ld.`locked_by`,\n", $query);
     $query = sprintf("%s           ld.`locked_date`\n", $query);
     $query = sprintf("%s    FROM `devices` d\n", $query);
