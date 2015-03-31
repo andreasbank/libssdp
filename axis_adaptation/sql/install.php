@@ -75,9 +75,11 @@ else if(isset($_POST['mysql'])) {
     $query =         "CREATE TABLE `model_firmware_capability` (`model_firmware_id` INT NOT NULL,\n";
     $query = sprintf("%s`capability_id` INT NOT NULL,\n", $query);
     $query = sprintf("%sFOREIGN KEY (`model_firmware_id`)\n", $query);
-    $query = sprintf("%sREFERENCES `model_firmware`(`id`),\n", $query);
+    $query = sprintf("%s  REFERENCES `model_firmware`(`id`)\n", $query);
+    $query = sprintf("%s  ON DELETE CASCADE,\n", $query);
     $query = sprintf("%sFOREIGN KEY (`capability_id`)\n", $query);
-    $query = sprintf("%sREFERENCES `capabilities`(`id`),\n", $query);
+    $query = sprintf("%s  REFERENCES `capabilities`(`id`)\n", $query);
+    $query = sprintf("%s  ON DELETE CASCADE,\n", $query);
     $query = sprintf("%sPRIMARY KEY(`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;\n", $query);
     query($sql, $query);
  
@@ -90,7 +92,9 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s`model_firmware_id` INT,\n", $query);
     $query = sprintf("%s`last_update` DATETIME NOT NULL,\n", $query);
     $query = sprintf("%s`last_upnp_message` ENUM('hello', 'alive', 'bye') NOT NULL,\n", $query);
-    $query = sprintf("%sFOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware` (`id`),\n", $query);
+    $query = sprintf("%sFOREIGN KEY (`model_firmware_id`)\n", $query);
+    $query = sprintf("%s  REFERENCES `model_firmware` (`id`)\n", $query);
+    $query = sprintf("%s  ON DELETE SET NULL,\n", $query);
     $query = sprintf("%sPRIMARY KEY (`id`)) ENGINE=InnoDB;\n", $query);
     query($sql, $query);
 
@@ -99,10 +103,13 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s`model_firmware_id` INT NOT NULL,\n", $query);
     $query = sprintf("%s`capability_id` INT NOT NULL,\n", $query);
     $query = sprintf("%s`state` VARCHAR(255) NOT NULL,\n", $query);
-    $query = sprintf("%sFOREIGN KEY (`device_id`) REFERENCES `devices` (`id`),\n", $query);
-    $query = sprintf("%sFOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware_capability` (`model_firmware_id`),\n", $query);
-    $query = sprintf("%sFOREIGN KEY (`capability_id`) REFERENCES `model_firmware_capability` (`capability_id`),\n", $query);
-    $query = sprintf("%sPRIMARY KEY (`device_id`, `model_firmware_id`, `capability_id`)) ENGINE=InnoDB;\n", $query);
+    $query = sprintf("%sFOREIGN KEY (`device_id`) REFERENCES `devices` (`id`)\n", $query);
+    $query = sprintf("%s  ON DELETE CASCADE,\n", $query);
+    $query = sprintf("%sFOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware_capability` (`model_firmware_id`)\n", $query);
+    $query = sprintf("%s  ON DELETE CASCADE,\n", $query);
+    $query = sprintf("%sFOREIGN KEY (`capability_id`) REFERENCES `model_firmware_capability` (`capability_id`)\n", $query);
+    $query = sprintf("%s  ON DELETE CASCADE,\n", $query);
+    $query = sprintf("%sPRIMARY KEY (`device_id`)) ENGINE=InnoDB;\n", $query);
     query($sql, $query);
 
     /* locked_devices table */
@@ -422,20 +429,22 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s           mf.`model_name`,\n", $query);
     $query = sprintf("%s           mf.`firmware_version`,\n", $query);
     $query = sprintf("%s           (SELECT GROUP_CONCAT(CONCAT(c2.`name`, IF(mfcs.`state` IS NULL,\n", $query);
-    $query = sprintf("%s                                                     '',\n", $query);
-    $query = sprintf("%s                                                     CONCAT(' (',\n", $query);
-    $query = sprintf("%s                                                            mfcs.`state`,\n", $query);
-    $query = sprintf("%s                                                            ')')))\n", $query);
-    $query = sprintf("%s                                SEPARATOR ', ')\n", $query);
-    $query = sprintf("%s            FROM `model_firmware_capability` mfc2\n", $query);
-    $query = sprintf("%s            LEFT OUTER JOIN `model_firmware_capability_state` mfcs\n", $query);
-    $query = sprintf("%s            ON mfc2.`model_firmware_id` = mfcs.`model_firmware_id`\n", $query);
-    $query = sprintf("%s            AND mfc2.`capability_id` = mfcs.`capability_id`,\n", $query);
-    $query = sprintf("%s                 `capabilities` c2\n", $query);
-    $query = sprintf("%s            WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`\n", $query);
-    $query = sprintf("%s            AND c2.`id` = mfc2.`capability_id`\n", $query);
-    $query = sprintf("%s            GROUP BY mfc2.`model_firmware_id`\n", $query);
-    $query = sprintf("%s           ) AS `capabilities`,\n", $query);
+    $query = sprintf("%s                                                      '',\n", $query);
+    $query = sprintf("%s                                                      CONCAT(' (',\n", $query);
+    $query = sprintf("%s                                                             mfcs.`state`,\n", $query);
+    $query = sprintf("%s                                                             ')')))\n", $query);
+    $query = sprintf("%s                                 SEPARATOR ', ')\n", $query);
+    $query = sprintf("%s             FROM `model_firmware_capability` mfc2\n", $query);
+    $query = sprintf("%s             LEFT OUTER JOIN `model_firmware_capability_state` mfcs\n", $query);
+    $query = sprintf("%s             ON mfc2.`model_firmware_id` = mfcs.`model_firmware_id`\n", $query);
+    $query = sprintf("%s             AND mfc2.`capability_id` = mfcs.`capability_id`,\n", $query);
+    $query = sprintf("%s                  `capabilities` c2\n", $query);
+    $query = sprintf("%s             WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`\n", $query);
+    $query = sprintf("%s             AND c2.`id` = mfc2.`capability_id`\n", $query);
+    $query = sprintf("%s             AND (mfcs.`device_id` = d.`id`\n", $query);
+    $query = sprintf("%s               OR mfcs.`device_id` IS NULL)\n", $query);
+    $query = sprintf("%s             GROUP BY mfc2.`model_firmware_id`\n", $query);
+    $query = sprintf("%s            ) AS `capabilities`,\n", $query);
     $query = sprintf("%s           d.`last_update`,\n", $query);
     $query = sprintf("%s           d.`last_upnp_message`,\n", $query);
     $query = sprintf("%s           ld.`locked_by`,\n", $query);

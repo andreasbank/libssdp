@@ -19,9 +19,11 @@
   CREATE TABLE `model_firmware_capability` (`model_firmware_id` INT NOT NULL,
                                             `capability_id` INT NOT NULL,
                                             FOREIGN KEY (`model_firmware_id`)
-                                              REFERENCES `model_firmware`(`id`),
+                                              REFERENCES `model_firmware`(`id`)
+                                              ON DELETE CASCADE,
                                             FOREIGN KEY (`capability_id`)
-                                              REFERENCES `capabilities`(`id`),
+                                              REFERENCES `capabilities`(`id`)
+                                              ON DELETE CASCADE,
                                             PRIMARY KEY(`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
 
   CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL,
@@ -29,20 +31,28 @@
                           `ipv4` VARCHAR(15),
                           `ipv6` VARCHAR(46),
                           `friendly_name` VARCHAR(255),
-                          `model_firmware_id` INT,
+                          `model_firmware_id` INT NULL,
                           `last_update` DATETIME NOT NULL,
                           `last_upnp_message` ENUM('hello', 'alive', 'bye') NOT NULL,
-                          FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware` (`id`),
+                          FOREIGN KEY (`model_firmware_id`)
+                            REFERENCES `model_firmware` (`id`)
+                            ON DELETE SET NULL,
                           PRIMARY KEY (`id`)) ENGINE=InnoDB;
 
   CREATE TABLE `model_firmware_capability_state` (`device_id` VARCHAR(255) NOT NULL,
                                                   `model_firmware_id` INT NOT NULL,
                                                   `capability_id` INT NOT NULL,
                                                   `state` VARCHAR(255) NOT NULL,
-                                                  FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`),
-                                                  FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware_capability` (`model_firmware_id`),
-                                                  FOREIGN KEY (`capability_id`) REFERENCES `model_firmware_capability` (`capability_id`),
-                                                  PRIMARY KEY (`device_id`, `model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
+                                                  FOREIGN KEY (`device_id`)
+                                                    REFERENCES `devices` (`id`)
+                                                    ON DELETE CASCADE,
+                                                  FOREIGN KEY (`model_firmware_id`)
+                                                    REFERENCES `model_firmware_capability` (`model_firmware_id`)
+                                                    ON DELETE CASCADE,
+                                                  FOREIGN KEY (`capability_id`)
+                                                    REFERENCES `model_firmware_capability` (`capability_id`)
+                                                    ON DELETE CASCADE,
+                                                  PRIMARY KEY (`device_id`)) ENGINE=InnoDB;
 
   CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL,
                                 `locked` TINYINT(1) DEFAULT 1,
@@ -342,6 +352,8 @@
                    `capabilities` c2
               WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`
               AND c2.`id` = mfc2.`capability_id`
+              AND (mfcs.`device_id` = d.`id`
+                OR mfcs.`device_id` IS NULL)
               GROUP BY mfc2.`model_firmware_id`
              ) AS `capabilities`,
              d.`last_update`,
