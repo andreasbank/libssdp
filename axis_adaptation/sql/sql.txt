@@ -220,7 +220,7 @@
   
     END WHILE;
     RETURN 0;
-  END;
+  END//
   DELIMITER ;
 
   DELIMITER //
@@ -281,7 +281,10 @@
       VALUES(v_found_id, 1, v_user, NOW());
       CALL `list_devices`(NULL, NULL, NULL, NULL, 999999, NULL, v_found_id);
     END IF;
-  END
+  END//
+  DELIMITER ;
+
+
   DELIMITER //
   CREATE PROCEDURE `list_devices`(IN `v_capability` VARCHAR(255),
                                   IN `v_model_name` VARCHAR(255),
@@ -291,8 +294,9 @@
                                   IN `v_locked_by` VARCHAR(255),
                                   IN `v_device_id` VARCHAR(255))
     SQL SECURITY INVOKER
-  DELIMITER ;
+  DELIMITER //
   BEGIN
+    DECLARE v_firmware_sign TINYINT(2) DEFAULT 0;
     IF v_capability IS NULL OR v_capability = '' THEN
       SET v_capability = '%';
     END IF;
@@ -300,7 +304,13 @@
       SET v_model_name = '%';
     END IF;
     IF v_firmware_version IS NULL OR v_firmware_version = '' THEN
-      SET v_firmware_version = '%';
+      SET v_firmware_version = NULL;
+    ELSEIF LOCATE('<', v_firmware_version) = 1 THEN
+      SET v_firmware_sign = -1;
+      SET v_firmware_version = SUBSTRING(v_firmware_version, 2);
+    ELSEIF LOCATE('>', v_firmware_version) = 1 THEN
+      SET v_firmware_sign = 1;
+      SET v_firmware_version = SUBSTRING(v_firmware_version, 2);
     END IF;
     IF v_age IS NULL OR v_age = '' THEN
       SET v_age = '%';
@@ -311,6 +321,7 @@
     IF v_capability_state IS NULL OR v_capability_state = '' THEN
       SET v_capability_state = '%';
     END IF;
+    DROP TEMPORARY TABLE IF EXISTS `tmp_tbl`;
     CREATE TEMPORARY TABLE IF NOT EXISTS `tmp_tbl` AS (
       SELECT DISTINCT d.`id`,
              d.`ipv4`,
@@ -346,6 +357,7 @@
            ON mfcs.`capability_id` = c.`id`
            AND mfcs.`state` LIKE v_capability_state
       WHERE mf.`id` = d.`model_firmware_id`
+      AND mf.`model_name` LIKE v_model_name
       AND IF(v_capability_state = '%',
              (mfcs.`model_firmware_id` IS NULL
              OR mfcs.`model_firmware_id` = d.`model_firmware_id`),
@@ -354,7 +366,8 @@
       AND mfc.`model_firmware_id` = d.`model_firmware_id`
       AND mfc.`capability_id` = c.`id`
       AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
-      AND c.`name` LIKE v_capability);
+      AND c.`name` LIKE v_capability
+      AND v_firmware_sign = compare_version_strings(mf.`firmware_version`, v_firmware_version));
     IF v_locked_by IS NOT NULL AND v_locked_by != '' THEN
       SELECT *
       FROM `tmp_tbl` tt
@@ -363,7 +376,9 @@
       SELECT *
       FROM `tmp_tbl`;
     END IF;
-  END
+  END//
+  DELIMITER ;
+
   DELIMITER //
   CREATE PROCEDURE `add_or_update_model_firmware_capability_state`(IN `v_model_firmware_id` INT,
                                                                    IN `v_capability_id` INT,
@@ -372,7 +387,7 @@
   BEGIN
     INSERT INTO `model_firmware_capability_state`
     VALUES (v_model_firmware_id, v_capability_id, v_state);
-  END
+  END//
   DELIMITER ;
 
   GRANT EXECUTE ON PROCEDURE abused.add_capability_if_not_exist TO 'abused'@'%';

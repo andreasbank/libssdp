@@ -394,7 +394,13 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s    SET v_model_name = '%%';\n", $query);
     $query = sprintf("%s  END IF;\n", $query);
     $query = sprintf("%s  IF v_firmware_version IS NULL OR v_firmware_version = '' THEN\n", $query);
-    $query = sprintf("%s    SET v_firmware_version = '%%';\n", $query);
+    $query = sprintf("%s    SET v_firmware_version = NULL;\n", $query);
+    $query = sprintf("%s  ELSEIF LOCATE('<', v_firmware_version) = 1 THEN\n", $query);
+    $query = sprintf("%s    SET v_firmware_sign = -1;\n", $query);
+    $query = sprintf("%s    SET v_firmware_version = SUBSTRING(v_firmware_version, 2);\n", $query);
+    $query = sprintf("%s  ELSEIF LOCATE('>', v_firmware_version) = 1 THEN\n", $query);
+    $query = sprintf("%s    SET v_firmware_sign = 1;\n", $query);
+    $query = sprintf("%s    SET v_firmware_version = SUBSTRING(v_firmware_version, 2);\n", $query);
     $query = sprintf("%s  END IF;\n", $query);
     $query = sprintf("%s  IF v_age IS NULL OR v_age = '' THEN\n", $query);
     $query = sprintf("%s    SET v_age = '%%';\n", $query);
@@ -405,6 +411,7 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s  IF v_capability_state IS NULL OR v_capability_state = '' THEN\n", $query);
     $query = sprintf("%s    SET v_capability_state = '%%';\n", $query);
     $query = sprintf("%s  END IF;\n", $query);
+    $query = sprintf("%s  DROP TEMPORARY TABLE IF EXISTS `tmp_tbl`;\n", $query);
     $query = sprintf("%s  CREATE TEMPORARY TABLE IF NOT EXISTS `tmp_tbl` AS (\n", $query);
     $query = sprintf("%s    SELECT DISTINCT d.`id`,\n", $query);
     $query = sprintf("%s           d.`ipv4`,\n", $query);
@@ -448,7 +455,8 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s    AND mfc.`model_firmware_id` = d.`model_firmware_id`\n", $query);
     $query = sprintf("%s    AND mfc.`capability_id` = c.`id`\n", $query);
     $query = sprintf("%s    AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)\n", $query);
-    $query = sprintf("%s    AND c.`name` LIKE v_capability);\n", $query);
+    $query = sprintf("%s    AND c.`name` LIKE v_capability\n", $query);
+    $query = sprintf("%s    AND v_firmware_sign = compare_version_strings(mf.`firmware_version`, v_firmware_version));\n", $query);
     $query = sprintf("%s  IF v_locked_by IS NOT NULL AND v_locked_by != '' THEN\n", $query);
     $query = sprintf("%s    SELECT *\n", $query);
     $query = sprintf("%s    FROM `tmp_tbl` tt\n", $query);

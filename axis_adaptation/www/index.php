@@ -236,11 +236,11 @@ case 'gui_list':
   }
 
   $firmware_version = null;
-  if(isset($_post['firmware_version']) && !empty($_post['firmware_version'])) {
-    $firmware_version = $_post['firmware_version'];
+  if(isset($_POST['firmware_version']) && !empty($_POST['firmware_version'])) {
+    $firmware_version = $_POST['firmware_version'];
   }
-  else if(isset($_get['firmware_version']) && !empty($_get['firmware_version'])) {
-    $firmware_version = $_get['firmware_version'];
+  else if(isset($_GET['firmware_version']) && !empty($_GET['firmware_version'])) {
+    $firmware_version = $_GET['firmware_version'];
   }
 
   $capability_state = NULL;
