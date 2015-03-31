@@ -1,5 +1,10 @@
 <?php
 require_once('SqlConnection.php');
+$request_start = microtime(true);
+
+function request_time() {
+  return round((microtime(true) - $GLOBALS['request_start']), 4);
+}
 
 function random_pleasing_color() {
   $red = rand(128, 236);
@@ -535,6 +540,9 @@ case 'gui_list':
     printf("\t</tr>\n");
   }
   printf("</table>\n");
+  printf("<div style=\"font-size: .8em; color: gray; padding: 1em; text-align: center;\">found %s matches (%ss)</div>\n",
+         count($results),
+         request_time());
   printf("</body>\n</html>\n");
   break;
 
