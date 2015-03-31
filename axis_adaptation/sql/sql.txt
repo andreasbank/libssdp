@@ -24,13 +24,6 @@
                                               REFERENCES `capabilities`(`id`),
                                             PRIMARY KEY(`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
 
-  CREATE TABLE `model_firmware_capability_state` (`model_firmware_id` INT NOT NULL,
-                                                  `capability_id` INT NOT NULL,
-                                                  `state` VARCHAR(255) NOT NULL,
-                                                  FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware_capability` (`model_firmware_id`),
-                                                  FOREIGN KEY (`capability_id`) REFERENCES `model_firmware_capability` (`capability_id`),
-                                                  PRIMARY KEY (`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
-
   CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL,
                           `mac` VARCHAR(255) NOT NULL,
                           `ipv4` VARCHAR(15),
@@ -41,6 +34,15 @@
                           `last_upnp_message` ENUM('hello', 'alive', 'bye') NOT NULL,
                           FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware` (`id`),
                           PRIMARY KEY (`id`)) ENGINE=InnoDB;
+
+  CREATE TABLE `model_firmware_capability_state` (`device_id` VARCHAR(255) NOT NULL,
+                                                  `model_firmware_id` INT NOT NULL,
+                                                  `capability_id` INT NOT NULL,
+                                                  `state` VARCHAR(255) NOT NULL,
+                                                  FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`),
+                                                  FOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware_capability` (`model_firmware_id`),
+                                                  FOREIGN KEY (`capability_id`) REFERENCES `model_firmware_capability` (`capability_id`),
+                                                  PRIMARY KEY (`device_id`, `model_firmware_id`, `capability_id`)) ENGINE=InnoDB;
 
   CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL,
                                 `locked` TINYINT(1) DEFAULT 1,
@@ -158,7 +160,7 @@
     INSERT INTO `model_firmware_capability`
     VALUES (
       v_model_firmware_id, v_capability_id
-    );
+    ) ON DUPLICATE KEY UPDATE `model_firmware_id` = `model_firmware_id`;
   END//
   DELIMITER ;
 
@@ -380,13 +382,28 @@
   DELIMITER ;
 
   DELIMITER //
-  CREATE PROCEDURE `add_or_update_model_firmware_capability_state`(IN `v_model_firmware_id` INT,
+  CREATE PROCEDURE `add_or_update_model_firmware_capability_state`(IN `v_device_id` VARCHAR(255),
+                                                                   IN `v_model_firmware_id` INT,
                                                                    IN `v_capability_id` INT,
                                                                    IN `v_state` VARCHAR(255))
     SQL SECURITY INVOKER
   BEGIN
-    INSERT INTO `model_firmware_capability_state`
-    VALUES (v_model_firmware_id, v_capability_id, v_state);
+    DECLARE found_id INT DEFAULT NULL;
+    SELECT `device_id` INTO found_id
+    FROM `model_firmware_capability_state`
+    WHERE `device_id` = v_device_id
+    AND `model_firmware_id` = v_model_firmware_id
+    AND `capability_id` = v_capability_id;
+    IF found_id IS NULL THEN
+      INSERT INTO `model_firmware_capability_state`
+      VALUES (v_device, v_model_firmware_id, v_capability_id, v_state);
+    ELSE
+      UPDATE `model_firmware_capability_state`
+      SET `state` = v_state
+      WHERE `device_id` = v_device_id
+      AND `model_firmware_id` = v_model_firmware_id
+      AND `capability_id` = v_capability_id;
+    END IF;
   END//
   DELIMITER ;
 

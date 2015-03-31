@@ -81,14 +81,6 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%sPRIMARY KEY(`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;\n", $query);
     query($sql, $query);
  
-    $query =         "CREATE TABLE `model_firmware_capability_state` (`model_firmware_id` INT NOT NULL,\n";
-    $query = sprintf("%s`capability_id` INT NOT NULL,\n", $query);
-    $query = sprintf("%s`state` VARCHAR(255) NOT NULL,\n", $query);
-    $query = sprintf("%sFOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware_capability` (`model_firmware_id`),\n", $query);
-    $query = sprintf("%sFOREIGN KEY (`capability_id`) REFERENCES `model_firmware_capability` (`capability_id`),\n", $query);
-    $query = sprintf("%sPRIMARY KEY (`model_firmware_id`, `capability_id`)) ENGINE=InnoDB;\n", $query);
-    query($sql, $query);
-
     /* devices table */
     $query =         "CREATE TABLE `devices` (`id` VARCHAR(255) NOT NULL,\n";
     $query = sprintf("%s`mac` VARCHAR(255) NOT NULL,\n", $query);
@@ -100,6 +92,17 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s`last_upnp_message` ENUM('hello', 'alive', 'bye') NOT NULL,\n", $query);
     $query = sprintf("%sFOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware` (`id`),\n", $query);
     $query = sprintf("%sPRIMARY KEY (`id`)) ENGINE=InnoDB;\n", $query);
+    query($sql, $query);
+
+    /* model_firmware_capability_state */
+    $query =         "CREATE TABLE `model_firmware_capability_state` (`device_id` VARCHAR(255) NOT NULL,\n";
+    $query = sprintf("%s`model_firmware_id` INT NOT NULL,\n", $query);
+    $query = sprintf("%s`capability_id` INT NOT NULL,\n", $query);
+    $query = sprintf("%s`state` VARCHAR(255) NOT NULL,\n", $query);
+    $query = sprintf("%sFOREIGN KEY (`device_id`) REFERENCES `devices` (`id`),\n", $query);
+    $query = sprintf("%sFOREIGN KEY (`model_firmware_id`) REFERENCES `model_firmware_capability` (`model_firmware_id`),\n", $query);
+    $query = sprintf("%sFOREIGN KEY (`capability_id`) REFERENCES `model_firmware_capability` (`capability_id`),\n", $query);
+    $query = sprintf("%sPRIMARY KEY (`device_id`, `model_firmware_id`, `capability_id`)) ENGINE=InnoDB;\n", $query);
     query($sql, $query);
 
     /* locked_devices table */
@@ -208,7 +211,7 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s  INSERT INTO `model_firmware_capability`\n", $query);
     $query = sprintf("%s  VALUES (\n", $query);
     $query = sprintf("%s    v_model_firmware_id, v_capability_id\n", $query);
-    $query = sprintf("%s  );\n", $query);
+    $query = sprintf("%s  ) ON DUPLICATE KEY UPDATE `model_firmware_id` = `model_firmware_id`;\n", $query);
     $query = sprintf("%sEND;\n", $query);
     query($sql, $query);
 
@@ -387,6 +390,7 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s                              IN `v_device_id` VARCHAR(255))\n", $query);
     $query = sprintf("%s  SQL SECURITY DEFINER\n", $query);
     $query = sprintf("%sBEGIN\n", $query);
+    $query = sprintf("%s  DECLARE v_firmware_sign TINYINT(2) DEFAULT 0;\n", $query);
     $query = sprintf("%s  IF v_capability IS NULL OR v_capability = '' THEN\n", $query);
     $query = sprintf("%s    SET v_capability = '%%';\n", $query);
     $query = sprintf("%s  END IF;\n", $query);
@@ -468,13 +472,28 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%sEND\n", $query);
     query($sql, $query);
 
-    $query =         "CREATE PROCEDURE `add_or_update_model_firmware_capability_state`(IN `v_model_firmware_id` INT,\n";
+    $query =         "CREATE PROCEDURE `add_or_update_model_firmware_capability_state`(IN `v_device_id` VARCHAR(255),\n";
+    $query = sprintf("%s                                                               IN `v_model_firmware_id` INT,\n", $query);
     $query = sprintf("%s                                                               IN `v_capability_id` INT,\n", $query);
     $query = sprintf("%s                                                               IN `v_state` VARCHAR(255))\n", $query);
     $query = sprintf("%s  SQL SECURITY INVOKER\n", $query);
     $query = sprintf("%sBEGIN\n", $query);
-    $query = sprintf("%s  INSERT INTO `model_firmware_capability_state`\n", $query);
-    $query = sprintf("%s  VALUES (v_model_firmware_id, v_capability_id, v_state);\n", $query);
+    $query = sprintf("%s  DECLARE found_id INT DEFAULT NULL;\n", $query);
+    $query = sprintf("%s  SELECT `device_id` INTO found_id\n", $query);
+    $query = sprintf("%s  FROM `model_firmware_capability_state`\n", $query);
+    $query = sprintf("%s  WHERE `device_id` = v_device_id\n", $query);
+    $query = sprintf("%s  AND `model_firmware_id` = v_model_firmware_id\n", $query);
+    $query = sprintf("%s  AND `capability_id` = v_capability_id;\n", $query);
+    $query = sprintf("%s  IF found_id IS NULL THEN\n", $query);
+    $query = sprintf("%s    INSERT INTO `model_firmware_capability_state`\n", $query);
+    $query = sprintf("%s    VALUES (v_device_id, v_model_firmware_id, v_capability_id, v_state);\n", $query);
+    $query = sprintf("%s  ELSE\n", $query);
+    $query = sprintf("%s    UPDATE `model_firmware_capability_state`\n", $query);
+    $query = sprintf("%s    SET `state` = v_state\n", $query);
+    $query = sprintf("%s    WHERE `device_id` = v_device_id\n", $query);
+    $query = sprintf("%s    AND `model_firmware_id` = v_model_firmware_id\n", $query);
+    $query = sprintf("%s    AND `capability_id` = v_capability_id;\n", $query);
+    $query = sprintf("%s  END IF;\n", $query);
     $query = sprintf("%sEND;\n", $query);
     query($sql, $query);
 

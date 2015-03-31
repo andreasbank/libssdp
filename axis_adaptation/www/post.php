@@ -82,6 +82,8 @@ foreach($abused_results as $abused_result) {
 
     $model_name = $abused_result->get_custom_field_modelName();
 
+    $cm = null;
+    $model_firmware_id = null;
 
     /* If it is a QNAP (excluding 'TwonkyMedia Server' version
        '6.0.34', it is Iomega which has 2 instances of UPnP) */
@@ -165,17 +167,6 @@ foreach($abused_results as $abused_result) {
       /* If device has not been probed for capabilities
          then probe it and fill the database */
       if(!$is_probed) {
-        if($cm->has_sd_disk()) {
-          $capability_id = $sqlconnection->call('call add_capability_if_not_exist(\'sd_disk\');')[0][0]['id'];
-          $sqlconnection->call(sprintf("call add_capability_to_model_firmware('%s', '%s');",
-                                       $model_firmware_id,
-                                       $capability_id));
-          $capability_state = $cm->get_sd_disk_status();
-          $sqlconnection->call(sprintf("call add_or_update_model_firmware_capability_state('%s', '%s', '%s');",
-                                       $model_firmware_id,
-                                       $capability_id,
-                                       $capability_state));
-        }
         if($cm->has_local_storage()) {
           $capability_id = $sqlconnection->call('call add_capability_if_not_exist(\'local_storage\');')[0][0]['id'];
           $sqlconnection->call(sprintf("call add_capability_to_model_firmware('%s', '%s');",
@@ -250,22 +241,42 @@ foreach($abused_results as $abused_result) {
       continue;
     }
 
+    $query = sprintf("call add_or_update_device('%s', '%s', '%s', '%s', '%s', '%s', '%s')",
+                     $id,
+                     $mac,
+                     $ipv4,
+                     $ipv6,
+                     $friendly_name,
+                     $model_firmware_id,
+                     $ssdp_message_type);
+
+    $sqlconnection->call($query);
+
+    /* The following things have to be done AFTER an AXIS device has been
+       registered (ex. because of a FOREIGN KEY to the device ID) */
+    if(!(false === stripos($model_name, 'axis'))) {
+
+      /* Always check SD_DISK state if the device has SD_DISK support */
+      if($cm->has_sd_disk()) {
+        $capability_id = $sqlconnection->call('call add_capability_if_not_exist(\'sd_disk\');')[0][0]['id'];
+        $sqlconnection->call(sprintf("call add_capability_to_model_firmware('%s', '%s');",
+                                     $model_firmware_id,
+                                     $capability_id));
+    
+        $capability_state = $cm->get_sd_disk_status();
+        $query = sprintf("call add_or_update_model_firmware_capability_state('%s', '%s', '%s', '%s');",
+                         $id,
+                         $model_firmware_id,
+                         $capability_id,
+                         $capability_state);
+        $sqlconnection->call($query);
+      }
+    }
 
   } catch(Exception $e) {
     /* Print and continue */
     printf("Error: [%d] %s", $e->getCode(), $e->getMessage());
     continue;
   }
-
-  $query = sprintf("call add_or_update_device('%s', '%s', '%s', '%s', '%s', '%s', '%s')",
-                   $id,
-                   $mac,
-                   $ipv4,
-                   $ipv6,
-                   $friendly_name,
-                   $model_firmware_id,
-                   $ssdp_message_type);
-
-  $sqlconnection->call($query);
 }
 
