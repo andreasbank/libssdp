@@ -394,7 +394,8 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s                              IN `v_capability_state` VARCHAR(255),\n", $query);
     $query = sprintf("%s                              IN `v_age` INT,\n", $query);
     $query = sprintf("%s                              IN `v_locked_by` VARCHAR(255),\n", $query);
-    $query = sprintf("%s                              IN `v_device_id` VARCHAR(255))\n", $query);
+    $query = sprintf("%s                              IN `v_device_id` VARCHAR(255),\n", $query);
+    $query = sprintf("%s                              IN `v_ip` VARCHAR(255))\n", $query);
     $query = sprintf("%s  SQL SECURITY DEFINER\n", $query);
     $query = sprintf("%sBEGIN\n", $query);
     $query = sprintf("%s  DECLARE v_firmware_sign TINYINT(2) DEFAULT 0;\n", $query);
@@ -421,6 +422,9 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s  END IF;\n", $query);
     $query = sprintf("%s  IF v_capability_state IS NULL OR v_capability_state = '' THEN\n", $query);
     $query = sprintf("%s    SET v_capability_state = '%%';\n", $query);
+    $query = sprintf("%s  END IF;\n", $query);
+    $query = sprintf("%s  IF v_ip IS NULL OR v_ip = '' THEN\n", $query);
+    $query = sprintf("%s    SET v_ip = '%%';\n", $query);
     $query = sprintf("%s  END IF;\n", $query);
     $query = sprintf("%s  DROP TEMPORARY TABLE IF EXISTS `tmp_tbl`;\n", $query);
     $query = sprintf("%s  CREATE TEMPORARY TABLE IF NOT EXISTS `tmp_tbl` AS (\n", $query);
@@ -469,6 +473,7 @@ else if(isset($_POST['mysql'])) {
     $query = sprintf("%s    AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)\n", $query);
     $query = sprintf("%s    AND c.`name` LIKE v_capability\n", $query);
     $query = sprintf("%s    AND mf.`model_name` LIKE v_model_name\n", $query);
+    $query = sprintf("%s    AND (d.`ipv4` LIKE v_ip OR d.`ipv6` LIKE v_ip)\n", $query);
     $query = sprintf("%s    AND v_firmware_sign = compare_version_strings(mf.`firmware_version`, v_firmware_version));\n", $query);
     $query = sprintf("%s  IF v_locked_by IS NOT NULL AND v_locked_by != '' THEN\n", $query);
     $query = sprintf("%s    SELECT *\n", $query);

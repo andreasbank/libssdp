@@ -329,6 +329,9 @@
     IF v_capability_state IS NULL OR v_capability_state = '' THEN
       SET v_capability_state = '%';
     END IF;
+    IF v_ip IS NULL OR v_ip = '' THEN
+      SET v_ip = '%';
+    END IF;
     DROP TEMPORARY TABLE IF EXISTS `tmp_tbl`;
     CREATE TEMPORARY TABLE IF NOT EXISTS `tmp_tbl` AS (
       SELECT DISTINCT d.`id`,
@@ -376,6 +379,7 @@
       AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
       AND c.`name` LIKE v_capability
       AND mf.`model_name` LIKE v_model_name
+      AND (d.`ipv4` LIKE v_ip OR d.`ipv6` LIKE v_ip)
       AND v_firmware_sign = compare_version_strings(mf.`firmware_version`, v_firmware_version));
     IF v_locked_by IS NOT NULL AND v_locked_by != '' THEN
       SELECT *

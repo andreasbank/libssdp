@@ -195,15 +195,24 @@ case 'list_devices':
     $age = $_GET['age'];
   }
 
+  $ip = null;
+  if(isset($_POST['ip']) && !empty($_POST['ip'])) {
+    $ip = $_POST['ip'];
+  }
+  else if(isset($_GET['ip']) && !empty($_GET['ip'])) {
+    $ip = $_GET['ip'];
+  }
+
   try {
-    $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s);",
+    $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
                      ($capability ? sprintf("'%s'", $capability) : 'NULL'),
                      ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
                      ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
                      ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
                      $age,
                      ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
-                     ($device_id ? sprintf("'%s'", $device_id) : 'NULL'));
+                     ($device_id ? sprintf("'%s'", $device_id) : 'NULL'),
+                     ($ip ? sprintf("'%s'", $ip) : 'NULL'));
 
     $results = $sql->call($query);
 
@@ -292,15 +301,24 @@ case 'gui_list':
     $age = $_GET['age'];
   }
 
+  $ip = null;
+  if(isset($_POST['ip']) && !empty($_POST['ip'])) {
+    $ip = $_POST['ip'];
+  }
+  else if(isset($_GET['ip']) && !empty($_GET['ip'])) {
+    $ip = $_GET['ip'];
+  }
+
   try {
-    $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s);",
+    $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
                      ($capability ? sprintf("'%s'", $capability) : 'NULL'),
                      ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
                      ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
                      ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
                      $age,
                      ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
-                     ($device_id ? sprintf("'%s'", $device_id) : 'NULL'));
+                     ($device_id ? sprintf("'%s'", $device_id) : 'NULL'),
+                     ($ip ? sprintf("'%s'", $ip) : 'NULL'));
 
     $results = $sql->call($query);
 
@@ -352,7 +370,7 @@ case 'gui_list':
   printf("\t\t\t\t\t\t\tIP (v4):\n");
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td>\n");
-  printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"ip\" value=\"\" disabled=\"disabled\" />\n");
+  printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"ip\" value=\"%s\" />\n", $ip);
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td rowspan=\"3\" style=\"text-align: center;\">\n");
   printf("\t\t\t\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"gui_list\" />\n");
@@ -367,7 +385,7 @@ case 'gui_list':
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"capability\" value=\"%s\" />\n", $capability);
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
-  printf("\t\t\t\t\t\t\tCapability state:\n");
+  printf("\t\t\t\t\t\t\t<span title=\"For capability 'sd_disk' state can be: OK, connected, disconnected or failed\">Capability state:</span>\n");
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"capability_state\" value=\"%s\" />\n", $capability_state);
