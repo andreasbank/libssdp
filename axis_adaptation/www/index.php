@@ -293,7 +293,8 @@ case 'gui_list':
     $device_id = $_GET['device_id'];
   }
 
-  $age = 3600;
+  /* 16 minutes */
+  $age = 960;
   if(isset($_POST['age']) && !empty($_POST['age'])) {
     $age = $_POST['age'];
   }
@@ -606,7 +607,8 @@ case 'lock_device':
     $device_id = $_GET['device_id'];
   }
 
-  $age = 3600;
+  /* 16 minutes */
+  $age = 960;
   if(isset($_POST['age']) && !empty($_POST['age'])) {
     $age = $_POST['age'];
   }
