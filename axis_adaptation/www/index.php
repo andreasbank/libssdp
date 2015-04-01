@@ -107,6 +107,43 @@ function get_capabilities_icons($capabilities, $tabs_count = 0) {
 
   return $html;
 }
+// %'.020d
+/* Sort the results */
+function sort_results(&$arr, $sort_by) {
+  foreach($arr as $k => $v) {
+    $id_array[$k] = $v['id'];
+    $ipv4_array[$k] = $v['ipv4'];
+    //$ipv6_array[$k] = $v['ipv6'];
+    $model_name_array[$k] = $v['model_name'];
+    $firmware_version_array[$k] = $v['firmware_version'];
+    $capabilities_array[$k] = $v['capabilities'];
+    $last_update_array[$k] = sprintf("%d", (time() - strtotime($v['last_update'])));
+    $last_upnp_message_array[$k] = sprintf("%d", (time() - strtotime($v['last_upnp_message'])));
+    $locked_by_array[$k] = $v['locked_by'];
+    $locked_date_array[$k] = sprintf("%d", strtotime($v['locked_date']));
+  }
+
+  switch($sort_by) {
+  case 'id':
+  case 'ipv4':
+  //case 'ipv6':
+  case 'model_name':
+  case 'firmware_version':
+  case 'capabilities':
+  case 'last_update':
+  case 'last_upnp_message':
+  case 'locked_by':
+  case 'locked_date':
+    $sort_by_array = ${sprintf("%s%s", $sort_by, '_array')};
+    break;
+  default:
+    return $arr;
+    break;
+  }
+
+  $sorted_array = array_multisort($sort_by_array, $arr);
+  return $sorted_array;
+}
 
 /* MySQL credentials */
 $host     = 'localhost';
@@ -204,6 +241,14 @@ case 'list_devices':
     $ip = $_GET['ip'];
   }
 
+  $sort_by = null;
+  if(isset($_POST['sort_by']) && !empty($_POST['sort_by'])) {
+    $sort_by = $_POST['sort_by'];
+  }
+  else if(isset($_GET['sort_by']) && !empty($_GET['sort_by'])) {
+    $sort_by = $_GET['sort_by'];
+  }
+
   try {
     $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
                      ($capability ? sprintf("'%s'", $capability) : 'NULL'),
@@ -218,7 +263,12 @@ case 'list_devices':
     $results = $sql->call($query);
 
     if(is_array($results) && count($results) > 0) {
-      printf("%s", json_encode($results[0]));
+      $json_results = json_encode($results[0]);
+
+      /* Sort the results if $sort_by is set */
+      // sort
+
+      printf("%s", $json_results);
     }
     else {
       printf("[]");
@@ -311,6 +361,14 @@ case 'gui_list':
     $ip = $_GET['ip'];
   }
 
+  $sort_by = null;
+  if(isset($_POST['sort_by']) && !empty($_POST['sort_by'])) {
+    $sort_by = $_POST['sort_by'];
+  }
+  else if(isset($_GET['sort_by']) && !empty($_GET['sort_by'])) {
+    $sort_by = $_GET['sort_by'];
+  }
+
   try {
     $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
                      ($capability ? sprintf("'%s'", $capability) : 'NULL'),
@@ -326,6 +384,12 @@ case 'gui_list':
 
     if(is_array($results) && count($results) > 0) {
       $results = $results[0];
+
+      /* Sort the results if $sort_by is set */
+      if(!empty($sort_by)) {
+        sort_results($results, $sort_by);
+      }
+
     }
     else {
       $results = NULL;
@@ -344,24 +408,29 @@ case 'gui_list':
   /* Create the random colors for the table */
   $random_color = random_pleasing_color();
 
+  /* Get results columns for sort_by select box */
+  $result_columns = array();
+  if(count($results) > 0) {
+    foreach($results[0] as $key => $value) {
+      $result_columns[] = $key;
+    }
+  }
+
   /* Print out the whole html document */
   header('HTTP/1.0 200 Ok');
   printf("<!DOCTYPE html>\n");
   printf("<html>\n<head>\n\t<title>List of devices</title>\n");
   printf("\t<link rel=\"stylesheet\" type=\"text/css\" href=\"gui.css\">\n");
-  printf("</head>\n<body>\n");
+  printf("</head>\n<body>\n<table style=\"margin-left: auto; margin-right: auto;\">\n");
+  printf("<tr>\n<td style=\"font-size: .8em; color: gray; padding-left: 2em;\">\n");
+  printf("Logged in as '%s'</div>\n", $user);
+  printf("</td>\n</tr>\n<tr>\n<td>\n");
   printf("<table class=\"round_table\" style=\"background-color: %s\">\n", $random_color);
   printf("\t<tr>\n");
   printf("\t\t<td colspan=\"7\" style=\"padding-bottom: 2em;\">\n");
   printf("\t\t\t<form methon=\"get\" action=\"\">\n");
   printf("\t\t\t\t<table style=\"margin-left: auto; margin-right: auto;\">\n");
   printf("\t\t\t\t\t<tr>\n");
-  printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
-  printf("\t\t\t\t\t\t\tLogged in as:\n");
-  printf("\t\t\t\t\t  </td>\n");
-  printf("\t\t\t\t\t\t<td>\n");
-  printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"user\" readonly=\"true\" value=\"%s\" />\n", $user);
-  printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
   printf("\t\t\t\t\t\t\tID: \n");
   printf("\t\t\t\t\t\t</td>\n");
@@ -374,18 +443,19 @@ case 'gui_list':
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"ip\" value=\"%s\" />\n", $ip);
   printf("\t\t\t\t\t\t</td>\n");
-  printf("\t\t\t\t\t\t<td rowspan=\"3\" style=\"text-align: center;\">\n");
-  printf("\t\t\t\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"gui_list\" />\n");
-  printf("\t\t\t\t\t\t\t<input type=\"submit\" class=\"apply_button\" style=\"border: none; background-color: transparent; box-shadow: none; margin-left: 1em; margin-right: 2em;\" title=\"Apply filters\" value=\"\" />\n");
-  printf("\t\t\t\t\t\t</td>\n");
-  printf("\t\t\t\t\t</tr>\n");
-  printf("\t\t\t\t\t<tr>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
   printf("\t\t\t\t\t\t\tCapability:\n");
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"capability\" value=\"%s\" />\n", $capability);
   printf("\t\t\t\t\t\t</td>\n");
+  printf("\t\t\t\t\t\t<td rowspan=\"3\" style=\"text-align: center;\">\n");
+  printf("\t\t\t\t\t\t\t<input type=\"hidden\" name=\"action\" value=\"gui_list\" />\n");
+  printf("\t\t\t\t\t\t\t<input type=\"hidden\" name=\"user\" value=\"%s\" />\n", $user);
+  printf("\t\t\t\t\t\t\t<input type=\"submit\" class=\"apply_button\" style=\"border: none; background-color: transparent; box-shadow: none; margin-left: 1em; margin-right: 2em;\" title=\"Apply filters\" value=\"\" />\n");
+  printf("\t\t\t\t\t\t</td>\n");
+  printf("\t\t\t\t\t</tr>\n");
+  printf("\t\t\t\t\t<tr>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
   printf("\t\t\t\t\t\t\t<span title=\"For capability 'sd_disk' state can be: OK, connected, disconnected or failed\">Capability state:</span>\n");
   printf("\t\t\t\t\t\t</td>\n");
@@ -398,14 +468,14 @@ case 'gui_list':
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"model_name\" value=\"%s\" />\n", $model_name);
   printf("\t\t\t\t\t\t</td>\n");
-  printf("\t\t\t\t\t</tr>\n");
-  printf("\t\t\t\t\t<tr>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
   printf("\t\t\t\t\t\t\tFirmware version:\n");
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"firmware_version\" value=\"%s\" />\n", $firmware_version);
   printf("\t\t\t\t\t\t</td>\n");
+  printf("\t\t\t\t\t</tr>\n");
+  printf("\t\t\t\t\t<tr>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
   printf("\t\t\t\t\t\t\tOccupant:\n");
   printf("\t\t\t\t\t\t</td>\n");
@@ -417,6 +487,21 @@ case 'gui_list':
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"age\" value=\"%s\" />\n", $age);
+  printf("\t\t\t\t\t\t</td>\n");
+  printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
+  printf("\t\t\t\t\t\t\tSort by:\n");
+  printf("\t\t\t\t\t\t</td>\n");
+  printf("\t\t\t\t\t\t<td>\n");
+  printf("\t\t\t\t\t\t\t<select style=\"width: 100%%;\" name=\"sort_by\">\n");
+  printf("\t\t\t\t\t\t\t\t<option %svalue=\"\">none</option>\n",
+         (empty($sort_by) ? 'selected=\"selected\" ' : ''));
+  foreach($result_columns as $option) {
+    printf("\t\t\t\t\t\t\t\t<option %svalue=\"%s\">%s</option>\n",
+           ($option == $sort_by ? 'selected=\"selected\" ' : ''),
+           $option,
+           $option);
+  }
+  printf("\t\t\t\t\t\t\t</select>\n");
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t</tr>\n");
   printf("\t\t\t\t</table>\n");
@@ -559,8 +644,8 @@ case 'gui_list':
 
     printf("\t</tr>\n");
   }
-  printf("</table>\n");
-  printf("<div style=\"font-size: .8em; color: gray; padding: 1em; text-align: center;\">found %s matches (%ss)</div>\n",
+  printf("</table>\n</td>\n</tr>\n\n");
+  printf("<tr>\n<td style=\"font-size: .8em; color: gray; padding: 1em; text-align: center;\">found %s matches (%ss)</td>\n</tr></table>",
          count($results),
          request_time());
   printf("</body>\n</html>\n");
