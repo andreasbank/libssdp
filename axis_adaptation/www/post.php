@@ -16,9 +16,11 @@ $password = 'abusedpass';
 $abused_results = AbusedResult::parse_xml($raw_xml);
 
 /* Info for extracting specific information of
-   the device in case it is an AXIS device */
+   the device in the case where it is an AXIS device */
 $axis_device_default_username = 'root';
 $axis_device_default_password = 'pass';
+$axis_device_backup_username = 'camroot';
+$axis_device_backup_password = 'password';
 
 /* Connect to MySQL */
 try {
@@ -152,7 +154,20 @@ foreach($abused_results as $abused_result) {
                                    $axis_device_default_password);
   
       /* Fetch the firmware version from the device */
-      $firmware_version = $cm->get_firmware_version();
+      try {
+        $firmware_version = $cm->get_firmware_version();
+      }
+      catch(Exception $e) {
+        /* If the credentials were wrong try with the backup ones  */
+        if($e->getCode() == 401) {
+          $cm->set_credentials($axis_device_backup_username,
+                               $axis_device_backup_password);
+          $firmware_version = $cm->get_firmware_version();
+        }
+        else {
+          throw $e;
+        }
+      }
   
       /* Create or retrieve existing ID for the model-firmware combination */
       $model_firmware_id = $sqlconnection->call(sprintf("call add_model_firmware_if_not_exist('%s', '%s')",
@@ -264,7 +279,7 @@ foreach($abused_results as $abused_result) {
                                      $capability_id));
     
         $capability_state = $cm->get_sd_disk_status();
-        $query = sprintf("call add_or_update_model_firmware_capability_state('%s', '%s', '%s', '%s');",
+        $query = sprintf("call add_or_update_device_capability_state('%s', '%s', '%s', '%s');",
                          $id,
                          $model_firmware_id,
                          $capability_id,

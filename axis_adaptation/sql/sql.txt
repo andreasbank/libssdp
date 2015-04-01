@@ -52,7 +52,7 @@
                                                   FOREIGN KEY (`capability_id`)
                                                     REFERENCES `model_firmware_capability` (`capability_id`)
                                                     ON DELETE CASCADE,
-                                                  PRIMARY KEY (`device_id`)) ENGINE=InnoDB;
+                                                  PRIMARY KEY (`device_id`, `capability_id`)) ENGINE=InnoDB;
 
   CREATE TABLE `locked_devices`(`device_id` VARCHAR(255) NOT NULL,
                                 `locked` TINYINT(1) DEFAULT 1,
@@ -72,7 +72,7 @@
 
   GRANT SELECT, INSERT, UPDATE ON `abused`.`model_firmware_capability` TO 'abused'@'%';
 
-  GRANT SELECT, INSERT, UPDATE ON `abused`.`model_firmware_capability_state` TO 'abused'@'%';
+  GRANT SELECT, INSERT, UPDATE ON `abused`.`device_capability_state` TO 'abused'@'%';
 
   GRANT SELECT, INSERT, UPDATE ON `abused`.`devices` TO 'abused'@'%';
 
@@ -267,14 +267,14 @@
          `model_firmware` mf,
          `model_firmware_capability` mfc,
          `capabilities` c
-         LEFT OUTER JOIN `model_firmware_capability_state` mfcs
-         ON mfcs.`capability_id` = c.`id`
-         AND mfcs.`state` LIKE v_capability_state
+         LEFT OUTER JOIN `device_capability_state` dcs
+         ON dcs.`capability_id` = c.`id`
+         AND dcs.`state` LIKE v_capability_state
     WHERE d.`model_firmware_id`=mf.`id`
     AND IF(v_capability_state = '%',
-           (mfcs.`model_firmware_id` IS NULL
-           OR mfcs.`model_firmware_id` = d.`model_firmware_id`),
-           mfcs.`model_firmware_id` = d.`model_firmware_id`)
+           (dcs.`model_firmware_id` IS NULL
+           OR dcs.`model_firmware_id` = d.`model_firmware_id`),
+           dcs.`model_firmware_id` = d.`model_firmware_id`)
     AND d.`id` LIKE v_device_id
     AND d.`model_firmware_id`=mfc.`model_firmware_id`
     AND mfc.`capability_id`=c.`id` 
@@ -339,21 +339,21 @@
              d.`ipv4`,
              mf.`model_name`,
              mf.`firmware_version`,
-             (SELECT GROUP_CONCAT(CONCAT(c2.`name`, IF(mfcs.`state` IS NULL,
+             (SELECT GROUP_CONCAT(CONCAT(c2.`name`, IF(dcs.`state` IS NULL,
                                                        '',
                                                        CONCAT(' (',
-                                                              mfcs.`state`,
+                                                              dcs.`state`,
                                                               ')')))
                                   SEPARATOR ', ')
               FROM `model_firmware_capability` mfc2
-              LEFT OUTER JOIN `model_firmware_capability_state` mfcs
-              ON mfc2.`model_firmware_id` = mfcs.`model_firmware_id`
-              AND mfc2.`capability_id` = mfcs.`capability_id`,
+              LEFT OUTER JOIN `device_capability_state` dcs
+              ON mfc2.`model_firmware_id` = dcs.`model_firmware_id`
+              AND mfc2.`capability_id` = dcs.`capability_id`,
                    `capabilities` c2
               WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`
               AND c2.`id` = mfc2.`capability_id`
-              AND (mfcs.`device_id` = d.`id`
-                OR mfcs.`device_id` IS NULL)
+              AND (dcs.`device_id` = d.`id`
+                OR dcs.`device_id` IS NULL)
               GROUP BY mfc2.`model_firmware_id`
              ) AS `capabilities`,
              d.`last_update`,
@@ -367,20 +367,21 @@
            `model_firmware` mf,
            `model_firmware_capability` mfc,
            `capabilities` c
-           LEFT OUTER JOIN `model_firmware_capability_state` mfcs
-           ON mfcs.`capability_id` = c.`id`
-           AND mfcs.`state` LIKE v_capability_state
+           LEFT OUTER JOIN `device_capability_state` dcs
+           ON dcs.`capability_id` = c.`id`
+           AND dcs.`state` LIKE v_capability_state
       WHERE mf.`id` = d.`model_firmware_id`
       AND mf.`model_name` LIKE v_model_name
       AND IF(v_capability_state = '%',
-             (mfcs.`model_firmware_id` IS NULL
-             OR mfcs.`model_firmware_id` = d.`model_firmware_id`),
-             mfcs.`model_firmware_id` = d.`model_firmware_id`)
+             (dcs.`model_firmware_id` IS NULL
+             OR dcs.`model_firmware_id` = d.`model_firmware_id`),
+             dcs.`model_firmware_id` = d.`model_firmware_id`)
       AND d.`id` LIKE v_device_id
       AND mfc.`model_firmware_id` = d.`model_firmware_id`
       AND mfc.`capability_id` = c.`id`
       AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
       AND c.`name` LIKE v_capability
+      AND mf.`model_name` LIKE v_model_name
       AND v_firmware_sign = compare_version_strings(mf.`firmware_version`, v_firmware_version));
     IF v_locked_by IS NOT NULL AND v_locked_by != '' THEN
       SELECT *
@@ -394,7 +395,7 @@
   DELIMITER ;
 
   DELIMITER //
-  CREATE PROCEDURE `add_or_update_model_firmware_capability_state`(IN `v_device_id` VARCHAR(255),
+  CREATE PROCEDURE `add_or_update_device_capability_state`(IN `v_device_id` VARCHAR(255),
                                                                    IN `v_model_firmware_id` INT,
                                                                    IN `v_capability_id` INT,
                                                                    IN `v_state` VARCHAR(255))
@@ -402,18 +403,17 @@
   BEGIN
     DECLARE found_id INT DEFAULT NULL;
     SELECT `device_id` INTO found_id
-    FROM `model_firmware_capability_state`
+    FROM `device_capability_state`
     WHERE `device_id` = v_device_id
-    AND `model_firmware_id` = v_model_firmware_id
     AND `capability_id` = v_capability_id;
     IF found_id IS NULL THEN
-      INSERT INTO `model_firmware_capability_state`
+      INSERT INTO `device_capability_state`
       VALUES (v_device, v_model_firmware_id, v_capability_id, v_state);
     ELSE
-      UPDATE `model_firmware_capability_state`
-      SET `state` = v_state
+      UPDATE `device_capability_state`
+      SET `state` = v_state,
+          `model_firmware_id` = v_model_firmware_id
       WHERE `device_id` = v_device_id
-      AND `model_firmware_id` = v_model_firmware_id
       AND `capability_id` = v_capability_id;
     END IF;
   END//
@@ -427,7 +427,7 @@
 
   GRANT EXECUTE ON PROCEDURE abused.add_capability_to_model_firmware TO 'abused'@'%';
 
-  GRANT EXECUTE ON PROCEDURE abused.add_or_update_model_firmware_capability_state TO 'abused'@'%';
+  GRANT EXECUTE ON PROCEDURE abused.add_or_update_device_capability_state TO 'abused'@'%';
 
   GRANT EXECUTE ON PROCEDURE abused.add_or_update_device TO 'abused'@'%';
 

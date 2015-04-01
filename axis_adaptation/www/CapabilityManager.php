@@ -12,6 +12,11 @@ class CapabilityManager {
     $this->password = $password;
   }
 
+  public function set_credentials($username, $password) {
+    $this->username = $username;
+    $this->password = $password;
+  }
+
   /**
    * Set the timeout for the connections
    */
