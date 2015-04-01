@@ -279,9 +279,8 @@ foreach($abused_results as $abused_result) {
                                      $capability_id));
     
         $capability_state = $cm->get_sd_disk_status();
-        $query = sprintf("call add_or_update_device_capability_state('%s', '%s', '%s', '%s');",
+        $query = sprintf("call add_or_update_device_capability_state('%s', '%s', '%s');",
                          $id,
-                         $model_firmware_id,
                          $capability_id,
                          $capability_state);
         $sqlconnection->call($query);

@@ -40,14 +40,10 @@
                           PRIMARY KEY (`id`)) ENGINE=InnoDB;
 
   CREATE TABLE `model_firmware_capability_state` (`device_id` VARCHAR(255) NOT NULL,
-                                                  `model_firmware_id` INT NOT NULL,
                                                   `capability_id` INT NOT NULL,
                                                   `state` VARCHAR(255) NOT NULL,
                                                   FOREIGN KEY (`device_id`)
                                                     REFERENCES `devices` (`id`)
-                                                    ON DELETE CASCADE,
-                                                  FOREIGN KEY (`model_firmware_id`)
-                                                    REFERENCES `model_firmware_capability` (`model_firmware_id`)
                                                     ON DELETE CASCADE,
                                                   FOREIGN KEY (`capability_id`)
                                                     REFERENCES `model_firmware_capability` (`capability_id`)
@@ -340,20 +336,19 @@
              mf.`model_name`,
              mf.`firmware_version`,
              (SELECT GROUP_CONCAT(CONCAT(c2.`name`, IF(dcs.`state` IS NULL,
-                                                       '',
-                                                       CONCAT(' (',
-                                                              dcs.`state`,
-                                                              ')')))
-                                  SEPARATOR ', ')
+                                           '',
+                                           CONCAT(' (',
+                                                  dcs.`state`,
+                                                  ')')))
+                      SEPARATOR ', ')
               FROM `model_firmware_capability` mfc2
               LEFT OUTER JOIN `device_capability_state` dcs
-              ON mfc2.`model_firmware_id` = dcs.`model_firmware_id`
-              AND mfc2.`capability_id` = dcs.`capability_id`,
+              ON mfc2.`capability_id` = dcs.`capability_id`,
                    `capabilities` c2
-              WHERE mfc2.`model_firmware_id` = d.`model_firmware_id`
-              AND c2.`id` = mfc2.`capability_id`
+              WHERE mfc2.`capability_id` = c2.`id`
+              AND mfc2.`model_firmware_id` = d.`model_firmware_id`
               AND (dcs.`device_id` = d.`id`
-                OR dcs.`device_id` IS NULL)
+                   OR dcs.`device_id` IS NULL)
               GROUP BY mfc2.`model_firmware_id`
              ) AS `capabilities`,
              d.`last_update`,
@@ -371,12 +366,11 @@
            ON dcs.`capability_id` = c.`id`
            AND dcs.`state` LIKE v_capability_state
       WHERE mf.`id` = d.`model_firmware_id`
-      AND mf.`model_name` LIKE v_model_name
-      AND IF(v_capability_state = '%',
-             (dcs.`model_firmware_id` IS NULL
-             OR dcs.`model_firmware_id` = d.`model_firmware_id`),
-             dcs.`model_firmware_id` = d.`model_firmware_id`)
       AND d.`id` LIKE v_device_id
+      AND IF(v_capability_state = '%',
+             dcs.`device_id` IS NULL
+              OR dcs.`device_id` = d.`id`,
+             dcs.`device_id` = d.`id`)
       AND mfc.`model_firmware_id` = d.`model_firmware_id`
       AND mfc.`capability_id` = c.`id`
       AND d.`last_update`>(SELECT NOW()-INTERVAL v_age SECOND)
