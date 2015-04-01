@@ -187,7 +187,8 @@ case 'list_devices':
     $device_id = $_GET['device_id'];
   }
 
-  $age = 3600;
+  /* 16 minutes */
+  $age = 16;
   if(isset($_POST['age']) && !empty($_POST['age'])) {
     $age = $_POST['age'];
   }
@@ -209,7 +210,7 @@ case 'list_devices':
                      ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
                      ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
                      ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
-                     $age,
+                     $age * 60,
                      ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
                      ($device_id ? sprintf("'%s'", $device_id) : 'NULL'),
                      ($ip ? sprintf("'%s'", $ip) : 'NULL'));
@@ -294,7 +295,7 @@ case 'gui_list':
   }
 
   /* 16 minutes */
-  $age = 960;
+  $age = 16;
   if(isset($_POST['age']) && !empty($_POST['age'])) {
     $age = $_POST['age'];
   }
@@ -316,7 +317,7 @@ case 'gui_list':
                      ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
                      ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
                      ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
-                     $age,
+                     $age * 60,
                      ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
                      ($device_id ? sprintf("'%s'", $device_id) : 'NULL'),
                      ($ip ? sprintf("'%s'", $ip) : 'NULL'));
@@ -412,7 +413,7 @@ case 'gui_list':
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"locked_by\" value=\"%s\" />\n", $locked_by);
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td class=\"title_td_header_table\">\n");
-  printf("\t\t\t\t\t\t\tAge (seconds):\n");
+  printf("\t\t\t\t\t\t\tAge (minutes):\n");
   printf("\t\t\t\t\t\t</td>\n");
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<input type=\"input\" name=\"age\" value=\"%s\" />\n", $age);
@@ -608,7 +609,7 @@ case 'lock_device':
   }
 
   /* 16 minutes */
-  $age = 960;
+  $age = 16;
   if(isset($_POST['age']) && !empty($_POST['age'])) {
     $age = $_POST['age'];
   }
@@ -643,7 +644,7 @@ case 'lock_device':
                                   ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
                                   ($capability_state ? sprintf("'%s'", $capability_state): 'NULL'),
                                   $user,
-                                  $age,
+                                  $age * 60,
                                   ($device_id ? sprintf("'%s'", $device_id) : 'NULL')));
     header('Content-type: application/json; charset=utf-8');
     if(!empty($url)) {
