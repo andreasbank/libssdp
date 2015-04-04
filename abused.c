@@ -291,7 +291,7 @@ static SOCKET setup_socket(BOOL, BOOL, BOOL, char *, char *, struct sockaddr_sto
 static BOOL is_address_multicast(const char *);
 static BOOL init_ssdp_message(ssdp_message_s **);
 static BOOL create_plain_text_message(char *, int, ssdp_message_s *, BOOL);
-static BOOL add_ssdp_message_to_cache(ssdp_cache_s **, ssdp_message_s *);
+static BOOL add_ssdp_message_to_cache(ssdp_cache_s **, ssdp_message_s **);
 static void free_ssdp_cache(ssdp_cache_s **);
 static void daemonize();
 static BOOL filter(ssdp_message_s *, filters_factory_s *);
@@ -1223,12 +1223,12 @@ int main(int argc, char **argv) {
         if(filters_factory == NULL || !drop_message) {
 
           /* Fetch custom fields */
-          if(!fetch_custom_fields(ssdp_message)) {
+          if(conf.fetch_info && !fetch_custom_fields(ssdp_message)) {
             PRINT_DEBUG("Could not fetch custom fields");
           }
 
           /* Add ssdp_message to ssdp_cache */
-          if(!add_ssdp_message_to_cache(&ssdp_cache, ssdp_message)) {
+          if(!add_ssdp_message_to_cache(&ssdp_cache, &ssdp_message)) {
             PRINT_ERROR("Failed adding SSDP message to SSDP cache, skipping");
             continue;
           }
@@ -3950,7 +3950,8 @@ static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_messa
  *
  * @return TRUE on success, exits on error
  */
-static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_message_s *ssdp_message) {
+static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_message_s **ssdp_message_pointer) {
+  ssdp_message_s *ssdp_message = *ssdp_message_pointer;
   ssdp_cache_s *ssdp_cache = NULL;
 
   /* Sanity check */
@@ -3991,6 +3992,7 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
       if(0 == strcmp(ssdp_message->ip, ssdp_cache->ssdp_message->ip)) {
         /* Found a duplicate, skip */
         PRINT_DEBUG("Found duplicate SSDP message, skipping");
+        free_ssdp_message(ssdp_message_pointer);
         return TRUE;
       }
       ssdp_cache = ssdp_cache->next;
