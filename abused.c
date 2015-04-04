@@ -28,7 +28,7 @@
  *  - Fix IPv6!
  */
 
-#define ABUSED_VERSION "0.0.1"
+#define ABUSED_VERSION "0.0.3"
 
 /* Uncomment the line below to enable simulating notifs */
 //#define DEBUG_MSG___
@@ -271,7 +271,6 @@ static int strpos(const char*, const char *);
 static int send_stuff(const char *, const char *, const struct sockaddr_storage *, int, int);
 static void free_ssdp_message(ssdp_message_s **);
 static int fetch_custom_fields(ssdp_message_s *);
-static int fetch_upnp_device_info(const ssdp_message_s *, char *, int);
 static unsigned int to_json(const ssdp_message_s *, BOOL, BOOL, BOOL, char *, int);
 static unsigned int to_xml(const ssdp_message_s *, BOOL, BOOL, BOOL, char *, int);
 static BOOL parse_url(const char *, char *, int, int *, char *, int);
@@ -1477,19 +1476,8 @@ int main(int argc, char **argv) {
           printf("Origin-MAC: %s\n", (ssdp_message->mac != NULL ? ssdp_message->mac : "(Could not be determined)"));
           printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message->ip, ssdp_message->message_length);
           printf("Request: %s\nProtocol: %s\n", ssdp_message->request, ssdp_message->protocol);
-          if(conf.fetch_info) {
-            int bytes_fetched = 0;
-            char *fetched_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
-            memset(fetched_string, '\0', XML_BUFFER_SIZE);
-            bytes_fetched = fetch_upnp_device_info(ssdp_message, fetched_string, XML_BUFFER_SIZE);
-            if(bytes_fetched > 0) {
-              printf("%s", fetched_string);
-            }
-            free(fetched_string);
-          }
 
           int hc = 0;
-
           while(ssdp_headers) {
             printf("Header[%d][type:%d;%s]: %s\n", hc, ssdp_headers->type, get_header_string(ssdp_headers->type, ssdp_headers), ssdp_headers->contents);
             ssdp_headers = ssdp_headers->next;
@@ -2413,7 +2401,7 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
                  FALSE);
 
       if(resolve_sock == SOCKET_ERROR) {
-        PRINT_ERROR("fetch_upnp_device_info(); setup_socket(): (%d) %s", errno, strerror(errno));
+        PRINT_ERROR("fetch_custom_fields(); setup_socket(): (%d) %s", errno, strerror(errno));
         free(ip);
         free(rest);
         free(request);
@@ -2477,7 +2465,7 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
       tmp_ip = NULL;
       #endif
       if(connect(resolve_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) == SOCKET_ERROR) {
-        PRINT_ERROR("fetch_upnp_device_info(); connect(): (%d) %s", errno, strerror(errno));
+        PRINT_ERROR("fetch_custom_fields(); connect(): (%d) %s", errno, strerror(errno));
         free(ip);
         close(resolve_sock);
         free(rest);
@@ -2595,224 +2583,6 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
 }
 
 /**
- * Fetches additional info from a UPnP message "Location" header
- *
- * @param ssdp_message_s * The message whos "Location" header to use
- *
- * @return char * A string containing the fetched information
- */
-static int fetch_upnp_device_info(const ssdp_message_s *ssdp_message, char *info, int info_size) {
-  int bytes_written = 0;
-  char *location_header = NULL;
-  ssdp_header_s *ssdp_headers = ssdp_message->headers;
-  while(ssdp_headers) {
-    if(ssdp_headers->type == SSDP_HEADER_LOCATION) {
-      location_header = ssdp_headers->contents;
-      // Ex. location_header:
-      //http://10.83.128.46:2869/upnphost/udhisapi.dll?content=uuid:59e293c8-9179-4efb-ac32-3c9514238505
-      PRINT_DEBUG("found header_location: %s", location_header);
-    }
-    ssdp_headers = ssdp_headers->next;
-  }
-  ssdp_headers = NULL;
-
-  if(location_header != NULL) {
-
-    /* URL parsing allocations*/
-    PRINT_DEBUG("allocating for URL parsing");
-    char *ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-    int port = 0;
-    char *rest = (char *)malloc(sizeof(char) * 256);
-    char *request = (char *)malloc(sizeof(char) * 1024); // 1KB
-    char *response = (char *)malloc(sizeof(char) * DEVICE_INFO_SIZE); // 8KB
-    memset(ip, '\0', IPv6_STR_MAX_SIZE);
-    memset(rest, '\0', 256);
-    memset(request, '\0', 1024);
-    memset(response, '\0', DEVICE_INFO_SIZE);
-
-    /* Try to parse the location_header URL */
-    PRINT_DEBUG("trying to parse URL");
-    if(parse_url(location_header, ip, IPv6_STR_MAX_SIZE, &port, rest, 256)) {
-
-      /* Create socket */
-      PRINT_DEBUG("creating socket");
-      SOCKET resolve_sock = setup_socket(conf.use_ipv6,
-                 FALSE,
-                 FALSE,
-                 conf.interface,
-                 conf.ip,
-                 NULL,
-                 NULL,
-                 0,
-                 FALSE,
-                 FALSE);
-
-      if(resolve_sock == SOCKET_ERROR) {
-        PRINT_ERROR("fetch_upnp_device_info(); setup_socket(): (%d) %s", errno, strerror(errno));
-        free(ip);
-        free(rest);
-        free(request);
-        free(response);
-        return 0;
-      }
-
-      if(!set_receive_timeout(resolve_sock, 5)) {
-        free(ip);
-        close(resolve_sock);
-        free(rest);
-        free(request);
-        free(response);
-        return 0;
-      }
-
-      if(!set_send_timeout(resolve_sock, 1)) {
-        free(ip);
-        close(resolve_sock);
-        free(rest);
-        free(request);
-        free(response);
-        return 0;
-      }
-
-      /* Setup socket destination address */
-      PRINT_DEBUG("setting up socket addresses");
-      struct sockaddr_storage *da = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
-      memset(da, 0, sizeof(struct sockaddr_storage));
-      da->ss_family = conf.use_ipv6 ? AF_INET6 : AF_INET;
-      if(!inet_pton(da->ss_family, ip, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr))) {
-        int ip_length = strlen(ip);
-        if(ip_length < 1) {
-          PRINT_ERROR("The destination IP address could be determined (%s)\n", (ip_length < 1 ? "empty" : ip));
-        }
-        free(ip);
-        close(resolve_sock);
-        free(rest);
-        free(request);
-        free(response);
-        free(da);
-        return 0;
-      }
-
-      if(da->ss_family == AF_INET) {
-        struct sockaddr_in *da_ipv4 = (struct sockaddr_in *)da;
-        da_ipv4->sin_port = htons(port);
-      }
-      else {
-        struct sockaddr_in6 *da_ipv6 = (struct sockaddr_in6 *)da;
-        da_ipv6->sin6_port = htons(port);
-      }
-
-      /* Connect socket to destination */
-      #ifdef DEBUG___
-      char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-      memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
-      inet_ntop(da->ss_family, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE);
-      PRINT_DEBUG("connecting to destination (%s; ss_family = %s [%d])", tmp_ip, (da->ss_family == AF_INET ? "AF_INET" : "AF_INET6"), da->ss_family);
-      free(tmp_ip);
-      tmp_ip = NULL;
-      #endif
-      if(connect(resolve_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) == SOCKET_ERROR) {
-        PRINT_ERROR("fetch_upnp_device_info(); connect(): (%d) %s", errno, strerror(errno));
-        free(ip);
-        close(resolve_sock);
-        free(rest);
-        free(request);
-        free(response);
-        free(da);
-        return 0;
-      }
-
-      free(da);
-      int used_length = 0;
-      /*
-      GET </path/file.html> HTTP/1.0\r\n
-      Host: <own_ip>\r\n
-      User-Agent: abused-<X>\r\n
-      \r\n
-      */
-      used_length += snprintf(request + used_length, 1024 - used_length, "GET %s HTTP/1.0\r\n", rest);
-      used_length += snprintf(request + used_length, 1024 - used_length, "Host: %s\r\n", ip);
-      snprintf(request + used_length, 1024 - used_length, "User-Agent: abused-%s\r\n\r\n", ABUSED_VERSION);
-      PRINT_DEBUG("sending string:\n%s", request);
-      int bytes = send(resolve_sock, request, strlen(request), 0);
-      PRINT_DEBUG("sent %d bytes", bytes);
-      int all_bytes = 0;
-      do {
-        bytes = 0;
-        bytes = recv(resolve_sock, response + all_bytes, DEVICE_INFO_SIZE - all_bytes, 0);
-        all_bytes += bytes;
-      } while(bytes > 0);
-      PRINT_DEBUG("received %d bytes", all_bytes);
-      PRINT_DEBUG("%s", response);
-      PRINT_DEBUG("closing socket");
-      close(resolve_sock);
-
-      /* Extract the usefull info */
-      char serialNumber[128];
-      char friendlyName[128];
-      char manufacturer[128];
-      char manufacturerURL[128];
-      char modelName[128];
-      char modelNumber[128];
-      char modelURL[128];
-      char *tmp_pointer = NULL;
-      memset(serialNumber, '\0', 128);
-      memset(friendlyName, '\0', 128);
-      memset(manufacturer, '\0', 128);
-      memset(manufacturerURL, '\0', 128);
-      memset(modelName, '\0', 128);
-      memset(modelNumber, '\0', 128);
-      memset(modelURL, '\0', 128);
-
-      /* Newline-separated info */
-      tmp_pointer = strstr(response, "<serialNumber>");
-      if(tmp_pointer) {
-        strncpy(serialNumber, tmp_pointer + 14, (int)(strstr(response, "</serialNumber>") - (tmp_pointer + 14)));
-        bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Serial number: %s\n", serialNumber);
-      }
-      tmp_pointer = strstr(response, "<friendlyName>");
-      if(tmp_pointer) {
-        strncpy(friendlyName, tmp_pointer + 14, (int)(strstr(response, "</friendlyName>") - (tmp_pointer + 14)));
-        bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Friendly name: %s\n", friendlyName);
-      }
-      tmp_pointer = strstr(response, "<manufacturer>");
-      if(tmp_pointer) {
-        strncpy(manufacturer, tmp_pointer + 14, (int)(strstr(response, "</manufacturer>") - (tmp_pointer + 14)));
-        bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Manufacturer: %s\n", manufacturer);
-      }
-      tmp_pointer = strstr(response, "<manufacturerURL>");
-      if(tmp_pointer) {
-        strncpy(manufacturerURL, tmp_pointer + 17, (int)(strstr(response, "</manufacturerURL>") - (tmp_pointer + 17)));
-        bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Manufacturer URL: %s\n", manufacturerURL);
-      }
-      tmp_pointer = strstr(response, "<modelName>");
-      if(tmp_pointer) {
-        strncpy(modelName, tmp_pointer + 11, (int)(strstr(response, "</modelName>") - (tmp_pointer + 11)));
-        bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Model name: %s\n", modelName);
-      }
-      tmp_pointer = strstr(response, "<modelNumber>");
-      if(tmp_pointer) {
-        strncpy(modelNumber, tmp_pointer + 13, (int)(strstr(response, "</modelNumber>") - (tmp_pointer + 13)));
-        bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Model number: %s\n", modelNumber);
-      }
-      tmp_pointer = strstr(response, "<modelURL>");
-      if(tmp_pointer) {
-        strncpy(modelURL, tmp_pointer + 10, (int)(strstr(response, "</modelURL>") - (tmp_pointer + 10)));
-        bytes_written += snprintf(info + bytes_written, info_size - bytes_written, "Model URL: %s\n", modelURL);
-      }
-
-    }
-
-    free(ip);
-    free(rest);
-    free(request);
-    free(response);
-  }
-
-  return bytes_written;
-}
-
-/**
 * Converts a UPnP message to a JSON string
 *
 * @param ssdp_message The message to be converted
@@ -2854,13 +2624,10 @@ static unsigned int to_xml(const ssdp_message_s *ssdp_message,
   int used_length = 0;
 
   if(xml_buffer == NULL) {
-  PRINT_ERROR("to_xml(): No XML message buffer specified");
+    PRINT_ERROR("to_xml(): No XML message buffer specified");
   }
   else if(ssdp_message == NULL) {
-  PRINT_ERROR("to_xml(): No SSDP message specified");
-  }
-  else if(xml_buffer_size < XML_BUFFER_SIZE) {
-  PRINT_ERROR("to_xml(): XML buffer is too small (given %d, min allowed is %d)", xml_buffer_size, XML_BUFFER_SIZE);
+    PRINT_ERROR("to_xml(): No SSDP message specified");
   }
 
   memset(xml_buffer, '\0', sizeof(char) * xml_buffer_size);
@@ -2879,82 +2646,42 @@ static unsigned int to_xml(const ssdp_message_s *ssdp_message,
   used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
   "\t\t<datetime>\n\t\t\t%s\n\t\t</datetime>\n", ssdp_message->datetime);
 
-  if(fetch_info) {
-    char *fetched_string = (char *)malloc(sizeof(char) * 2048);
-    const char *tags[] = {
-      "serialNumber",
-      "friendlyName",
-      "manufacturer",
-      "manufacturerURL",
-      "modelName",
-      "modelNumber",
-      "modelURL"
-    };
-    const char *fields[] = {
-      "Serial number",
-      "Friendly name",
-      "Manufacturer",
-      "Manufacturer URL",
-      "Model name",
-      "Model number",
-      "Model URL"
-    };
+  ssdp_custom_field_s *cf = ssdp_message->custom_fields->first;
+  int needed_size = 0;
 
-    /* Calculate needed buffer size */
-    int fields_count = sizeof(fields) / sizeof(char *);
-    int fields_size = 0;
-    int tags_count = sizeof(tags) / sizeof(char *);
-    int tags_size = 0;
-    int i;
-    for(i = 0; i < fields_count; i++) {
-      fields_size += strlen(fields[i]) + 1; // + ": " - "\n" = 2 - 1 = 1 char
-    }
-    for(i = 0; i < tags_count; i++) {
-      tags_size += strlen(tags[i]) + 50; // + the xml formatting below = 18
+  /* Calculate needed buffer size */
+  while(cf) {
+    // 13 + <custom_field name=""></custom_field> = 50 bytes
+    needed_size += strlen(cf->name) + strlen(cf->contents) + 50;
+    cf = cf->next;
+  }
+  cf = ssdp_message->custom_fields->first;
+
+  /* Check if buffer has enought room */
+  PRINT_DEBUG("buffer left: %d, buffer_needed: %d", (xml_buffer_size - used_length), needed_size);
+  if((xml_buffer_size - used_length) < needed_size) {
+    PRINT_ERROR("to_xml(): Not enought memory in the buffer to convert the SSDP message to XML, skipping\n");
+  }
+  else {
+
+    /* Convert to XML format */
+    used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
+    "\t\t<custom_fields count=\"%d\">\n", ssdp_message->custom_field_count);
+
+    while(cf) {
+      used_length += snprintf(xml_buffer + used_length,
+                              xml_buffer_size - used_length,
+                              "\t\t\t<custom_field name=\"%s\">\n\t\t\t\t%s\n\t\t\t</custom_field>\n",
+                              cf->name,
+                              cf->contents);
+      cf = cf->next;
     }
 
-    memset(fetched_string, '\0', 2048);
-    int fetched_length = fetch_upnp_device_info(ssdp_message, fetched_string, 2048);
-
-    /* Check if buffer has enought room */
-    #ifdef DEBUG___
-    int left   = xml_buffer_size - used_length;
-    int needed = fetched_length - fields_size + tags_size;
-    PRINT_DEBUG("buffer size check: %d < %d = %s (fetched_length = %d)", left, needed, (left < needed ? "TRUE (FAIL)" : "FALSE (OK)"), fetched_length);
-    #endif
-    if((fetched_length > 0) && (xml_buffer_size - used_length < fetched_length - fields_size + tags_size)) {
-      PRINT_ERROR("to_xml(): Not enought memory in the buffer when formatting device info , skipping\n");
-    }
-    else if(fetched_length > 0) {
-
-      /* Convert to XML format */
-      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-      "\t\t<custom_fields count=\"%d\">\n", fields_count);
-
-      char *tmp_pointer = NULL;
-      char *tmp_pointer_end = NULL;
-      char *tmp_string = (char *)malloc(sizeof(char) * 1024);
-      for(i = 0; i < fields_count; i++) {
-        tmp_pointer = strstr(fetched_string, fields[i]);
-        memset(tmp_string, '\0', 1024);
-        if(tmp_pointer != NULL) {
-          tmp_pointer +=  strlen(fields[i]) + 2;
-          tmp_pointer_end = strchr(tmp_pointer, '\n');
-          strncpy(tmp_string, tmp_pointer, (int)(tmp_pointer_end - tmp_pointer));
-          used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-            "\t\t\t<custom_field name=\"%s\">\n\t\t\t\t%s\n\t\t\t</custom_field>\n", tags[i], tmp_string);
-        }
-      }
-      free(tmp_string);
-      tmp_string = NULL;
-
-      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-      "\t\t</custom_fields>\n");
-      PRINT_DEBUG("actual bytes: %d", (int)strlen(xml_buffer));
-    }
-
-    free(fetched_string);
-    fetched_string = NULL;
+    cf = NULL;
+    used_length += snprintf(xml_buffer + used_length,
+                            xml_buffer_size - used_length,
+                            "\t\t</custom_fields>\n");
+    PRINT_DEBUG("XML custom-fields bytes: %d", (int)strlen(xml_buffer));
   }
 
   if(!hide_headers) {
@@ -2963,10 +2690,15 @@ static unsigned int to_xml(const ssdp_message_s *ssdp_message,
     used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
     "\t\t<headers count=\"%d\">\n", (unsigned int)ssdp_message->header_count);
     while(ssdp_headers) {
-      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-      "\t\t\t<header typeInt=\"%d\" typeStr=\"%s\">\n", ssdp_headers->type, get_header_string(ssdp_headers->type, ssdp_headers));
-      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-      "\t\t\t\t%s\n\t\t\t</header>\n", ssdp_headers->contents);
+      used_length += snprintf(xml_buffer + used_length,
+                              xml_buffer_size - used_length,
+                              "\t\t\t<header typeInt=\"%d\" typeStr=\"%s\">\n",
+                              ssdp_headers->type,
+                              get_header_string(ssdp_headers->type, ssdp_headers));
+      used_length += snprintf(xml_buffer + used_length,
+                              xml_buffer_size - used_length,
+                              "\t\t\t\t%s\n\t\t\t</header>\n",
+                              ssdp_headers->contents);
       ssdp_headers = ssdp_headers->next;
     }
     ssdp_headers = NULL;
@@ -4155,7 +3887,13 @@ static BOOL init_ssdp_message(ssdp_message_s **message_pointer) {
 * @param message The message to convert
 */
 static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_message_s *ssdp_message, BOOL fetch_info) {
-  int buffer_used = 0;
+  int buffer_used = 0, count = 0;
+  ssdp_custom_field_s *cf = NULL;
+
+  if(ssdp_message->custom_fields) {
+    cf = ssdp_message->custom_fields->first;
+  }
+
   buffer_used += snprintf(results + buffer_used,
         buffer_size - buffer_used,
         "Time received: %s\n",
@@ -4175,34 +3913,30 @@ static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_messa
         ssdp_message->request,
         ssdp_message->protocol);
 
-  if(fetch_info) {
-    int bytes_fetched = 0;
-    char *fetched_string = (char *)malloc(sizeof(char) * buffer_size);
-    memset(fetched_string, '\0', buffer_size);
-    bytes_fetched = fetch_upnp_device_info(ssdp_message, fetched_string, buffer_size);
-    if(bytes_fetched > 0) {
-      buffer_used += snprintf(results + buffer_used,
-                buffer_size - buffer_used,
-                "%s",
-                fetched_string);
-    }
-    free(fetched_string);
+  while(cf) {
+    
+    buffer_used += snprintf(results + buffer_used,
+                            buffer_size - buffer_used,
+                            "Custom field[%d][%s]: %s\n",
+                            count,
+                            cf->name,
+                            cf->contents);
+    count++;
+    cf = cf->next;
   }
 
-  int hc = 0;
+  count = 0;
   ssdp_header_s *ssdp_headers = ssdp_message->headers;
   while(ssdp_headers) {
   buffer_used += snprintf(results + buffer_used,
           buffer_size - buffer_used,
           "Header[%d][type:%d;%s]: %s\n",
-          hc, ssdp_headers->type,
+          count, ssdp_headers->type,
           get_header_string(ssdp_headers->type, ssdp_headers),
           ssdp_headers->contents);
     ssdp_headers = ssdp_headers->next;
-    hc++;
+    count++;
   }
-
-  ssdp_headers = NULL;
 
   return TRUE;
 }
@@ -4247,8 +3981,24 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
     (*ssdp_cache_pointer)->ssdp_messages_count = (unsigned int *)malloc(sizeof(unsigned int));
     *(*ssdp_cache_pointer)->ssdp_messages_count = 0;
   }
+  else {
 
-  /* Make life easier */
+    /* Point to the begining of the cache list */
+    ssdp_cache = (*ssdp_cache_pointer)->first;
+  
+    /* Check for duplicate and abort adding it if found */
+    while(ssdp_cache) {
+      if(0 == strcmp(ssdp_message->ip, ssdp_cache->ssdp_message->ip)) {
+        /* Found a duplicate, skip */
+        PRINT_DEBUG("Found duplicate SSDP message, skipping");
+        return TRUE;
+      }
+      ssdp_cache = ssdp_cache->next;
+    }
+
+  }
+
+  /* Point to the passed position */
   ssdp_cache = *ssdp_cache_pointer;
 
   /* Make sure we are at the end of the linked list
