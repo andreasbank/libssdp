@@ -298,8 +298,7 @@ static BOOL filter(ssdp_message_s *, filters_factory_s *);
 static unsigned int cache_to_json(ssdp_cache_s *, char *, unsigned int, BOOL);
 static unsigned int cache_to_xml(ssdp_cache_s *, char *, unsigned int, BOOL);
 static BOOL flush_ssdp_cache(ssdp_cache_s **, const char *, struct sockaddr_storage *, int, int, BOOL);
-static void display_ssdp_cache(ssdp_cache_s *);
-static char *horizontal_line(const char, const char, int);
+static void display_ssdp_cache(ssdp_cache_s *, BOOL);
 static void move_cursor(int, int);
 static void get_window_size(int *, int *);
 static ssdp_custom_field_s *get_custom_field(ssdp_message_s *, const char *);
@@ -905,21 +904,6 @@ static void parse_args(const int argc, char * const *argv, configuration_s *conf
   }
 }
 
-static char *horizontal_line(const char start_char,
-                             const char end_char,
-                             int line_length) {
-  char *h_line = (char *)malloc(sizeof(char) * (line_length + 1));
-  const char h_char = '-';
-
-  memset(h_line, h_char, sizeof(char) * line_length + 1);
-  h_line[line_length] = '\0';
-
-  h_line[0] = (start_char == 0 ? h_char : end_char);
-  h_line[line_length - 1] = (end_char == 0 ? h_char : end_char);
-
-  return h_line;
-}
-
 static void get_window_size(int *width, int *height) {
     struct winsize w;
     ioctl(0, TIOCGWINSZ, &w);
@@ -936,57 +920,124 @@ static void move_cursor(int row, int col) {
 /**
  * Displays the SSDP cache list as a table
  */
-static void display_ssdp_cache(ssdp_cache_s *ssdp_cache) {
+static void display_ssdp_cache(ssdp_cache_s *ssdp_cache, BOOL draw_asci) {
   int horizontal_lines_printed = 4;
-  int h_line_length;
-  char *h_line;
-//  printf("%c", 14);
-//  printf("\033[2J");
+  const char **tbl_ele = NULL;
+
+  const char *single_line_table_elements[] = {
+    "┤", // 185 "\e(0\x75\e(B"
+    "│", // 186 "\e(0\x78\e(B"
+    "┐", // 187 "\e(0\x6b\e(B"
+    "┘", // 188 "\e(0\x6a\e(B"
+    "└", // 200 "\e(0\x6d\e(B"
+    "┌", // 201 "\e(0\x6c\e(B"
+    "┴", // 202 "\e(0\x76\e(B"
+    "┬", // 203 "\e(0\x77\e(B"
+    "├", // 204 "\e(0\x74\e(B"
+    "─", // 205 "\e(0\x71\e(B"
+    "┼"  // 206 "\e(0\x6e\e(B"
+  };
+
+  const char *asci_table_elements[] = {
+    "+",
+    "|",
+    "+",
+    "+",
+    "+",
+    "+",
+    "+",
+    "+",
+    "+",
+    "-",
+    "+",
+  };
+
+  const char *columns[] = {
+    " ID                  ",
+    " IPv4            ",
+    " MAC               ",
+    " Model           ",
+    " Version         "
+  };
+
+  if(draw_asci) {
+    tbl_ele = asci_table_elements;
+  }
+  else {
+    tbl_ele = single_line_table_elements;
+  }
+
   move_cursor(0, 0);
-  h_line_length = 97;
-  h_line = horizontal_line('+', '+', h_line_length);
-  printf("%s\n", h_line);
-  printf("| ID                  | IPv4            | MAC               |  Model          | Version         |\n");
-  h_line[0] = '+';
-  h_line[h_line_length - 1] = '+';
-  printf("%s\n", h_line);
+
+  /* Draw the topmost line */
+  int i;
+  for(i = 0; i < sizeof(columns) / sizeof(char *); i++) {
+    printf("%s",
+           (i == 0 ? tbl_ele[5] : tbl_ele[7]));
+    int j;
+    for(j = 0; j < strlen(columns[i]); j++) {
+      printf("%s", tbl_ele[9]);
+    }
+  }
+  printf("%s\n", tbl_ele[2]);
+
+  /* Draw first row with column titles */
+  for(i = 0; i < sizeof(columns) / sizeof(char *); i++) {
+    printf("%s\x1b[1m%s\x1b[0m", tbl_ele[1], columns[i]);
+  }
+  printf("%s\n", tbl_ele[1]);
+
   if(ssdp_cache) {
+
+    /* Draw a row-dividing line */
+    for(i = 0; i < sizeof(columns) / sizeof(char *); i++) {
+      printf("%s", (i == 0 ? tbl_ele[8] : tbl_ele[10]));
+      int j;
+      for(j = 0; j < strlen(columns[i]); j++) {
+        printf("%s", tbl_ele[9]);
+      }
+    }
+    printf("%s\n", tbl_ele[0]);
+
     ssdp_custom_field_s *cf = NULL;
     ssdp_cache = ssdp_cache->first;
-    const char no_info[] = "<no info>";
+    const char no_info[] = "-";
     while(ssdp_cache) {
         cf = get_custom_field(ssdp_cache->ssdp_message, "serialNumber");
-        printf("%c %-20s", '|', (cf && cf->contents ? cf->contents : no_info));
-        printf("%c %-16s", '|', ssdp_cache->ssdp_message->ip);
-        printf("%c %-18s", '|', (ssdp_cache->ssdp_message->mac &&
+        printf("%s %-20s", tbl_ele[1], (cf && cf->contents ? cf->contents : no_info));
+        printf("%s %-16s", tbl_ele[1], ssdp_cache->ssdp_message->ip);
+        printf("%s %-18s", tbl_ele[1], (ssdp_cache->ssdp_message->mac &&
                                  0 != strcmp(ssdp_cache->ssdp_message->mac, "") ?
                                  ssdp_cache->ssdp_message->mac :
                                  no_info));
         cf = get_custom_field(ssdp_cache->ssdp_message, "modelName");
-        printf("%c %-16s", '|', (cf && cf->contents ? cf->contents : no_info));
+        printf("%s %-*s", tbl_ele[1], 16, (cf && cf->contents ? cf->contents : no_info));
         cf = get_custom_field(ssdp_cache->ssdp_message, "modelNumber");
-        printf("%c %-16s", '|', (cf && cf->contents ? cf->contents : no_info));
-        printf("|\n");
+        printf("%s %-16s", tbl_ele[1], (cf && cf->contents ? cf->contents : no_info));
+        printf("%s\n", tbl_ele[1]);
 
         horizontal_lines_printed++;
 
         ssdp_cache = ssdp_cache->next;
     }
   }
-  else {
-    printf("%c%60s%c", '\x6D', "No UPnP messages received", '\x6A');
-    horizontal_lines_printed++;
+
+  /* Draw the bottom line */
+  for(i = 0; i < sizeof(columns) / sizeof(char *); i++) {
+    printf("%s",
+           (i == 0 ? tbl_ele[4] : tbl_ele[6]));
+    int j;
+    for(j = 0; j < strlen(columns[i]); j++) {
+      printf("%s", tbl_ele[9]);
+    }
   }
-  h_line[0] = '+';
-  h_line[h_line_length - 1] = '+';
-  printf("%s\n", h_line);
-  free(h_line);
-  int width, height, i;
+  printf("%s\n", tbl_ele[3]);
+  int width, height;
+
   get_window_size(&width, &height);
   for(i = 1; i < height - horizontal_lines_printed; i++) {
     printf("%*s\n", width, " ");
   }
-//  printf("%c", 15);
 }
 
 int main(int argc, char **argv) {
@@ -1163,7 +1214,7 @@ int main(int argc, char **argv) {
           /* Else just display the cached messages in a table */
           else {
             PRINT_DEBUG("Displaying cached SSDP messages");
-            display_ssdp_cache(ssdp_cache);
+            display_ssdp_cache(ssdp_cache, FALSE);
           }
         }
         continue;
@@ -1257,7 +1308,7 @@ int main(int argc, char **argv) {
           else {
             /* Display results on console */
             PRINT_DEBUG("Displaying cached SSDP messages");
-            display_ssdp_cache(ssdp_cache);
+            display_ssdp_cache(ssdp_cache, FALSE);
           }
         }
       }
