@@ -23,8 +23,6 @@
  *  01010100 01001111 01000100 01001111 00111010
  *
  *  - Write JSON converter
- *  - Fix fetch_info so it is done at upnp message creation
- *    and not in to_xml() function
  *  - Fix IPv6!
  */
 
@@ -271,8 +269,8 @@ static int strpos(const char*, const char *);
 static int send_stuff(const char *, const char *, const struct sockaddr_storage *, int, int);
 static void free_ssdp_message(ssdp_message_s **);
 static int fetch_custom_fields(ssdp_message_s *);
-static unsigned int to_json(const ssdp_message_s *, BOOL, BOOL, BOOL, char *, int);
-static unsigned int to_xml(const ssdp_message_s *, BOOL, BOOL, BOOL, char *, int);
+static unsigned int to_json(const ssdp_message_s *, BOOL, char *, int);
+static unsigned int to_xml(const ssdp_message_s *, BOOL, char *, int);
 static BOOL parse_url(const char *, char *, int, int *, char *, int);
 static void parse_filters(char *, filters_factory_s **, BOOL);
 //static char *get_ip_address_from_socket(const SOCKET);
@@ -290,14 +288,14 @@ static BOOL join_multicast_group(SOCKET, char *, char *);
 static SOCKET setup_socket(BOOL, BOOL, BOOL, char *, char *, struct sockaddr_storage *, const char *, int, BOOL, BOOL);
 static BOOL is_address_multicast(const char *);
 static BOOL init_ssdp_message(ssdp_message_s **);
-static BOOL create_plain_text_message(char *, int, ssdp_message_s *, BOOL);
+static BOOL create_plain_text_message(char *, int, ssdp_message_s *);
 static BOOL add_ssdp_message_to_cache(ssdp_cache_s **, ssdp_message_s **);
 static void free_ssdp_cache(ssdp_cache_s **);
 static void daemonize();
 static BOOL filter(ssdp_message_s *, filters_factory_s *);
-static unsigned int cache_to_json(ssdp_cache_s *, char *, unsigned int, BOOL);
-static unsigned int cache_to_xml(ssdp_cache_s *, char *, unsigned int, BOOL);
-static BOOL flush_ssdp_cache(ssdp_cache_s **, const char *, struct sockaddr_storage *, int, int, BOOL);
+static unsigned int cache_to_json(ssdp_cache_s *, char *, unsigned int);
+static unsigned int cache_to_xml(ssdp_cache_s *, char *, unsigned int);
+static BOOL flush_ssdp_cache(ssdp_cache_s **, const char *, struct sockaddr_storage *, int, int);
 static void display_ssdp_cache(ssdp_cache_s *, BOOL);
 static void move_cursor(int, int);
 static void get_window_size(int *, int *);
@@ -320,19 +318,19 @@ static void daemonize() {
   int fd, max_open_fds;
 
   /**
-  * Daemon preparation steps:
-  *
-  * 1. Set up rules for ignoring all (tty related)
-  *    signals that can stop the process
-  *
-  * 2. Fork to child and exit parent to free
-  *    the terminal and the starting process
-  *
-  * 3. Change PGID to ignore parent stop signals
-  *    and disassociate from controlling terminal
-  *    (two solutions, normal and BSD)
-  *
-  */
+   * Daemon preparation steps:
+   *
+   * 1. Set up rules for ignoring all (tty related)
+   *    signals that can stop the process
+   *
+   * 2. Fork to child and exit parent to free
+   *    the terminal and the starting process
+   *
+   * 3. Change PGID to ignore parent stop signals
+   *    and disassociate from controlling terminal
+   *    (two solutions, normal and BSD)
+   *
+   */
 
   /* If started with init then no need to detach and do all the stuff */
   if(getppid() == 1) {
@@ -446,8 +444,7 @@ static void daemonize() {
  */
 static unsigned int cache_to_json(ssdp_cache_s *ssdp_cache,
                                   char *json_buffer,
-                                  unsigned int json_buffer_size,
-                                  BOOL fetch_info) {
+                                  unsigned int json_buffer_size) {
   unsigned int used_buffer = 0;
 
   /* Point at the beginning */
@@ -459,8 +456,6 @@ static unsigned int cache_to_json(ssdp_cache_s *ssdp_cache,
                          "root {\n");
   while(ssdp_cache) {
     used_buffer += to_json(ssdp_cache->ssdp_message,
-                          FALSE,
-                          fetch_info,
                           FALSE,
                           (json_buffer + used_buffer),
                           (json_buffer_size - used_buffer));
@@ -483,8 +478,7 @@ static unsigned int cache_to_json(ssdp_cache_s *ssdp_cache,
  */
 static unsigned int cache_to_xml(ssdp_cache_s *ssdp_cache,
                                  char *xml_buffer,
-                                 unsigned int xml_buffer_size,
-                                 BOOL fetch_info) {
+                                 unsigned int xml_buffer_size) {
   unsigned int used_buffer = 0;
 
   if(NULL == ssdp_cache) {
@@ -503,8 +497,6 @@ static unsigned int cache_to_xml(ssdp_cache_s *ssdp_cache,
     PRINT_DEBUG("cache_to_xml buffer used: %d; left: %d", used_buffer, xml_buffer_size - used_buffer);
     used_buffer += to_xml(ssdp_cache->ssdp_message,
                           FALSE,
-                          fetch_info,
-                          FALSE,
                           (xml_buffer + used_buffer),
                           (xml_buffer_size - used_buffer));
     ssdp_cache = ssdp_cache->next;
@@ -522,15 +514,14 @@ static BOOL flush_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer,
                              const char *url,
                              struct sockaddr_storage *sockaddr_recipient,
                              int port,
-                             int timeout,
-                             BOOL fetch_info) {
+                             int timeout) {
   ssdp_cache_s *ssdp_cache = *ssdp_cache_pointer;
   int results_size = *ssdp_cache->ssdp_messages_count * XML_BUFFER_SIZE;
   char results[results_size];
 
   /* If -j then convert all messages to one JSON blob */
   if(conf.json_output) {
-    if(1 > cache_to_json(ssdp_cache, results, results_size, fetch_info)) {
+    if(1 > cache_to_json(ssdp_cache, results, results_size)) {
       PRINT_ERROR("Failed creating JSON blob from ssdp cache");
       return FALSE;
     }
@@ -538,14 +529,14 @@ static BOOL flush_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer,
 
   /* If -x then convert all messages to one XML blob */
   if(conf.xml_output) {
-    if(1 > cache_to_xml(ssdp_cache, results, results_size, fetch_info)) {
+    if(1 > cache_to_xml(ssdp_cache, results, results_size)) {
       PRINT_ERROR("Failed creating XML blob from ssdp cache");
       return FALSE;
     }
   }
 
   // TODO: make it create a list instead of single plain message
-  else if(!create_plain_text_message(results, XML_BUFFER_SIZE, ssdp_cache->ssdp_message, fetch_info)) {
+  else if(!create_plain_text_message(results, XML_BUFFER_SIZE, ssdp_cache->ssdp_message)) {
     PRINT_ERROR("Failed creating plain-text message");
     return FALSE;
   }
@@ -1205,8 +1196,7 @@ int main(int argc, char **argv) {
                                  "/abused/post.php",
                                  notif_recipient_addr,
                                  80,
-                                 1,
-                                 conf.fetch_info)) {
+                                 1)) {
               PRINT_DEBUG("Failed flushing SSDP cache");
               continue;
             }
@@ -1295,8 +1285,7 @@ int main(int argc, char **argv) {
                                "/abused/post.php",
                                notif_recipient_addr,
                                80,
-                               1,
-                               conf.fetch_info)) {
+                               1)) {
                 PRINT_DEBUG("Failed flushing SSDP cache");
                 continue;
               }
@@ -1517,7 +1506,7 @@ int main(int argc, char **argv) {
         /* Print the message */
         if(conf.xml_output) {
           char *xml_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
-          to_xml(ssdp_message, TRUE, conf.fetch_info, FALSE, xml_string, XML_BUFFER_SIZE);
+          to_xml(ssdp_message, TRUE, xml_string, XML_BUFFER_SIZE);
           printf("%s\n", xml_string);
           free(xml_string);
         }
@@ -2645,8 +2634,6 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
 */
 static unsigned int to_json(const ssdp_message_s *ssdp_message,
                             BOOL full_json,
-                            BOOL fetch_info,
-                            BOOL hide_headers,
                             char *json_buffer,
                             int json_buffer_size) {
   int used_length = 0;
@@ -2668,8 +2655,6 @@ static unsigned int to_json(const ssdp_message_s *ssdp_message,
 */
 static unsigned int to_xml(const ssdp_message_s *ssdp_message,
                            BOOL full_xml,
-                           BOOL fetch_info,
-                           BOOL hide_headers,
                            char *xml_buffer,
                            int xml_buffer_size) {
   int used_length = 0;
@@ -2697,66 +2682,125 @@ static unsigned int to_xml(const ssdp_message_s *ssdp_message,
   used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
   "\t\t<datetime>\n\t\t\t%s\n\t\t</datetime>\n", ssdp_message->datetime);
 
-  ssdp_custom_field_s *cf = ssdp_message->custom_fields->first;
-  int needed_size = 0;
+  if(ssdp_message->custom_fields) {
 
-  /* Calculate needed buffer size */
-  while(cf) {
-    // 13 + <custom_field name=""></custom_field> = 50 bytes
-    needed_size += strlen(cf->name) + strlen(cf->contents) + 50;
-    cf = cf->next;
-  }
-  cf = ssdp_message->custom_fields->first;
+    ssdp_custom_field_s *cf = ssdp_message->custom_fields->first;
 
-  /* Check if buffer has enought room */
-  PRINT_DEBUG("buffer left: %d, buffer_needed: %d", (xml_buffer_size - used_length), needed_size);
-  if((xml_buffer_size - used_length) < needed_size) {
-    PRINT_ERROR("to_xml(): Not enought memory in the buffer to convert the SSDP message to XML, skipping\n");
-  }
-  else {
+    /**
+     * The whole needed size is calculated as:
+     * leading headers string: +29
+     * each header constant string +50
+     * each header name string +X
+     * each header contents string +Y
+     * tailing header tailing string +19
+     */
 
-    /* Convert to XML format */
-    used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-    "\t\t<custom_fields count=\"%d\">\n", ssdp_message->custom_field_count);
+    /* Leading (29) and tailing (13) string sizes combined */
+    int needed_size = 48;
 
+    /* Calculate needed buffer size */
     while(cf) {
+
+      /* Each header combined (46 + X + Y + 18) string size */
+      needed_size += strlen(cf->name) + strlen(cf->contents) + 50;
+      cf = cf->next;
+
+    }
+    cf = ssdp_message->custom_fields->first;
+
+    /* Check if buffer has enought room */
+    PRINT_DEBUG("buffer left: %d, buffer_needed: %d", (xml_buffer_size - used_length), needed_size);
+    if((xml_buffer_size - used_length) < needed_size) {
+      PRINT_ERROR("to_xml(): Not enought buffer space left to convert the SSDP message custom fields to XML, skipping\n");
+    }
+    else {
+
+      /* Convert to XML format */
+      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
+      "\t\t<custom_fields count=\"%d\">\n", ssdp_message->custom_field_count);
+
+      while(cf) {
+        used_length += snprintf(xml_buffer + used_length,
+                                xml_buffer_size - used_length,
+                                "\t\t\t<custom_field name=\"%s\">\n\t\t\t\t%s\n\t\t\t</custom_field>\n",
+                                cf->name,
+                                cf->contents);
+        cf = cf->next;
+      }
+
+      cf = NULL;
       used_length += snprintf(xml_buffer + used_length,
                               xml_buffer_size - used_length,
-                              "\t\t\t<custom_field name=\"%s\">\n\t\t\t\t%s\n\t\t\t</custom_field>\n",
-                              cf->name,
-                              cf->contents);
-      cf = cf->next;
+                              "\t\t</custom_fields>\n");
+      PRINT_DEBUG("XML custom-fields bytes: %d", (int)strlen(xml_buffer));
     }
 
-    cf = NULL;
-    used_length += snprintf(xml_buffer + used_length,
-                            xml_buffer_size - used_length,
-                            "\t\t</custom_fields>\n");
-    PRINT_DEBUG("XML custom-fields bytes: %d", (int)strlen(xml_buffer));
   }
 
-  if(!hide_headers) {
-    ssdp_header_s *ssdp_headers = ssdp_message->headers;
+  if(ssdp_message->headers) {
 
-    used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-    "\t\t<headers count=\"%d\">\n", (unsigned int)ssdp_message->header_count);
-    while(ssdp_headers) {
-      used_length += snprintf(xml_buffer + used_length,
-                              xml_buffer_size - used_length,
-                              "\t\t\t<header typeInt=\"%d\" typeStr=\"%s\">\n",
-                              ssdp_headers->type,
-                              get_header_string(ssdp_headers->type, ssdp_headers));
-      used_length += snprintf(xml_buffer + used_length,
-                              xml_buffer_size - used_length,
-                              "\t\t\t\t%s\n\t\t\t</header>\n",
-                              ssdp_headers->contents);
-      ssdp_headers = ssdp_headers->next;
+    ssdp_header_s *h = ssdp_message->headers->first;
+
+    /**
+     * The whole needed size is calculated as:
+     * leading headers string: +23
+     * each header leading string +46
+     * each header type as two digits
+     * each header type as string +X
+     * each header contents string +Y
+     * each header tailing string +18
+     * tailing header tailing string +13
+     */
+
+    /* Leading (23) and tailing (13) string sizes combined */
+    int needed_size = 36;
+
+    /* Calculate needed buffer size */
+    while(h) {
+
+      /* Each header combined (46 + X + Y + 18) string size */
+      needed_size += (h->unknown_type ?
+                        strlen(h->unknown_type) :
+                        strlen(get_header_string(h->type, h))) + strlen(h->contents) + 64;
+      h = h->next;
+
     }
-    ssdp_headers = NULL;
+    h = ssdp_message->headers->first;
+
+    /* Check if buffer has enought room */
+    PRINT_DEBUG("buffer left: %d, buffer needed: %d", (xml_buffer_size - used_length), needed_size);
+    if((xml_buffer_size - used_length) < needed_size) {
+      PRINT_ERROR("to_xml(): Not enought buffer space left to convert the SSDP message headers to XML, skipping\n");
+    }
+    else {
+
+      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
+      "\t\t<headers count=\"%d\">\n", (unsigned int)ssdp_message->header_count);
+
+      while(h) {
+        used_length += snprintf(xml_buffer + used_length,
+                                xml_buffer_size - used_length,
+                                "\t\t\t<header typeInt=\"%d\" typeStr=\"%s\">\n",
+                                h->type,
+                                get_header_string(h->type, h));
+        used_length += snprintf(xml_buffer + used_length,
+                                xml_buffer_size - used_length,
+                                "\t\t\t\t%s\n\t\t\t</header>\n",
+                                h->contents);
+        h = h->next;
+      }
+      h = NULL;
+
+      used_length += snprintf(xml_buffer + used_length,
+                              xml_buffer_size - used_length,
+                              "\t\t</headers>\n");
+    }
+
   }
 
   used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-                          "\t\t</headers>\n\t</message>\n");
+                          "\t</message>\n");
+
   if(full_xml) {
     used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
                             "</root>\n");
@@ -3937,7 +3981,7 @@ static BOOL init_ssdp_message(ssdp_message_s **message_pointer) {
 * @param buffer_size The size of the buffer 'results'
 * @param message The message to convert
 */
-static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_message_s *ssdp_message, BOOL fetch_info) {
+static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_message_s *ssdp_message) {
   int buffer_used = 0, count = 0;
   ssdp_custom_field_s *cf = NULL;
 
