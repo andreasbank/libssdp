@@ -332,7 +332,7 @@ function gui_list($user,
   printf("</td>\n</tr>\n<tr>\n<td>\n");
   printf("<table class=\"round_table\" style=\"background-color: %s\">\n", $random_color);
   printf("\t<tr>\n");
-  printf("\t\t<td colspan=\"7\" style=\"padding-bottom: 2em;\">\n");
+  printf("\t\t<td colspan=\"8\" style=\"padding-bottom: 2em;\">\n");
   printf("\t\t\t<form methon=\"get\" action=\"\">\n");
   printf("\t\t\t\t<table style=\"margin-left: auto; margin-right: auto;\">\n");
   printf("\t\t\t\t\t<tr>\n");
@@ -449,12 +449,12 @@ function gui_list($user,
       $bottom_padding = ' bottom_cell';
     }
     printf("\t<tr>\n");
-    printf("\t\t<td class=\"cell_padding%s%s%s\"><input name=\"checkbox_%s\" type=\"checkbox\" %s/></td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s%s%s\"><input name=\"checkbox_%s\" type=\"checkbox\" /></td>\n",
            $round_border_bottom_left,
+           $round_border_bottom_right,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
-           $result['id'], // TODO: make a 'clean_name' function that removes weird chars
-           (false ? 'checked="checked" ' : ''));
+           $result['id']); // TODO: make a 'clean_name' function that removes weird chars
 
     printf("\t\t<td class=\"white_bg cell_padding%s%s%s\">\n",
            $round_border_bottom_left,
@@ -466,12 +466,13 @@ function gui_list($user,
            $result['id']);
     printf("\t\t</td>\n");
 
-    printf("\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s/admin/maintenance.shtml\">%s</a></td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s/admin/maintenance.shtml\">%s</a>&nbsp;<a target=\"_blank\" href=\"?action=gui_device_info&device_id=%s&age=999999\"><img style=\"height: 1em;\" src=\"info.png\" alt=\"[i]\" /></a></td>\n",
            $round_border_bottom_left,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['ipv4'],
-           $result['ipv4']);
+           $result['ipv4'],
+           $result['id']);
 
     printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
