@@ -4082,11 +4082,16 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
     /* Point to the begining of the cache list */
     ssdp_cache = (*ssdp_cache_pointer)->first;
   
-    /* Check for duplicate and abort adding it if found */
+    /* Check for duplicate and update it if found */
     while(ssdp_cache) {
       if(0 == strcmp(ssdp_message->ip, ssdp_cache->ssdp_message->ip)) {
-        /* Found a duplicate, skip */
-        PRINT_DEBUG("Found duplicate SSDP message, skipping");
+        /* Found a duplicate, update existing instead */
+        PRINT_DEBUG("Found duplicate SSDP message, updating");
+        strcpy(ssdp_cache->ssdp_message->datetime, ssdp_message->datetime);
+        if(!ssdp_cache->ssdp_message->mac) {
+          strcpy(ssdp_cache->ssdp_message->mac, ssdp_message->mac);
+        }
+        // TODO: make it update all existing fields before freeing it...
         free_ssdp_message(ssdp_message_pointer);
         return TRUE;
       }
