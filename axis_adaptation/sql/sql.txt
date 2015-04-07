@@ -287,7 +287,7 @@
     IF v_found_id IS NOT NULL THEN
       INSERT INTO `locked_devices`
       VALUES(v_found_id, 1, v_user, NOW());
-      CALL `list_devices`(NULL, NULL, NULL, NULL, 999999, NULL, v_found_id);
+      CALL `list_devices`(NULL, NULL, NULL, NULL, 999999, NULL, v_found_id, NULL);
     END IF;
   END//
   DELIMITER ;

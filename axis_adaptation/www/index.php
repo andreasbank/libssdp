@@ -205,7 +205,7 @@ function list_devices($sql,
 
 }
 
-function gui_device_info($sql, $device_id, $age = 16) {
+function device_info($sql, $device_id, $age = 16) {
 
   /* Info for extracting specific information of
      the device in the case where it is an AXIS device */
@@ -281,36 +281,29 @@ function gui_list($user,
                   $ip,
                   $sort_by) {
 
-  try {
-    $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
-                     ($capability ? sprintf("'%s'", $capability) : 'NULL'),
-                     ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
-                     ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
-                     ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
-                     $age * 60,
-                     ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
-                     ($device_id ? sprintf("'%s'", $device_id) : 'NULL'),
-                     ($ip ? sprintf("'%s'", $ip) : 'NULL'));
+  $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
+                   ($capability ? sprintf("'%s'", $capability) : 'NULL'),
+                   ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
+                   ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                   ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
+                   $age * 60,
+                   ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
+                   ($device_id ? sprintf("'%s'", $device_id) : 'NULL'),
+                   ($ip ? sprintf("'%s'", $ip) : 'NULL'));
 
-    $results = $sql->call($query);
+  $results = $sql->call($query);
 
-    if(is_array($results) && count($results) > 0) {
-      $results = $results[0];
+  if(is_array($results) && count($results) > 0) {
+    $results = $results[0];
 
-      /* Sort the results if $sort_by is set */
-      if(!empty($sort_by)) {
-        sort_results($results, $sort_by);
-      }
-
+    /* Sort the results if $sort_by is set */
+    if(!empty($sort_by)) {
+      sort_results($results, $sort_by);
     }
-    else {
-      $results = NULL;
-    }
+
   }
-  catch(Exception $e) {
-    header('HTTP/1.0 500');
-    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-    exit(1);
+  else {
+    $results = NULL;
   }
 
   /* Capture the current location to add to all links */
@@ -421,6 +414,7 @@ function gui_list($user,
   printf("\t\t</td>\n");
   printf("\t</tr>\n");
   printf("\t<tr>\n");
+  printf("\t\t<td class=\"title_td_result_table\">&nbsp</td>\n");
   printf("\t\t<td class=\"title_td_result_table border_top_left_radius border_top_right_radius white_bg\">ID</td>\n");
   printf("\t\t<td class=\"title_td_result_table\">IP (v4)</td>\n");
   printf("\t\t<td class=\"title_td_result_table\">Model</td>\n");
@@ -455,6 +449,13 @@ function gui_list($user,
       $bottom_padding = ' bottom_cell';
     }
     printf("\t<tr>\n");
+    printf("\t\t<td class=\"cell_padding%s%s%s\"><input name=\"checkbox_%s\" type=\"checkbox\" %s/></td>\n",
+           $round_border_bottom_left,
+           $bottom_padding,
+           ($results_index % 2 ? ' lighter_bg' : ''),
+           $result['id'], // TODO: make a 'clean_name' function that removes weird chars
+           (false ? 'checked="checked" ' : ''));
+
     printf("\t\t<td class=\"white_bg cell_padding%s%s%s\">\n",
            $round_border_bottom_left,
            $round_border_bottom_right,
@@ -465,7 +466,7 @@ function gui_list($user,
            $result['id']);
     printf("\t\t</td>\n");
 
-    printf("\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s\">%s</a></td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s/admin/maintenance.shtml\">%s</a></td>\n",
            $round_border_bottom_left,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
@@ -549,7 +550,8 @@ function gui_list($user,
                              $time_lapsed_color,
                              $result['locked_by']);
     }
-    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
+    printf("\t\t<td class=\"cell_padding%s%s%s\">%s</td>\n",
+           $round_border_bottom_right,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $occupant_and_time_lapsed);
@@ -572,51 +574,27 @@ function lock_device($sql,
                      $device_id,
                      $age) {
   
-  try {
-    $results = $sql->call(sprintf("call lock_device(%s, %s, %s, %s, '%s', %d, %s)",
-                                  ($capability ? sprintf("'%s'", $capability): 'NULL'),
-                                  ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
-                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
-                                  ($capability_state ? sprintf("'%s'", $capability_state): 'NULL'),
-                                  $user,
-                                  $age * 60,
-                                  ($device_id ? sprintf("'%s'", $device_id) : 'NULL')));
+  $results = $sql->call(sprintf("call lock_device(%s, %s, %s, %s, '%s', %d, %s)",
+                                ($capability ? sprintf("'%s'", $capability): 'NULL'),
+                                ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
+                                ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                                ($capability_state ? sprintf("'%s'", $capability_state): 'NULL'),
+                                $user,
+                                $age * 60,
+                                ($device_id ? sprintf("'%s'", $device_id) : 'NULL')));
 
-    header('Content-type: application/json; charset=utf-8');
-    if(!empty($url)) {
-      header(sprintf("Location: %s", $url));
-    }
-    else if(is_array($results) && count($results) > 0) {
-      printf("%s", json_encode($results[0]));
-    }
-    else {
-      printf("[]");
-    }
+  if(is_array($results) && count($results) > 0) {
+    $results =  $results[0];
   }
-  catch(Exception $e) {
-    header('HTTP/1.0 500');
-    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-    exit(1);
-  }
+
+  return $results;
 }
 
 function unlock_device($sql, $device_id, $url) {
 
-  try {
-    $results = $sql->call(sprintf("call unlock_device('%s')", $device_id));
-  }
-  catch(Exception $e) {
-    header('HTTP/1.0 500');
-    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-    exit(1);
-  }
-  if(!empty($url)) {
-    header(sprintf("Location: %s", $url));
-  }
-  else {
-    printf("OK\n");
-  }
+  $sql->call(sprintf("call unlock_device('%s')", $device_id));
 
+  return 'OK';
 }
 
 switch($action) {
@@ -724,7 +702,34 @@ case 'list_devices':
   }
   break;
 
-/* List devices info in a HTML table */
+/* Fetch device info */
+case 'device_info':
+
+  try {
+    $device_id = null;
+    if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+      $device_id = $_POST['device_id'];
+    }
+    else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+      $device_id = $_GET['device_id'];
+    }
+    else {
+      throw new Exception('Missing argument \'ID\'', 0);
+    }
+
+    $result = device_info($sql, $device_id);
+
+    printf("%s", json_encode(array($result['remote_service'], $result['oak'])));
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+
+  break;
+
+/* Fetch device info */
 case 'gui_device_info':
 
   try {
@@ -739,9 +744,13 @@ case 'gui_device_info':
       throw new Exception('Missing argument \'ID\'', 0);
     }
 
-    $result = gui_device_info($sql, $device_id);
+    $result = device_info($sql, $device_id);
 
-    printf("Remote Service: %s<br />\nOAK: %s\n", $result['remote_service'], $result['oak']);
+    printf("<table border=\"1\"><tr><td style=\"font-weight: bold;\">ID</td><td style=\"font-weight: bold;\">Remote service</td><td style=\"font-weight: bold;\">OAK</td></tr>");
+    printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr></table>\n",
+           $result['id'],
+           str_replace(",", "<br />\n", $result['remote_service']),
+           $result['oak']);
   }
   catch(Exception $e) {
     header('HTTP/1.0 500');
@@ -753,102 +762,109 @@ case 'gui_device_info':
 
 /* List devices in a minimal GUI */
 case 'gui_list':
-  $capability = NULL;
-  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
-    $capability = $_POST['capability'];
-  }
-  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
-    $capability = $_GET['capability'];
-  }
 
-  $model_name = NULL;
-  if(isset($_POST['model_name']) && !empty($_POST['model_name'])) {
-    $model_name = $_POST['model_name'];
-  }
-  else if(isset($_GET['model_name']) && !empty($_GET['model_name'])) {
-    $model_name = $_GET['model_name'];
-  }
+  try {
+    $capability = NULL;
+    if(isset($_POST['capability']) && !empty($_POST['capability'])) {
+      $capability = $_POST['capability'];
+    }
+    else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
+      $capability = $_GET['capability'];
+    }
 
-  $firmware_version = null;
-  if(isset($_POST['firmware_version']) && !empty($_POST['firmware_version'])) {
-    $firmware_version = $_POST['firmware_version'];
-  }
-  else if(isset($_GET['firmware_version']) && !empty($_GET['firmware_version'])) {
-    $firmware_version = $_GET['firmware_version'];
-  }
+    $model_name = NULL;
+    if(isset($_POST['model_name']) && !empty($_POST['model_name'])) {
+      $model_name = $_POST['model_name'];
+    }
+    else if(isset($_GET['model_name']) && !empty($_GET['model_name'])) {
+      $model_name = $_GET['model_name'];
+    }
 
-  $capability_state = NULL;
-  if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
-    $capability_state = $_POST['capability_state'];
-  }
-  else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
-    $capability_state = $_GET['capability_state'];
-  }
+    $firmware_version = null;
+    if(isset($_POST['firmware_version']) && !empty($_POST['firmware_version'])) {
+      $firmware_version = $_POST['firmware_version'];
+    }
+    else if(isset($_GET['firmware_version']) && !empty($_GET['firmware_version'])) {
+      $firmware_version = $_GET['firmware_version'];
+    }
 
-  $locked_by = NULL;
-  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
-    $locked_by = $_POST['locked_by'];
-  }
-  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
-    $locked_by = $_GET['locked_by'];
-  }
+    $capability_state = NULL;
+    if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
+      $capability_state = $_POST['capability_state'];
+    }
+    else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
+      $capability_state = $_GET['capability_state'];
+    }
 
-  $user = NULL;
-  if(isset($_POST['user']) && !empty($_POST['user'])) {
-    $user = $_POST['user'];
-  }
-  else if(isset($_GET['user']) && !empty($_GET['user'])) {
-    $user = $_GET['user'];
-  }
-  else {
-    printf("No user specified.");
-    exit(0);
-  }
+    $locked_by = NULL;
+    if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
+      $locked_by = $_POST['locked_by'];
+    }
+    else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
+      $locked_by = $_GET['locked_by'];
+    }
 
-  $device_id = null;
-  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
-    $device_id = $_POST['device_id'];
-  }
-  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
-    $device_id = $_GET['device_id'];
-  }
+    $user = NULL;
+    if(isset($_POST['user']) && !empty($_POST['user'])) {
+      $user = $_POST['user'];
+    }
+    else if(isset($_GET['user']) && !empty($_GET['user'])) {
+      $user = $_GET['user'];
+    }
+    else {
+      throw new Exception('Missing argument \'user\'');
+    }
 
-  /* 16 minutes */
-  $age = 16;
-  if(isset($_POST['age']) && !empty($_POST['age'])) {
-    $age = $_POST['age'];
-  }
-  else if(isset($_GET['age']) && !empty($_GET['age'])) {
-    $age = $_GET['age'];
-  }
+    $device_id = null;
+    if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+      $device_id = $_POST['device_id'];
+    }
+    else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+      $device_id = $_GET['device_id'];
+    }
 
-  $ip = null;
-  if(isset($_POST['ip']) && !empty($_POST['ip'])) {
-    $ip = $_POST['ip'];
-  }
-  else if(isset($_GET['ip']) && !empty($_GET['ip'])) {
-    $ip = $_GET['ip'];
-  }
+    /* 16 minutes */
+    $age = 16;
+    if(isset($_POST['age']) && !empty($_POST['age'])) {
+      $age = $_POST['age'];
+    }
+    else if(isset($_GET['age']) && !empty($_GET['age'])) {
+      $age = $_GET['age'];
+    }
 
-  $sort_by = null;
-  if(isset($_POST['sort_by']) && !empty($_POST['sort_by'])) {
-    $sort_by = $_POST['sort_by'];
-  }
-  else if(isset($_GET['sort_by']) && !empty($_GET['sort_by'])) {
-    $sort_by = $_GET['sort_by'];
-  }
+    $ip = null;
+    if(isset($_POST['ip']) && !empty($_POST['ip'])) {
+      $ip = $_POST['ip'];
+    }
+    else if(isset($_GET['ip']) && !empty($_GET['ip'])) {
+      $ip = $_GET['ip'];
+    }
 
-  gui_list($user,
-           $sql,
-           $capability,
-           $model_name,
-           $firmware_version,
-           $capability_state,
-           $locked_by,
-           $device_id,
-           $age,
-           $ip,
-           $sort_by);
+    $sort_by = null;
+    if(isset($_POST['sort_by']) && !empty($_POST['sort_by'])) {
+      $sort_by = $_POST['sort_by'];
+    }
+    else if(isset($_GET['sort_by']) && !empty($_GET['sort_by'])) {
+      $sort_by = $_GET['sort_by'];
+    }
+
+    gui_list($user,
+             $sql,
+             $capability,
+             $model_name,
+             $firmware_version,
+             $capability_state,
+             $locked_by,
+             $device_id,
+             $age,
+             $ip,
+             $sort_by);
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
 
   break;
 
@@ -923,30 +939,40 @@ case 'lock_device':
     $url = $_GET['url'];
   }
 
-  lock_device($sql,
-              $user,
-              $capability,
-              $model_name,
-              $firmware_version,
-              $capability_state,
-              $device_id,
-              $age);
+  try {
+    $result = lock_device($sql,
+                          $user,
+                          $capability,
+                          $model_name,
+                          $firmware_version,
+                          $capability_state,
+                          $device_id,
+                          $age);
+
+    if(empty($url)) {
+      header('Content-type: application/json; charset=utf-8');
+      if(is_array($results) && count($results) > 0) {
+        printf("%s", json_encode($results));
+      }
+      else {
+        printf("[]");
+      }
+      printf("%s", $result);
+    }
+    else {
+      header(sprintf("Location: %s", $url));
+    }
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
 
   break;
 
 /* Unlock a device by its ID */
 case 'unlock_device':
-  $device_id = NULL;
-  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
-    $device_id = $_POST['device_id'];
-  }
-  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
-    $device_id = $_GET['device_id'];
-  }
-  else {
-    printf("No device ID specified.");
-    exit(0);
-  }
 
   $url = null;
   if(isset($_POST['url']) && !empty($_POST['url'])) {
@@ -956,13 +982,40 @@ case 'unlock_device':
     $url = $_GET['url'];
   }
 
-  unlock_device($sql, $device_id, $url);
+  try {
+
+    $device_id = NULL;
+    if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+      $device_id = $_POST['device_id'];
+    }
+    else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+      $device_id = $_GET['device_id'];
+    }
+    else {
+      throw new Exception('Missing argument \'ID\'');
+    }
+
+    $result = unlock_device($sql, $device_id);
+
+    if(empty($url)) {
+      printf("%s", $result);
+    }
+    else {
+      header(sprintf("Location: %s", $url));
+    }
+
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
 
   break;
 
 /* Inform that the action is invalid */
 default:
-  printf("Invalid action.");
+  printf('Invalid action');
   exit(0);
 }
 
