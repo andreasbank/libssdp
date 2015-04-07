@@ -5,16 +5,29 @@ class CapabilityManager {
   private $username = '';
   private $password = '';
   private $timeout = 5;
+  private $proxy_address = null;
+  private $proxy_port = null;
 
-  public function __construct($ip, $username = 'root', $password = 'pass') {
+  public function __construct($ip,
+                              $username = 'root',
+                              $password = 'pass',
+                              $proxy_address = null,
+                              $proxy_port = null) {
     $this->ip = $ip;
     $this->username = $username;
     $this->password = $password;
+    $this->proxy_address = $proxy_address;
+    $this->proxy_port = $proxy_port;
   }
 
   public function set_credentials($username, $password) {
     $this->username = $username;
     $this->password = $password;
+  }
+
+  public function set_proxy($proxy_address, $proxy_port) {
+    $this->proxy_address = $proxy_address;
+    $this->proxy_port = $proxy_port;
   }
 
   /**
@@ -43,7 +56,10 @@ class CapabilityManager {
   }
 
   /* Build a DIGEST authentication header */
-  public function build_digest_auth_header($headers, $uri) {
+  public function build_digest_auth_header($headers,
+                                           $uri,
+                                           $username = null,
+                                           $password = null) {
     /*
     response is something like this:
     HTTP/1.0 401 Unauthorized
@@ -55,6 +71,11 @@ class CapabilityManager {
                              opaque="5ccc069c403ebaf9f0171e9517f40e41"
     */
 
+    if(empty($username)) {
+      $username = $this->username;
+      $password = $this->password;
+    }
+
     /* Extract the WWW-Authenticate header */
     $header = null;
     foreach($headers as $header_) {
@@ -62,6 +83,10 @@ class CapabilityManager {
         $header = $header_;
         break;
       }
+    }
+
+    if(empty($header)) {
+      throw new Exception('Digest authorization has not been requested');
     }
 
     $auth_args = array();
@@ -99,7 +124,7 @@ class CapabilityManager {
        http://tools.ietf.org/html/rfc2069,
        note that we only implement needed features
        and make alot of assumptions (as using 'realm') */
-    $ha1 = md5(sprintf("%s:%s:%s", $this->username, $auth_args['realm'], $this->password));
+    $ha1 = md5(sprintf("%s:%s:%s", $username, $auth_args['realm'], $password));
     $ha2 = md5(sprintf("GET:%s", $uri));
     $response = md5(sprintf("%s:%s:%d:%s:%s:%s",
                             $ha1,
@@ -109,7 +134,7 @@ class CapabilityManager {
                             $auth_args['qop'],
                             $ha2));
 
-    $auth_digest = sprintf("Authorization: Digest username=\"%s\"", $this->username);
+    $auth_digest = sprintf("Authorization: Digest username=\"%s\"", $username);
     $auth_digest = sprintf("%s, realm=\"%s\"", $auth_digest, $auth_args['realm']);
     $auth_digest = sprintf("%s, nonce=\"%s\"", $auth_digest, $auth_args['nonce']);
     $auth_digest = sprintf("%s, uri=\"%s\"", $auth_digest, $uri);
@@ -127,38 +152,62 @@ class CapabilityManager {
   /**
    * Build basic authentication header
    */
-  public function build_basic_auth_header() {
+  public function build_basic_auth_header($username = null,
+                                          $password = null) {
+
+    if(empty($username)) {
+      $username = $this->username;
+      $password = $this->password;
+    }
+
     $auth_basic = sprintf("Authorization: Basic %s",
                           base64_encode(sprintf("%s:%s",
-                                                $this->username,
-                                                $this->password)));
+                                                $username,
+                                                $password)));
     return $auth_basic;
   }
 
   /**
    * Build the request context
    */
-  public function build_context($auth_header = null) {
+  public function build_context($auth_header) {
 
-    /* If no specific authentication header given
-       build a basic authentication header and use it*/
-    if(empty($auth_header)) {
-      $auth_header = $this->build_basic_auth_header();
+    $context = array(
+                 'http' => array(
+                   'timeout' => $this->timeout
+                 ));
+
+    if(!empty($auth_header)) {
+      $context['http'] = array_merge($context['http'],
+                  array('header'  => $auth_header));
     }
 
-    $context = stream_context_create(array(
-                                       'http' => array(
-                                         'header'  => $auth_header,
-                                         'timeout' => $this->timeout
-                                       )));
+    if(!empty($this->proxy_address) && !empty($this->proxy_port)) {
+      $context['http'] = array_merge($context['http'],
+                  array('proxy' => sprintf("tcp://%s:%d",
+                                           $this->proxy_address,
+                                           $this->proxy_port)));
+      array_merge($context['http'],
+                  array('request_fulluri' => true));
+    }
+
+    $context = stream_context_create($context);
+
     return $context;
   }
 
   /**
    * Send a http(s) request
    */
-  public function send_request($url) {
+  public function send_request($url,
+                               $username = null,
+                               $password = null) {
     $result = null;
+
+    if(empty($username)) {
+      $username = $this->username;
+      $password = $this->password;
+    }
 
     /* Extract transport method [http|https] */
     $transport = strstr($url, '://', true);
@@ -166,7 +215,12 @@ class CapabilityManager {
       throw new Exception('Wrong transport method, only HTTP or HTTPS is allowed');
     }
 
-    $context = $this->build_context();
+    if(!empty($username) && !empty($password)) {
+      $context = $this->build_context($this->build_basic_auth_header($username, $password));
+    }
+    else {
+      $context = $this->build_context();
+    }
 
     //*********************
     // KEEP IN CASE OF ALIENS
@@ -187,7 +241,9 @@ class CapabilityManager {
 
       /* Retry using digest authentication */
       $context = $this->build_context($this->build_digest_auth_header($http_response_header,
-                                                                      $url));
+                                                                      $url,
+                                                                      $username,
+                                                                      $password));
       $result = @file_get_contents($url, false, $context);
     }
 
@@ -195,7 +251,11 @@ class CapabilityManager {
       if(isset($http_response_header) && strpos($http_response_header[0], '401')) {
         throw new Exception("Wrong credentials", 401);
       }
-      throw new Exception("Connection failed", 998);
+      throw new Exception(sprintf("Connection failed %s(%s)",
+                                  (isset($http_response_header[0]) ?
+                                     sprintf("[%s]", $http_response_header[0]) : ''),
+                                  $url),
+                          998);
     }
 
     return $result;
@@ -361,6 +421,47 @@ class CapabilityManager {
   public function get_firmware_version() {
     $fw_version = $this->get_axis_device_parameter('Properties.Firmware.Version');
     return $fw_version;
+  }
+
+  public function get_remote_service() {
+    try {
+      $server_list = $this->get_axis_device_parameter('RemoteService.ServerList');
+    }
+    catch(Exception $e) {
+      try {
+        $server_list = $this->get_axis_device_parameter('RemoteService.RemoteServerURL');
+      }
+      catch(Exception $e) {
+        if($e->getCode() != 401) {
+          throw new Exception('Could not retrieve the Remote Service value');
+        }
+        else {
+          throw $e;
+        }
+      }
+    }
+    return $server_list;
+  }
+
+  public function get_oak($device_id,
+                          $dispatcher_ip = 'dispatchse1.avhs.axis.com',
+                          $dispatcher_username = 'qa',
+                          $dispatcher_password = '4Mpq%Y>y=_kTY)$(R}h9',
+                          $transport = 'https') {
+    $result = null;
+
+    $url = sprintf("%s://%s/dispatcher/admin/qa.php?cmd=info&cameraid=%s",
+                   $transport,
+                   $dispatcher_ip,
+                   $device_id);
+
+    $result = $this->send_request($url,
+                                  $dispatcher_username,
+                                  $dispatcher_password);
+
+    /* Return the result */
+    $result = substr($result, strpos($result, 'key=') + 4 - strlen($result));
+    return trim($result);
   }
 
   public function has_ir() {

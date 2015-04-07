@@ -1,5 +1,6 @@
 <?php
 require_once('SqlConnection.php');
+require_once('CapabilityManager.php');
 $request_start = microtime(true);
 
 function request_time() {
@@ -172,202 +173,113 @@ else {
   exit(0);
 }
 
-switch($action) {
+function list_devices($sql,
+                      $capability,
+                      $model_name,
+                      $firmware_version,
+                      $capability_state,
+                      $locked_by,
+                      $device_id,
+                      $age,
+                      $ip,
+                      $sort_by) {
 
-/* List devices */
-case 'list_devices':
-  $capability = NULL;
-  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
-    $capability = $_POST['capability'];
-  }
-  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
-    $capability = $_GET['capability'];
-  }
+  $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
+                   ($capability ? sprintf("'%s'", $capability) : 'NULL'),
+                   ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
+                   ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                   ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
+                   $age * 60,
+                   ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
+                   ($device_id ? sprintf("'%s'", $device_id) : 'NULL'),
+                   ($ip ? sprintf("'%s'", $ip) : 'NULL'));
 
-  $model_name = NULL;
-  if(isset($_POST['model_name']) && !empty($_POST['model_name'])) {
-    $model_name = $_POST['model_name'];
-  }
-  else if(isset($_GET['model_name']) && !empty($_GET['model_name'])) {
-    $model_name = $_GET['model_name'];
-  }
+  $results = $sql->call($query);
 
-  $firmware_version = null;
-  if(isset($_post['firmware_version']) && !empty($_post['firmware_version'])) {
-    $firmware_version = $_post['firmware_version'];
-  }
-  else if(isset($_get['firmware_version']) && !empty($_get['firmware_version'])) {
-    $firmware_version = $_get['firmware_version'];
-  }
-
-  $capability_state = NULL;
-  if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
-    $capability_state = $_POST['capability_state'];
-  }
-  else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
-    $capability_state = $_GET['capability_state'];
+  /* Sort the results if $sort_by is set */
+  if(!empty($sort_by)) {
+    sort_results($results, $sort_by);
   }
 
-  $locked_by = NULL;
-  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
-    $locked_by = $_POST['locked_by'];
-  }
-  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
-    $locked_by = $_GET['locked_by'];
+  return $results;
+
+}
+
+function gui_device_info($sql, $device_id, $age = 16) {
+
+  /* Info for extracting specific information of
+     the device in the case where it is an AXIS device */
+  $axis_device_default_username = 'root';
+  $axis_device_default_password = 'pass';
+  $axis_device_backup_username = 'camroot';
+  $axis_device_backup_password = 'password';
+  $axis_proxy_address = 'wwwproxy.se.axis.com';
+  $axis_proxy_port = 3128;
+
+  $devices = list_devices($sql,
+                          null,
+                          null,
+                          null,
+                          null,
+                          null,
+                          $device_id,
+                          $age,
+                          null,
+                          null);
+
+  if(count($devices) < 1 || count($devices[0]) < 1) {
+    throw new Exception(sprintf("No device with the ID '%s' present (NOTE: age is set to %d)",
+                                $device_id,
+                                $age));
   }
 
-  $device_id = null;
-  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
-    $device_id = $_POST['device_id'];
-  }
-  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
-    $device_id = $_GET['device_id'];
-  }
+  $cm = new CapabilityManager($devices[0][0]['ipv4'],
+                              $axis_device_default_username,
+                              $axis_device_default_password);
 
-  /* 16 minutes */
-  $age = 16;
-  if(isset($_POST['age']) && !empty($_POST['age'])) {
-    $age = $_POST['age'];
-  }
-  else if(isset($_GET['age']) && !empty($_GET['age'])) {
-    $age = $_GET['age'];
-  }
+  $remote_service = null;
+  $oak = null;
 
-  $ip = null;
-  if(isset($_POST['ip']) && !empty($_POST['ip'])) {
-    $ip = $_POST['ip'];
-  }
-  else if(isset($_GET['ip']) && !empty($_GET['ip'])) {
-    $ip = $_GET['ip'];
-  }
-
-  $sort_by = null;
-  if(isset($_POST['sort_by']) && !empty($_POST['sort_by'])) {
-    $sort_by = $_POST['sort_by'];
-  }
-  else if(isset($_GET['sort_by']) && !empty($_GET['sort_by'])) {
-    $sort_by = $_GET['sort_by'];
-  }
-
+  /* Fetch the remote service parameter from the device */
   try {
-    $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
-                     ($capability ? sprintf("'%s'", $capability) : 'NULL'),
-                     ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
-                     ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
-                     ($capability_state ? sprintf("'%s'", $capability_state) : 'NULL'),
-                     $age * 60,
-                     ($locked_by ? sprintf("'%s'", $locked_by) : 'NULL'),
-                     ($device_id ? sprintf("'%s'", $device_id) : 'NULL'),
-                     ($ip ? sprintf("'%s'", $ip) : 'NULL'));
 
-    $results = $sql->call($query);
+    $remote_service = $cm->get_remote_service();
 
-    if(is_array($results) && count($results) > 0) {
-      $json_results = json_encode($results[0]);
-
-      /* Sort the results if $sort_by is set */
-      // sort
-
-      printf("%s", $json_results);
-    }
-    else {
-      printf("[]");
-    }
   }
   catch(Exception $e) {
-    header('HTTP/1.0 500');
-    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-    exit(1);
+
+    /* If the credentials were wrong try with the backup ones  */
+    if($e->getCode() == 401) {
+      $cm->set_credentials($axis_device_backup_username,
+                           $axis_device_backup_password);
+      $remote_service = $cm->get_remote_service();
+    }
+    else {
+      throw $e;
+    }
+
   }
 
-  break;
+  /* Fetch the device OAK from the dispatcher */
+  $cm->set_proxy($axis_proxy_address, $axis_proxy_port);
+  $oak = $cm->get_oak($device_id);
+  $cm->set_proxy(null, null);
 
-/* List devices in a minimal GUI */
-case 'gui_list':
-  $capability = NULL;
-  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
-    $capability = $_POST['capability'];
-  }
-  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
-    $capability = $_GET['capability'];
-  }
+  return array('id' => $device_id, 'remote_service' => $remote_service, 'oak' => $oak);
 
-  $model_name = NULL;
-  if(isset($_POST['model_name']) && !empty($_POST['model_name'])) {
-    $model_name = $_POST['model_name'];
-  }
-  else if(isset($_GET['model_name']) && !empty($_GET['model_name'])) {
-    $model_name = $_GET['model_name'];
-  }
+}
 
-  $firmware_version = null;
-  if(isset($_POST['firmware_version']) && !empty($_POST['firmware_version'])) {
-    $firmware_version = $_POST['firmware_version'];
-  }
-  else if(isset($_GET['firmware_version']) && !empty($_GET['firmware_version'])) {
-    $firmware_version = $_GET['firmware_version'];
-  }
-
-  $capability_state = NULL;
-  if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
-    $capability_state = $_POST['capability_state'];
-  }
-  else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
-    $capability_state = $_GET['capability_state'];
-  }
-
-  $locked_by = NULL;
-  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
-    $locked_by = $_POST['locked_by'];
-  }
-  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
-    $locked_by = $_GET['locked_by'];
-  }
-
-  $user = NULL;
-  if(isset($_POST['user']) && !empty($_POST['user'])) {
-    $user = $_POST['user'];
-  }
-  else if(isset($_GET['user']) && !empty($_GET['user'])) {
-    $user = $_GET['user'];
-  }
-  else {
-    printf("No user specified.");
-    exit(0);
-  }
-
-  $device_id = null;
-  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
-    $device_id = $_POST['device_id'];
-  }
-  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
-    $device_id = $_GET['device_id'];
-  }
-
-  /* 16 minutes */
-  $age = 16;
-  if(isset($_POST['age']) && !empty($_POST['age'])) {
-    $age = $_POST['age'];
-  }
-  else if(isset($_GET['age']) && !empty($_GET['age'])) {
-    $age = $_GET['age'];
-  }
-
-  $ip = null;
-  if(isset($_POST['ip']) && !empty($_POST['ip'])) {
-    $ip = $_POST['ip'];
-  }
-  else if(isset($_GET['ip']) && !empty($_GET['ip'])) {
-    $ip = $_GET['ip'];
-  }
-
-  $sort_by = null;
-  if(isset($_POST['sort_by']) && !empty($_POST['sort_by'])) {
-    $sort_by = $_POST['sort_by'];
-  }
-  else if(isset($_GET['sort_by']) && !empty($_GET['sort_by'])) {
-    $sort_by = $_GET['sort_by'];
-  }
+function gui_list($user,
+                  $sql,
+                  $capability,
+                  $model_name,
+                  $firmware_version,
+                  $capability_state,
+                  $locked_by,
+                  $device_id,
+                  $age,
+                  $ip,
+                  $sort_by) {
 
   try {
     $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
@@ -649,6 +561,295 @@ case 'gui_list':
          count($results),
          request_time());
   printf("</body>\n</html>\n");
+}
+
+function lock_device($sql,
+                     $user,
+                     $capability,
+                     $model_name,
+                     $firmware_version,
+                     $capability_state,
+                     $device_id,
+                     $age) {
+  
+  try {
+    $results = $sql->call(sprintf("call lock_device(%s, %s, %s, %s, '%s', %d, %s)",
+                                  ($capability ? sprintf("'%s'", $capability): 'NULL'),
+                                  ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
+                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
+                                  ($capability_state ? sprintf("'%s'", $capability_state): 'NULL'),
+                                  $user,
+                                  $age * 60,
+                                  ($device_id ? sprintf("'%s'", $device_id) : 'NULL')));
+
+    header('Content-type: application/json; charset=utf-8');
+    if(!empty($url)) {
+      header(sprintf("Location: %s", $url));
+    }
+    else if(is_array($results) && count($results) > 0) {
+      printf("%s", json_encode($results[0]));
+    }
+    else {
+      printf("[]");
+    }
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+}
+
+function unlock_device($sql, $device_id, $url) {
+
+  try {
+    $results = $sql->call(sprintf("call unlock_device('%s')", $device_id));
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+  if(!empty($url)) {
+    header(sprintf("Location: %s", $url));
+  }
+  else {
+    printf("OK\n");
+  }
+
+}
+
+switch($action) {
+
+/* List devices */
+case 'list_devices':
+  $capability = NULL;
+  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
+    $capability = $_POST['capability'];
+  }
+  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
+    $capability = $_GET['capability'];
+  }
+
+  $model_name = NULL;
+  if(isset($_POST['model_name']) && !empty($_POST['model_name'])) {
+    $model_name = $_POST['model_name'];
+  }
+  else if(isset($_GET['model_name']) && !empty($_GET['model_name'])) {
+    $model_name = $_GET['model_name'];
+  }
+
+  $firmware_version = null;
+  if(isset($_post['firmware_version']) && !empty($_post['firmware_version'])) {
+    $firmware_version = $_post['firmware_version'];
+  }
+  else if(isset($_get['firmware_version']) && !empty($_get['firmware_version'])) {
+    $firmware_version = $_get['firmware_version'];
+  }
+
+  $capability_state = NULL;
+  if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
+    $capability_state = $_POST['capability_state'];
+  }
+  else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
+    $capability_state = $_GET['capability_state'];
+  }
+
+  $locked_by = NULL;
+  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
+    $locked_by = $_POST['locked_by'];
+  }
+  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
+    $locked_by = $_GET['locked_by'];
+  }
+
+  $device_id = null;
+  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+    $device_id = $_POST['device_id'];
+  }
+  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+    $device_id = $_GET['device_id'];
+  }
+
+  /* 16 minutes */
+  $age = 16;
+  if(isset($_POST['age']) && !empty($_POST['age'])) {
+    $age = $_POST['age'];
+  }
+  else if(isset($_GET['age']) && !empty($_GET['age'])) {
+    $age = $_GET['age'];
+  }
+
+  $ip = null;
+  if(isset($_POST['ip']) && !empty($_POST['ip'])) {
+    $ip = $_POST['ip'];
+  }
+  else if(isset($_GET['ip']) && !empty($_GET['ip'])) {
+    $ip = $_GET['ip'];
+  }
+
+  $sort_by = null;
+  if(isset($_POST['sort_by']) && !empty($_POST['sort_by'])) {
+    $sort_by = $_POST['sort_by'];
+  }
+  else if(isset($_GET['sort_by']) && !empty($_GET['sort_by'])) {
+    $sort_by = $_GET['sort_by'];
+  }
+
+  try {
+    $results = list_devices($sql,
+                            $capability,
+                            $model_name,
+                            $firmware_version,
+                            $capability_state,
+                            $locked_by,
+                            $device_id,
+                            $age,
+                            $ip,
+                            $sort_by);
+
+    if(is_array($results) && count($results) > 0) {
+      $json_results = json_encode($results[0]);
+
+      printf("%s", $json_results);
+    }
+    else {
+      printf("[]");
+    }
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+  break;
+
+/* List devices info in a HTML table */
+case 'gui_device_info':
+
+  try {
+    $device_id = null;
+    if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+      $device_id = $_POST['device_id'];
+    }
+    else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+      $device_id = $_GET['device_id'];
+    }
+    else {
+      throw new Exception('Missing argument \'ID\'', 0);
+    }
+
+    $result = gui_device_info($sql, $device_id);
+
+    printf("Remote Service: %s<br />\nOAK: %s\n", $result['remote_service'], $result['oak']);
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+
+  break;
+
+/* List devices in a minimal GUI */
+case 'gui_list':
+  $capability = NULL;
+  if(isset($_POST['capability']) && !empty($_POST['capability'])) {
+    $capability = $_POST['capability'];
+  }
+  else if(isset($_GET['capability']) && !empty($_GET['capability'])) {
+    $capability = $_GET['capability'];
+  }
+
+  $model_name = NULL;
+  if(isset($_POST['model_name']) && !empty($_POST['model_name'])) {
+    $model_name = $_POST['model_name'];
+  }
+  else if(isset($_GET['model_name']) && !empty($_GET['model_name'])) {
+    $model_name = $_GET['model_name'];
+  }
+
+  $firmware_version = null;
+  if(isset($_POST['firmware_version']) && !empty($_POST['firmware_version'])) {
+    $firmware_version = $_POST['firmware_version'];
+  }
+  else if(isset($_GET['firmware_version']) && !empty($_GET['firmware_version'])) {
+    $firmware_version = $_GET['firmware_version'];
+  }
+
+  $capability_state = NULL;
+  if(isset($_POST['capability_state']) && !empty($_POST['capability_state'])) {
+    $capability_state = $_POST['capability_state'];
+  }
+  else if(isset($_GET['capability_state']) && !empty($_GET['capability_state'])) {
+    $capability_state = $_GET['capability_state'];
+  }
+
+  $locked_by = NULL;
+  if(isset($_POST['locked_by']) && !empty($_POST['locked_by'])) {
+    $locked_by = $_POST['locked_by'];
+  }
+  else if(isset($_GET['locked_by']) && !empty($_GET['locked_by'])) {
+    $locked_by = $_GET['locked_by'];
+  }
+
+  $user = NULL;
+  if(isset($_POST['user']) && !empty($_POST['user'])) {
+    $user = $_POST['user'];
+  }
+  else if(isset($_GET['user']) && !empty($_GET['user'])) {
+    $user = $_GET['user'];
+  }
+  else {
+    printf("No user specified.");
+    exit(0);
+  }
+
+  $device_id = null;
+  if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
+    $device_id = $_POST['device_id'];
+  }
+  else if(isset($_GET['device_id']) && !empty($_GET['device_id'])) {
+    $device_id = $_GET['device_id'];
+  }
+
+  /* 16 minutes */
+  $age = 16;
+  if(isset($_POST['age']) && !empty($_POST['age'])) {
+    $age = $_POST['age'];
+  }
+  else if(isset($_GET['age']) && !empty($_GET['age'])) {
+    $age = $_GET['age'];
+  }
+
+  $ip = null;
+  if(isset($_POST['ip']) && !empty($_POST['ip'])) {
+    $ip = $_POST['ip'];
+  }
+  else if(isset($_GET['ip']) && !empty($_GET['ip'])) {
+    $ip = $_GET['ip'];
+  }
+
+  $sort_by = null;
+  if(isset($_POST['sort_by']) && !empty($_POST['sort_by'])) {
+    $sort_by = $_POST['sort_by'];
+  }
+  else if(isset($_GET['sort_by']) && !empty($_GET['sort_by'])) {
+    $sort_by = $_GET['sort_by'];
+  }
+
+  gui_list($user,
+           $sql,
+           $capability,
+           $model_name,
+           $firmware_version,
+           $capability_state,
+           $locked_by,
+           $device_id,
+           $age,
+           $ip,
+           $sort_by);
+
   break;
 
 /* Lock the device if possible */
@@ -722,31 +923,15 @@ case 'lock_device':
     $url = $_GET['url'];
   }
 
-  try {
-    $results = $sql->call(sprintf("call lock_device(%s, %s, %s, %s, '%s', %d, %s)",
-                                  ($capability ? sprintf("'%s'", $capability): 'NULL'),
-                                  ($model_name ? sprintf("'%s'", $model_name) : 'NULL'),
-                                  ($firmware_version ? sprintf("'%s'", $firmware_version) : 'NULL'),
-                                  ($capability_state ? sprintf("'%s'", $capability_state): 'NULL'),
-                                  $user,
-                                  $age * 60,
-                                  ($device_id ? sprintf("'%s'", $device_id) : 'NULL')));
-    header('Content-type: application/json; charset=utf-8');
-    if(!empty($url)) {
-      header(sprintf("Location: %s", $url));
-    }
-    else if(is_array($results) && count($results) > 0) {
-      printf("%s", json_encode($results[0]));
-    }
-    else {
-      printf("[]");
-    }
-  }
-  catch(Exception $e) {
-    header('HTTP/1.0 500');
-    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-    exit(1);
-  }
+  lock_device($sql,
+              $user,
+              $capability,
+              $model_name,
+              $firmware_version,
+              $capability_state,
+              $device_id,
+              $age);
+
   break;
 
 /* Unlock a device by its ID */
@@ -771,20 +956,8 @@ case 'unlock_device':
     $url = $_GET['url'];
   }
 
-  try {
-    $results = $sql->call(sprintf("call unlock_device('%s')", $device_id));
-  }
-  catch(Exception $e) {
-    header('HTTP/1.0 500');
-    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-    exit(1);
-  }
-  if(!empty($url)) {
-    header(sprintf("Location: %s", $url));
-  }
-  else {
-    printf("OK\n");
-  }
+  unlock_device($sql, $device_id, $url);
+
   break;
 
 /* Inform that the action is invalid */
