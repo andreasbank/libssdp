@@ -2,27 +2,35 @@
 class CapabilityManager {
 
   private $ip = '';
-  private $username = '';
-  private $password = '';
+  private $credentials = null;
   private $timeout = 5;
   private $proxy_address = null;
   private $proxy_port = null;
 
   public function __construct($ip,
-                              $username = 'root',
-                              $password = 'pass',
+                              array $credentials = array(
+                                array(
+                                  'username' => 'root',
+                                  'password' => 'pass'),
+                                array(
+                                  'username' => 'camroot',
+                                  'password' => 'password')),
                               $proxy_address = null,
                               $proxy_port = null) {
     $this->ip = $ip;
-    $this->username = $username;
-    $this->password = $password;
+    if(isset($credentials) && !isset($credentials[0]['username'])) {
+      throw new Exception('Wrong array structure for \'credentials\' (should be an array of arrays)');
+    }
+    $this->credentials = $credentials;
     $this->proxy_address = $proxy_address;
     $this->proxy_port = $proxy_port;
   }
 
-  public function set_credentials($username, $password) {
-    $this->username = $username;
-    $this->password = $password;
+  public function set_credentials(array $credentials) {
+    if(!isset($credentials[0]['username'])) {
+      throw new Exception('Wrong array structure for \'credentials\' (should be an array of arrays)');
+    }
+    $this->credentials = $credentials;
   }
 
   public function set_proxy($proxy_address, $proxy_port) {
@@ -71,9 +79,12 @@ class CapabilityManager {
                              opaque="5ccc069c403ebaf9f0171e9517f40e41"
     */
 
-    if(empty($username)) {
-      $username = $this->username;
-      $password = $this->password;
+    if(empty($username) && isset($this->credentials[0]['username'])) {
+      $username = $this->credentials[0]['username'];
+      $password = $this->credentials[0]['password'];
+    }
+    else if(empty($username)) {
+      throw new Exception('No credentials given, cannot create digest authorization header', 0);
     }
 
     /* Extract the WWW-Authenticate header */
@@ -86,7 +97,7 @@ class CapabilityManager {
     }
 
     if(empty($header)) {
-      throw new Exception('Digest authorization has not been requested');
+      throw new Exception('Digest authorization has not been requested', 0);
     }
 
     $auth_args = array();
@@ -112,7 +123,7 @@ class CapabilityManager {
        a 'realm' */
     if(!in_array('auth', split(',', $auth_args['qop'])) ||
        !in_array('realm', array_keys($auth_args))) {
-      throw new Exception('The server requested a unsupported digest authentication method');
+      throw new Exception('The server requested a unsupported digest authentication method', 0);
     }
 
     /* Set our args; RFC2069: qop=auth */
@@ -155,9 +166,12 @@ class CapabilityManager {
   public function build_basic_auth_header($username = null,
                                           $password = null) {
 
-    if(empty($username)) {
-      $username = $this->username;
-      $password = $this->password;
+    if(empty($username) && isset($this->credentials[0]['username'])) {
+      $username = $this->credentials[0]['username'];
+      $password = $this->credentials[0]['password'];
+    }
+    else if(empty($username)){
+      throw new Exception('No credentials given, cannot create basic authorization header', 0);
     }
 
     $auth_basic = sprintf("Authorization: Basic %s",
@@ -203,11 +217,7 @@ class CapabilityManager {
                                $username = null,
                                $password = null) {
     $result = null;
-
-    if(empty($username)) {
-      $username = $this->username;
-      $password = $this->password;
-    }
+    $credentials = null;
 
     /* Extract transport method [http|https] */
     $transport = strstr($url, '://', true);
@@ -216,46 +226,89 @@ class CapabilityManager {
     }
 
     if(!empty($username) && !empty($password)) {
-      $context = $this->build_context($this->build_basic_auth_header($username, $password));
+      $credentials = array(
+        array(
+          'username' => $username,
+          'password' => $password
+        )
+      );
+    }
+    else if(!empty($this->credentials)) {
+      $credentials = $this->credentials;
     }
     else {
-      $context = $this->build_context();
+      $credentials = array(null);
     }
 
-    //*********************
-    // KEEP IN CASE OF ALIENS
-    //if($transport == 'https') {
-    //  stream_context_set_option($context, 'ssl', 'verify_host', false);
-    //  stream_context_set_option($context, 'ssl', 'allow_self_signed', true);
-    //  stream_context_set_option($context, 'ssl', 'verify_peer', false);
-    //}
-    //********************
+    $i = 0;
+    foreach($credentials as $single_credentials) {
 
-    /* Try with basic authentication */
-    $result = @file_get_contents($url, false, $context);
+      try {
 
-    /* Check if digest is needed */
-    if($result === false &&
-       isset($http_response_header) &&
-       strpos($http_response_header[0], '401')) {
+        $i++;
+        if(isset($single_credentials['username'])) {
+          $context = $this->build_context(
+            $this->build_basic_auth_header($single_credentials['username'],
+                                           $single_credentials['password']));
+        }
+        else {
+          $context = $this->build_context();
+        }
 
-      /* Retry using digest authentication */
-      $context = $this->build_context($this->build_digest_auth_header($http_response_header,
-                                                                      $url,
-                                                                      $username,
-                                                                      $password));
-      $result = @file_get_contents($url, false, $context);
-    }
+        //*********************
+        // KEEP IN CASE OF ALIENS
+        //if($transport == 'https') {
+        //  stream_context_set_option($context, 'ssl', 'verify_host', false);
+        //  stream_context_set_option($context, 'ssl', 'allow_self_signed', true);
+        //  stream_context_set_option($context, 'ssl', 'verify_peer', false);
+        //}
+        //********************
 
-    if($result === false) {
-      if(isset($http_response_header) && strpos($http_response_header[0], '401')) {
-        throw new Exception("Wrong credentials", 401);
+        /* Try with basic authentication */
+        $result = @file_get_contents($url, false, $context);
+
+        /* Check if digest is needed */
+        // TODO: also check if string 'digest' is
+        //       present in any of the headers in the if-statement
+        if($result === false &&
+           isset($http_response_header) &&
+           strpos($http_response_header[0], '401') &&
+           isset($single_credentials['username'])) {
+
+          /* Retry using digest authentication */
+          $context = $this->build_context(
+            $this->build_digest_auth_header($http_response_header,
+                                            $url,
+                                            $single_credentials['username'],
+                                            $single_credentials['password']));
+          $result = @file_get_contents($url, false, $context);
+        }
+
+        if($result === false) {
+          if(isset($http_response_header) &&
+             strpos($http_response_header[0], '401')) {
+            if(isset($single_credentials['username'])) {
+              throw new Exception('Authorization required', 401);
+            }
+            else {
+              throw new Exception('Wrong credentials', 401);
+            }
+          }
+          throw new Exception(sprintf("Connection failed %s(%s)",
+                                      (isset($http_response_header[0]) ?
+                                         sprintf("[%s]", $http_response_header[0]) : ''),
+                                      $url),
+                              998);
+        }
+        break;
       }
-      throw new Exception(sprintf("Connection failed %s(%s)",
-                                  (isset($http_response_header[0]) ?
-                                     sprintf("[%s]", $http_response_header[0]) : ''),
-                                  $url),
-                          998);
+      catch(Exception $e) {
+        if(($e->getCode() == 401 && false != strpos($e->getMessage(), 'Authorization required')) ||
+           count($credentials) == $i) {
+          throw $e;
+        }
+        /* Else continue */
+      }
     }
 
     return $result;
@@ -421,6 +474,30 @@ class CapabilityManager {
   public function get_firmware_version() {
     $fw_version = $this->get_axis_device_parameter('Properties.Firmware.Version');
     return $fw_version;
+  }
+
+  public function move_to_portal(array $portal_ips,
+                                 $postal_admin_username,
+                                 $portal_admin_password) {
+
+    $portal_ips = implode(',', $portal_ips);
+
+    try {
+      $this->set_axis_device_parameter('RemoteService.ServerList', $portal_ips);
+    }
+    catch(Exception $e) {
+      try {
+        $server_list = $this->set_axis_device_parameter('RemoteService.RemoteServerURL', $portal_ips);
+      }
+      catch(Exception $e) {
+        if($e->getCode() != 401) {
+          throw new Exception('Could not set the Remote Service value');
+        }
+        else {
+          throw $e;
+        }
+      }
+    }
   }
 
   public function get_remote_service() {

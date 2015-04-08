@@ -44,10 +44,12 @@ input[type=button]:hover, input.cool_button:hover {
 input[type=button]:active, input.cool_button:active {
   background-color: rgba(255, 255, 255, 0.8);
 }
+.no_cell_space, .round_table {
+  border-spacing: 0;
+}
 .round_table {
   margin-left: auto;
   margin-right: auto;
-  border-spacing: 0;
   padding: .5em;
   box-shadow: 2px 2px 2px black;
   border-radius: 1em;

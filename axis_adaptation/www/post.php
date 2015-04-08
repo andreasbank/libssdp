@@ -17,10 +17,13 @@ $abused_results = AbusedResult::parse_xml($raw_xml);
 
 /* Info for extracting specific information of
    the device in the case where it is an AXIS device */
-$axis_device_default_username = 'root';
-$axis_device_default_password = 'pass';
-$axis_device_backup_username = 'camroot';
-$axis_device_backup_password = 'password';
+$axis_device_credentials = array(
+  array(
+    'username' => 'root',
+    'password' => 'pass'),
+  array(
+    'username' => 'camroot',
+    'password' => 'password'));
 
 /* Connect to MySQL */
 try {
@@ -150,8 +153,7 @@ foreach($abused_results as $abused_result) {
     else if(!(false === stripos($model_name, 'axis'))) {
 
       $cm = new CapabilityManager(($ipv4 ? $ipv4 : $ipv6),
-                                   $axis_device_default_username,
-                                   $axis_device_default_password);
+                                  $axis_device_credentials);
   
       /* Fetch the firmware version from the device */
       try {
@@ -160,8 +162,7 @@ foreach($abused_results as $abused_result) {
       catch(Exception $e) {
         /* If the credentials were wrong try with the backup ones  */
         if($e->getCode() == 401) {
-          $cm->set_credentials($axis_device_backup_username,
-                               $axis_device_backup_password);
+          $cm->set_credentials($axis_device_credentials);
           $firmware_version = $cm->get_firmware_version();
         }
         else {

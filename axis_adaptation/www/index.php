@@ -3,6 +3,47 @@ require_once('SqlConnection.php');
 require_once('CapabilityManager.php');
 $request_start = microtime(true);
 
+/* MySQL credentials */
+$host     = 'localhost';
+$database = 'abused';
+$username = 'abused';
+$password = 'abusedpass';
+
+/* Info for extracting specific information of
+   the device in the case where it is an AXIS device */
+$axis_device_credentials = array(
+  array(
+    'username' => 'root',
+    'password' => 'pass'),
+  array(
+    'username' => 'camroot',
+    'password' => 'password'));
+$axis_proxy_address = 'wwwproxy.se.axis.com';
+$axis_proxy_port = 3128;
+
+
+/* Connect to MySQL */
+try {
+  $sql = new SqlConnection($host, $database, $username, $password);
+}
+catch(Exception $e) {
+  printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+  exit(1);
+}
+
+$action = NULL;
+if(isset($_POST['action']) && !empty($_POST['action'])) {
+  $action = $_POST['action'];
+}
+else if(isset($_GET['action']) && !empty($_GET['action'])) {
+  $action = $_GET['action'];
+}
+else {
+  printf("No action specified.");
+  exit(0);
+}
+
+
 function request_time() {
   return round((microtime(true) - $GLOBALS['request_start']), 4);
 }
@@ -146,33 +187,6 @@ function sort_results(&$arr, $sort_by) {
   return $sorted_array;
 }
 
-/* MySQL credentials */
-$host     = 'localhost';
-$database = 'abused';
-$username = 'abused';
-$password = 'abusedpass';
-
-/* Connect to MySQL */
-try {
-  $sql = new SqlConnection($host, $database, $username, $password);
-}
-catch(Exception $e) {
-  printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
-  exit(1);
-}
-
-$action = NULL;
-if(isset($_POST['action']) && !empty($_POST['action'])) {
-  $action = $_POST['action'];
-}
-else if(isset($_GET['action']) && !empty($_GET['action'])) {
-  $action = $_GET['action'];
-}
-else {
-  printf("No action specified.");
-  exit(0);
-}
-
 function list_devices($sql,
                       $capability,
                       $model_name,
@@ -205,16 +219,49 @@ function list_devices($sql,
 
 }
 
-function device_info($sql, $device_id, $age = 16) {
+function move_to_portal($sql,
+                        array $device_ids,
+                        $age,
+                        array $portal_ips,
+                        $portal_admin_username,
+                        $portal_admin_password,
+                        array $device_credentials) {
 
-  /* Info for extracting specific information of
-     the device in the case where it is an AXIS device */
-  $axis_device_default_username = 'root';
-  $axis_device_default_password = 'pass';
-  $axis_device_backup_username = 'camroot';
-  $axis_device_backup_password = 'password';
-  $axis_proxy_address = 'wwwproxy.se.axis.com';
-  $axis_proxy_port = 3128;
+  foreach($device_ids as $device_id) {
+    $devices = list_devices($sql,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            $device_id,
+                            $age,
+                            null,
+                            null);
+
+    if(count($devices) < 1 || count($devices[0]) < 1) {
+      throw new Exception(sprintf("No device with the ID '%s' present (NOTE: age is set to %d minutes)",
+                                  $device_id,
+                                  $age));
+    }
+
+    $cm = new CapabilityManager($devices[0][0]['ipv4'],
+                                $credentials);
+
+    /* Set the new remote service in the device */
+    $cm->move_to_portal($portal_ips,
+                        $portal_admin_username,
+                        $portal_admin_password);
+
+  }
+}
+
+function device_info($sql,
+                     $device_id,
+                     $device_credentials,
+                     $age,
+                     $proxy_address,
+                     $proxy_port) {
 
   $devices = list_devices($sql,
                           null,
@@ -228,40 +275,22 @@ function device_info($sql, $device_id, $age = 16) {
                           null);
 
   if(count($devices) < 1 || count($devices[0]) < 1) {
-    throw new Exception(sprintf("No device with the ID '%s' present (NOTE: age is set to %d)",
+    throw new Exception(sprintf("No device with the ID '%s' present (NOTE: age is set to %d minutes)",
                                 $device_id,
                                 $age));
   }
 
   $cm = new CapabilityManager($devices[0][0]['ipv4'],
-                              $axis_device_default_username,
-                              $axis_device_default_password);
+                              $device_credentials);
 
   $remote_service = null;
   $oak = null;
 
   /* Fetch the remote service parameter from the device */
-  try {
-
-    $remote_service = $cm->get_remote_service();
-
-  }
-  catch(Exception $e) {
-
-    /* If the credentials were wrong try with the backup ones  */
-    if($e->getCode() == 401) {
-      $cm->set_credentials($axis_device_backup_username,
-                           $axis_device_backup_password);
-      $remote_service = $cm->get_remote_service();
-    }
-    else {
-      throw $e;
-    }
-
-  }
+  $remote_service = $cm->get_remote_service();
 
   /* Fetch the device OAK from the dispatcher */
-  $cm->set_proxy($axis_proxy_address, $axis_proxy_port);
+  $cm->set_proxy($proxy_address, $proxy_port);
   $oak = $cm->get_oak($device_id);
   $cm->set_proxy(null, null);
 
@@ -279,7 +308,9 @@ function gui_list($user,
                   $device_id,
                   $age,
                   $ip,
-                  $sort_by) {
+                  $sort_by,
+                  $current_script,
+                  $current_request) {
 
   $query = sprintf("call list_devices(%s, %s, %s, %s, %d, %s, %s, %s);",
                    ($capability ? sprintf("'%s'", $capability) : 'NULL'),
@@ -306,10 +337,6 @@ function gui_list($user,
     $results = NULL;
   }
 
-  /* Capture the current location to add to all links */
-  $current_request = $_SERVER['REQUEST_URI'];
-  $current_script = $_SERVER['SCRIPT_NAME'];
-
   /* Create the random colors for the table */
   $random_color = random_pleasing_color();
 
@@ -326,9 +353,10 @@ function gui_list($user,
   printf("<!DOCTYPE html>\n");
   printf("<html>\n<head>\n\t<title>List of devices</title>\n");
   printf("\t<link rel=\"stylesheet\" type=\"text/css\" href=\"gui.css\">\n");
+  printf("\t<script type=\"text/javascript\" src=\"gui.js\"></script>");
   printf("</head>\n<body>\n<table style=\"margin-left: auto; margin-right: auto;\">\n");
   printf("<tr>\n<td style=\"font-size: .8em; color: gray; padding-left: 2em;\">\n");
-  printf("Logged in as '%s'</div>\n", $user);
+  printf("Logged in as '%s'\n", $user);
   printf("</td>\n</tr>\n<tr>\n<td>\n");
   printf("<table class=\"round_table\" style=\"background-color: %s\">\n", $random_color);
   printf("\t<tr>\n");
@@ -399,10 +427,10 @@ function gui_list($user,
   printf("\t\t\t\t\t\t<td>\n");
   printf("\t\t\t\t\t\t\t<select style=\"width: 100%%;\" name=\"sort_by\">\n");
   printf("\t\t\t\t\t\t\t\t<option %svalue=\"\">none</option>\n",
-         (empty($sort_by) ? 'selected=\"selected\" ' : ''));
+         (empty($sort_by) ? 'selected="selected" ' : ''));
   foreach($result_columns as $option) {
     printf("\t\t\t\t\t\t\t\t<option %svalue=\"%s\">%s</option>\n",
-           ($option == $sort_by ? 'selected=\"selected\" ' : ''),
+           ($option == $sort_by ? 'selected="selected" ' : ''),
            $option,
            $option);
   }
@@ -414,15 +442,19 @@ function gui_list($user,
   printf("\t\t</td>\n");
   printf("\t</tr>\n");
   printf("\t<tr>\n");
-  printf("\t\t<td class=\"title_td_result_table\">&nbsp</td>\n");
-  printf("\t\t<td class=\"title_td_result_table border_top_left_radius border_top_right_radius white_bg\">ID</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">IP (v4)</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">Model</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">Firmware version</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">Capabilities</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">Updated (UPnP)</td>\n");
-  printf("\t\t<td class=\"title_td_result_table\">Occupant</td>\n");
-  printf("\t</tr>\n");
+  printf("\t\t<td>\n");
+  printf("\t\t\t<form id=\"group_action_form\" method=\"post\" action=\"\">\n");
+  printf("\t\t\t<table class=\"no_cell_space\" style=\"margin: none; width: 100%%;\">\n");
+  printf("\t\t\t\t<tr>\n");
+  printf("\t\t\t\t\t<td class=\"title_td_result_table\">&nbsp;</td>\n");
+  printf("\t\t\t\t\t<td class=\"title_td_result_table border_top_left_radius border_top_right_radius white_bg\">ID</td>\n");
+  printf("\t\t\t\t\t<td class=\"title_td_result_table\">IP (v4)</td>\n");
+  printf("\t\t\t\t\t<td class=\"title_td_result_table\">Model</td>\n");
+  printf("\t\t\t\t\t<td class=\"title_td_result_table\">Firmware version</td>\n");
+  printf("\t\t\t\t\t<td class=\"title_td_result_table\">Capabilities</td>\n");
+  printf("\t\t\t\t\t<td class=\"title_td_result_table\">Updated (UPnP)</td>\n");
+  printf("\t\t\t\t\t<td class=\"title_td_result_table\">Occupant</td>\n");
+  printf("\t\t\t\t</tr>\n");
   $results_size = count($results);
   $results_index = 0;
   foreach($results as $result) {
@@ -448,25 +480,26 @@ function gui_list($user,
       $round_border_bottom_right = ' border_bottom_right_radius';
       $bottom_padding = ' bottom_cell';
     }
-    printf("\t<tr>\n");
-    printf("\t\t<td class=\"cell_padding%s%s%s%s\"><input name=\"checkbox_%s\" type=\"checkbox\" /></td>\n",
+    printf("\t\t\t\t<tr>\n");
+    printf("\t\t\t\t\t<td class=\"cell_padding%s%s%s%s\"><input name=\"checkbox_%s\" type=\"checkbox\" value=\"%s\" onchange=\"javascript:group_action_visibility();\" /></td>\n",
            $round_border_bottom_left,
            $round_border_bottom_right,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
-           $result['id']); // TODO: make a 'clean_name' function that removes weird chars
+           $result['id'], // TODO: make a 'clean_name' function that removes weird chars
+           $result['id']);
 
-    printf("\t\t<td class=\"white_bg cell_padding%s%s%s\">\n",
+    printf("\t\t\t\t\t<td class=\"white_bg cell_padding%s%s%s\">\n",
            $round_border_bottom_left,
            $round_border_bottom_right,
            $bottom_padding);
-    printf("\t\t\t<div class=\"%s\" onclick=\"javascript:window.location='%s'\">%s</div>\n",
+    printf("\t\t\t\t\t\t<div class=\"%s\" onclick=\"javascript:window.location='%s'\">%s</div>\n",
            $lock_style,
            $lock_link,
            $result['id']);
-    printf("\t\t</td>\n");
+    printf("\t\t\t\t\t</td>\n");
 
-    printf("\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s/admin/maintenance.shtml\">%s</a>&nbsp;<a target=\"_blank\" href=\"?action=gui_device_info&device_id=%s&age=999999\"><img style=\"height: 1em;\" src=\"info.png\" alt=\"[i]\" /></a></td>\n",
+    printf("\t\t\t\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s/admin/maintenance.shtml\">%s</a>&nbsp;<a target=\"_blank\" href=\"?action=gui_device_info&device_id=%s&age=$age\"><img style=\"height: 1em;\" src=\"info.png\" alt=\"[i]\" /></a></td>\n",
            $round_border_bottom_left,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
@@ -474,20 +507,20 @@ function gui_list($user,
            $result['ipv4'],
            $result['id']);
 
-    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
+    printf("\t\t\t\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['model_name']);
 
-    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
+    printf("\t\t\t\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $result['firmware_version']);
 
-    printf("\t\t<td class=\"cell_padding%s%s\">\n%s\n\t\t</td>\n",
+    printf("\t\t\t\t\t<td class=\"cell_padding%s%s\">\n%s\n\t\t\t\t</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
-           get_capabilities_icons($result['capabilities'], 3));
+           get_capabilities_icons($result['capabilities'], 5));
 
     $time_lapsed = '&nbsp;';
     if($result['last_update']) {
@@ -516,7 +549,7 @@ function gui_list($user,
                                $time_lapsed);
       }
     }
-    printf("\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
+    printf("\t\t\t\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $time_lapsed);
@@ -551,14 +584,25 @@ function gui_list($user,
                              $time_lapsed_color,
                              $result['locked_by']);
     }
-    printf("\t\t<td class=\"cell_padding%s%s%s\">%s</td>\n",
+    printf("\t\t\t\t\t<td class=\"cell_padding%s%s%s\">%s</td>\n",
            $round_border_bottom_right,
            $bottom_padding,
            ($results_index % 2 ? ' lighter_bg' : ''),
            $occupant_and_time_lapsed);
 
-    printf("\t</tr>\n");
+    printf("\t\t\t\t</tr>\n");
   }
+  printf("\t\t\t\t<tr id=\"group_action_field\" style=\"display: none;\">\n");
+  printf("\t\t\t\t\t<td colspan=\"8\" style=\"padding-top: 1em; padding-left: .5em;\">\n");
+  printf("\t\t\t\t\t\t<img style=\"height: 2em; vertical-align: -0.3em;\" src=\"down_right_arrow.png\" alt=\"->\">\n");
+  printf("\t\t\t\t\t\t<input type=\"hidden\" name=\"url\" value=\"%s\">\n", urlencode($current_request));
+  printf("\t\t\t\t\t\t<select name=\"action\">\n");
+  printf("\t\t\t\t\t\t\t<option value=\"move_to_portal\">Move to portal</option>\n");
+  printf("\t\t\t\t\t\t</select>\n");
+  printf("\t\t\t\t\t\t<input type=\"submit\" value=\"Go\" />\n");
+  printf("\t\t\t\t\t</td>\n");
+  printf("\t\t\t\t</tr>\n");
+  printf("\t\t\t</table>\n\t\t\t</form>\n\t\t</td>\n\t</tr>\n\n");
   printf("</table>\n</td>\n</tr>\n\n");
   printf("<tr>\n<td style=\"font-size: .8em; color: gray; padding: 1em; text-align: center;\">found %s matches (%ss)</td>\n</tr></table>",
          count($results),
@@ -718,7 +762,20 @@ case 'device_info':
       throw new Exception('Missing argument \'ID\'', 0);
     }
 
-    $result = device_info($sql, $device_id);
+    $age = 16;
+    if(isset($_POST['age']) && !empty($_POST['age'])) {
+      $age = $_POST['age'];
+    }
+    else if(isset($_GET['age']) && !empty($_GET['age'])) {
+      $age = $_GET['age'];
+    }
+
+    $result = device_info($sql,
+                          $device_id,
+                          $axis_device_credentials,
+                          $age,
+                          $axis_proxy_address,
+                          $axis_proxy_port);
 
     printf("%s", json_encode(array($result['remote_service'], $result['oak'])));
   }
@@ -745,7 +802,20 @@ case 'gui_device_info':
       throw new Exception('Missing argument \'ID\'', 0);
     }
 
-    $result = device_info($sql, $device_id);
+    $age = 16;
+    if(isset($_POST['age']) && !empty($_POST['age'])) {
+      $age = $_POST['age'];
+    }
+    else if(isset($_GET['age']) && !empty($_GET['age'])) {
+      $age = $_GET['age'];
+    }
+
+    $result = device_info($sql,
+                          $device_id,
+                          $axis_device_credentials,
+                          $age,
+                          $axis_proxy_address,
+                          $axis_proxy_port);
 
     printf("<table border=\"1\"><tr><td style=\"font-weight: bold;\">ID</td><td style=\"font-weight: bold;\">Remote service</td><td style=\"font-weight: bold;\">OAK</td></tr>");
     printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr></table>\n",
@@ -849,6 +919,10 @@ case 'gui_list':
       $sort_by = $_GET['sort_by'];
     }
 
+    /* Capture the current location to add to all links */
+    $current_request = $_SERVER['REQUEST_URI'];
+    $current_script = $_SERVER['SCRIPT_NAME'];
+
     gui_list($user,
              $sql,
              $capability,
@@ -859,7 +933,9 @@ case 'gui_list':
              $device_id,
              $age,
              $ip,
-             $sort_by);
+             $sort_by,
+             $current_script,
+             $current_request);
   }
   catch(Exception $e) {
     header('HTTP/1.0 500');
