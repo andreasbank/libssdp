@@ -498,6 +498,8 @@ class CapabilityManager {
         }
       }
     }
+
+    // TODO: make it check if device is on portal?
   }
 
   public function get_remote_service() {

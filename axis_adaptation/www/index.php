@@ -20,7 +20,8 @@ $axis_device_credentials = array(
     'password' => 'password'));
 $axis_proxy_address = 'wwwproxy.se.axis.com';
 $axis_proxy_port = 3128;
-
+$avhs_portal_admin_username = 'masteradmin';
+$avhs_portal_admin_password = 'p';
 
 /* Connect to MySQL */
 try {
@@ -219,13 +220,13 @@ function list_devices($sql,
 
 }
 
-function move_to_portal($sql,
-                        array $device_ids,
-                        $age,
-                        array $portal_ips,
-                        $portal_admin_username,
-                        $portal_admin_password,
-                        array $device_credentials) {
+function move_devices_to_portal($sql,
+                                array $device_ids,
+                                array $device_credentials,
+                                $age,
+                                array $portal_ips,
+                                $portal_admin_username,
+                                $portal_admin_password) {
 
   foreach($device_ids as $device_id) {
     $devices = list_devices($sql,
@@ -246,7 +247,7 @@ function move_to_portal($sql,
     }
 
     $cm = new CapabilityManager($devices[0][0]['ipv4'],
-                                $credentials);
+                                $device_credentials);
 
     /* Set the new remote service in the device */
     $cm->move_to_portal($portal_ips,
@@ -481,7 +482,7 @@ function gui_list($user,
       $bottom_padding = ' bottom_cell';
     }
     printf("\t\t\t\t<tr>\n");
-    printf("\t\t\t\t\t<td class=\"cell_padding%s%s%s%s\"><input name=\"checkbox_%s\" type=\"checkbox\" value=\"%s\" onchange=\"javascript:group_action_visibility();\" /></td>\n",
+    printf("\t\t\t\t\t<td class=\"cell_padding%s%s%s%s\"><input name=\"device_ids[]\" type=\"checkbox\" value=\"%s\" onchange=\"javascript:group_action_visibility();\" /></td>\n",
            $round_border_bottom_left,
            $round_border_bottom_right,
            $bottom_padding,
@@ -595,11 +596,12 @@ function gui_list($user,
   printf("\t\t\t\t<tr id=\"group_action_field\" style=\"display: none;\">\n");
   printf("\t\t\t\t\t<td colspan=\"8\" style=\"padding-top: 1em; padding-left: .5em;\">\n");
   printf("\t\t\t\t\t\t<img style=\"height: 2em; vertical-align: -0.3em;\" src=\"down_right_arrow.png\" alt=\"->\">\n");
+  printf("\t\t\t\t\t\t<input type=\"hidden\" id=\"portal_ips\" name=\"portal_ips\" value=\"\">\n");
   printf("\t\t\t\t\t\t<input type=\"hidden\" name=\"url\" value=\"%s\">\n", urlencode($current_request));
   printf("\t\t\t\t\t\t<select name=\"action\">\n");
-  printf("\t\t\t\t\t\t\t<option value=\"move_to_portal\">Move to portal</option>\n");
+  printf("\t\t\t\t\t\t\t<option value=\"move_devices_to_portal\">Move to portal</option>\n");
   printf("\t\t\t\t\t\t</select>\n");
-  printf("\t\t\t\t\t\t<input type=\"submit\" value=\"Go\" />\n");
+  printf("\t\t\t\t\t\t<input type=\"submit\" value=\"Go\" onclick=\"return set_portal_ips();\" />\n");
   printf("\t\t\t\t\t</td>\n");
   printf("\t\t\t\t</tr>\n");
   printf("\t\t\t</table>\n\t\t\t</form>\n\t\t</td>\n\t</tr>\n\n");
@@ -607,6 +609,7 @@ function gui_list($user,
   printf("<tr>\n<td style=\"font-size: .8em; color: gray; padding: 1em; text-align: center;\">found %s matches (%ss)</td>\n</tr></table>",
          count($results),
          request_time());
+  printf("<script type=\"text/javascript\">group_action_visibility();</script>\n");
   printf("</body>\n</html>\n");
 }
 
@@ -745,6 +748,72 @@ case 'list_devices':
     printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
     exit(1);
   }
+  break;
+
+/* Move device to portal */
+case 'move_devices_to_portal':
+
+  try {
+    $device_ids = null;
+    if(isset($_POST['device_ids']) && !empty($_POST['device_ids'])) {
+      $device_ids = $_POST['device_ids'];
+    }
+    else if(isset($_GET['device_ids']) && !empty($_GET['device_ids'])) {
+      $device_ids = $_GET['device_ids'];
+    }
+    else {
+      throw new Exception('Missing arguments \'device_ids[]\'', 0);
+    }
+
+    $portal_ips = null;
+    if(isset($_POST['portal_ips']) && !empty($_POST['portal_ips'])) {
+      $portal_ips = $_POST['portal_ips'];
+    }
+    else if(isset($_GET['portal_ips']) && !empty($_GET['portal_ips'])) {
+      $portal_ips = $_GET['portal_ips'];
+    }
+    else {
+      throw new Exception('Missing argument \'portal_ips\'', 0);
+    }
+
+    $age = 16;
+    if(isset($_POST['age']) && !empty($_POST['age'])) {
+      $age = $_POST['age'];
+    }
+    else if(isset($_GET['age']) && !empty($_GET['age'])) {
+      $age = $_GET['age'];
+    }
+
+    $url = null;
+    if(isset($_POST['url']) && !empty($_POST['url'])) {
+      $url = urldecode($_POST['url']);
+    }
+    else if(isset($_GET['url']) && !empty($_GET['url'])) {
+      $url = $_GET['url'];
+    }
+
+    move_devices_to_portal($sql,
+                           $device_ids,
+                           $axis_device_credentials,
+                           $age,
+                           explode(',', $portal_ips),
+                           $avhs_portal_admin_username,
+                           $avhs_portal_admin_password);
+
+    if(empty($url)) {
+      header('Content-type: application/json; charset=utf-8');
+      printf('OK');
+    }
+    else {
+      header(sprintf("Location: %s", $url));
+    }
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+
   break;
 
 /* Fetch device info */

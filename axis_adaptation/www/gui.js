@@ -13,3 +13,9 @@ function group_action_visibility() {
   thefield.style.display = 'none';
 
 }
+
+function set_portal_ips() {
+  var hidden_input = document.getElementById('portal_ips');
+  hidden_input.value = prompt('Specify AVHS Portal IP\'s:', '<comma separated list of IP\'s>');
+  return true;
+}
