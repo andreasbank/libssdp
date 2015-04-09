@@ -2,12 +2,14 @@
 class CapabilityManager {
 
   private $ip = '';
+  private $id = null;
   private $credentials = null;
   private $timeout = 5;
   private $proxy_address = null;
   private $proxy_port = null;
 
   public function __construct($ip,
+                              $id,
                               array $credentials = array(
                                 array(
                                   'username' => 'root',
@@ -18,6 +20,7 @@ class CapabilityManager {
                               $proxy_address = null,
                               $proxy_port = null) {
     $this->ip = $ip;
+    $this->id = $id;
     if(isset($credentials) && !isset($credentials[0]['username'])) {
       throw new Exception('Wrong array structure for \'credentials\' (should be an array of arrays)');
     }
@@ -198,11 +201,11 @@ class CapabilityManager {
 
     if(!empty($this->proxy_address) && !empty($this->proxy_port)) {
       $context['http'] = array_merge($context['http'],
-                  array('proxy' => sprintf("tcp://%s:%d",
-                                           $this->proxy_address,
-                                           $this->proxy_port)));
-      array_merge($context['http'],
-                  array('request_fulluri' => true));
+                                     array('proxy' => sprintf("tcp://%s:%d",
+                                                              $this->proxy_address,
+                                                              $this->proxy_port)));
+      $context['http'] = array_merge($context['http'],
+                                     array('request_fulluri' => true));
     }
 
     $context = stream_context_create($context);
@@ -294,10 +297,12 @@ class CapabilityManager {
               throw new Exception('Wrong credentials', 401);
             }
           }
-          throw new Exception(sprintf("Connection failed %s(%s)",
+          throw new Exception(sprintf("Connection failed %s(%s, proxy: %s)",
                                       (isset($http_response_header[0]) ?
-                                         sprintf("[%s]", $http_response_header[0]) : ''),
-                                      $url),
+                                         sprintf("[HTTP error code: %s] ", $http_response_header[0]) : ''),
+                                      $url,
+                                      (empty($this->proxy_address) ? 'none' :
+                                         sprintf("tcp://%s:%s", $this->proxy_address, $this->proxy_port))),
                               998);
         }
         break;
@@ -476,30 +481,108 @@ class CapabilityManager {
     return $fw_version;
   }
 
-  public function move_to_portal(array $portal_ips,
-                                 $postal_admin_username,
-                                 $portal_admin_password) {
-
-    $portal_ips = implode(',', $portal_ips);
-
-    try {
-      $this->set_axis_device_parameter('RemoteService.ServerList', $portal_ips);
+  public function enable_avhs($restart = false) {
+    if($restart) {
+      $this->set_axis_device_parameter('RemoteService.Enabled', 'no');
     }
-    catch(Exception $e) {
+    $this->set_axis_device_parameter('RemoteService.Enabled', 'yes');
+  }
+
+
+  public function has_been_dispatched() {
+  
+    /* Fetch the remote service parameter from the device */
+    $remote_service = $this->get_remote_service();
+
+    if(!(false === strpos($remote_service, 'dispatch'))) {
+      return false;
+    }
+    return true;
+  }
+
+  public function dispatch_device(array $portal_ips,
+                                  $portal_admin_username,
+                                  $portal_admin_password) {
+
+
+    $this->enable_avhs();
+    $is_dispatched = $this->has_been_dispatched();
+    $on_dispatcher = '';
+    $oak = $this->get_oak($on_dispatcher);
+    $on_dispatcher = (empty($on_dispatcher) ? false : true);
+
+    if(!$is_dispatched) {
+
+      /* Wait 20 seconds for the device to
+         connect to the dispatcher */
+      for($i = 0; $i < 20; $i++) {
+        if($on_dispatcher) {
+          break;
+        }
+        sleep(1);
+      }
+
+      if(!$on_dispatcher) {
+        throw new Exception('Device did not connect to dispatcher in the allowed time interval (20 seconds)', 0);
+      }
+
+      /* Add the device to the portal */
+      $this->add_device_to_portal($portal_ips[0],
+                                  $portal_admin_username,
+                                  $portal_admin_password,
+                                  $oak);
+    }
+    else {
       try {
-        $server_list = $this->set_axis_device_parameter('RemoteService.RemoteServerURL', $portal_ips);
+        $portal_ips = implode(',', $portal_ips);
+        $this->set_axis_device_parameter('RemoteService.ServerList', $portal_ips);
       }
       catch(Exception $e) {
-        if($e->getCode() != 401) {
-          throw new Exception('Could not set the Remote Service value');
-        }
-        else {
-          throw $e;
-        }
+        $this->set_axis_device_parameter('RemoteService.RemoteServerURL', $portal_ips);
       }
+      $this->enable_avhs(true);
     }
 
     // TODO: make it check if device is on portal?
+  }
+
+  public function add_device_to_portal($portal_ip,
+                                       $portal_admin_username,
+                                       $portal_admin_password,
+                                       $oak) {
+
+    $this->send_request(sprintf("http://%s/admin/device?a=add&u=%s&p=%s&deviceid=%s&method=oak&key=%s",
+                                $portal_ip,
+                                $portal_admin_username,
+                                $portal_admin_password,
+                                $this->id,
+                                $oak));
+  }
+
+  public function factory_default() {
+
+    $result = $this->send_request(sprintf("http://%s/axis-cgi/admin/hardfactorydefault.cgi", $this->ip));
+
+  }
+
+  /**
+   *  Enables telnet on the device.
+   */
+  public function enable_telnet() {
+    $ip = null;
+
+    $ftpObject = new AxisFtp($this->ip, $this->username, $password);
+    $path = "/tmp/";
+
+    if(!$this->isDeviceSshCapable()) {
+      $ftpObject->modify_device_files(sprintf("%sinittab", $path), "/etc/inittab", "/#tnet/", "tnet");
+    }
+    $ftpObject->modify_device_files(sprintf("%sftpd", $path), "/etc/init.d/ftpd", "/_OPTIONS/", "_OPTIONS\n\t\t/usr/sbin/telnetd");
+
+    $param = 'Network.FTP.Enabled='; // yes|no
+
+    $this->set_axis_device_parameter($param, 'no');
+    $this->set_axis_device_parameter($param, 'yes');
   }
 
   public function get_remote_service() {
@@ -507,22 +590,12 @@ class CapabilityManager {
       $server_list = $this->get_axis_device_parameter('RemoteService.ServerList');
     }
     catch(Exception $e) {
-      try {
-        $server_list = $this->get_axis_device_parameter('RemoteService.RemoteServerURL');
-      }
-      catch(Exception $e) {
-        if($e->getCode() != 401) {
-          throw new Exception('Could not retrieve the Remote Service value');
-        }
-        else {
-          throw $e;
-        }
-      }
+      $server_list = $this->get_axis_device_parameter('RemoteService.RemoteServerURL');
     }
     return $server_list;
   }
 
-  public function get_oak($device_id,
+  public function get_oak(&$server,
                           $dispatcher_ip = 'dispatchse1.avhs.axis.com',
                           $dispatcher_username = 'qa',
                           $dispatcher_password = '4Mpq%Y>y=_kTY)$(R}h9',
@@ -532,11 +605,13 @@ class CapabilityManager {
     $url = sprintf("%s://%s/dispatcher/admin/qa.php?cmd=info&cameraid=%s",
                    $transport,
                    $dispatcher_ip,
-                   $device_id);
+                   $this->id);
 
     $result = $this->send_request($url,
                                   $dispatcher_username,
                                   $dispatcher_password);
+
+    $server = substr($result, 7, strpos($result, 'key=') - 8);
 
     /* Return the result */
     $result = substr($result, strpos($result, 'key=') + 4 - strlen($result));

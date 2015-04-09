@@ -220,13 +220,23 @@ function list_devices($sql,
 
 }
 
-function move_devices_to_portal($sql,
-                                array $device_ids,
-                                array $device_credentials,
-                                $age,
-                                array $portal_ips,
-                                $portal_admin_username,
-                                $portal_admin_password) {
+function restart_avhs($sql,
+                     array $device_ids,
+                     array $device_credentials,
+                     $age) {
+  enable_avhs($sql,
+              $device_ids,
+              $device_credentials,
+              $age,
+              true);
+
+}
+
+function enable_avhs($sql,
+                     array $device_ids,
+                     array $device_credentials,
+                     $age,
+                     $restart = false) {
 
   foreach($device_ids as $device_id) {
     $devices = list_devices($sql,
@@ -247,15 +257,85 @@ function move_devices_to_portal($sql,
     }
 
     $cm = new CapabilityManager($devices[0][0]['ipv4'],
+                                $devices[0][0]['id'],
                                 $device_credentials);
 
-    /* Set the new remote service in the device */
-    $cm->move_to_portal($portal_ips,
-                        $portal_admin_username,
-                        $portal_admin_password);
+    /* Factory-default the device */
+    $cm->enable_avhs($restart);
 
   }
 }
+
+function factory_default($sql,
+                         array $device_ids,
+                         array $device_credentials,
+                         $age) {
+
+  foreach($device_ids as $device_id) {
+    $devices = list_devices($sql,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            $device_id,
+                            $age,
+                            null,
+                            null);
+
+    if(count($devices) < 1 || count($devices[0]) < 1) {
+      throw new Exception(sprintf("No device with the ID '%s' present (NOTE: age is set to %d minutes)",
+                                  $device_id,
+                                  $age));
+    }
+
+    $cm = new CapabilityManager($devices[0][0]['ipv4'],
+                                $devices[0][0]['id'],
+                                $device_credentials);
+
+    /* Factory-default the device */
+    $cm->factory_default();
+
+  }
+}
+
+function dispatch_devices($sql,
+                          array $device_ids,
+                          array $device_credentials,
+                          $age,
+                          array $portal_ips,
+                          $portal_admin_username,
+                          $portal_admin_password) {
+
+  foreach($device_ids as $device_id) {
+    $devices = list_devices($sql,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            $device_id,
+                            $age,
+                            null,
+                            null);
+
+    if(count($devices) < 1 || count($devices[0]) < 1) {
+      throw new Exception(sprintf("No device with the ID '%s' present (NOTE: age is set to %d minutes)",
+                                  $device_id,
+                                  $age));
+    }
+
+      $cm = new CapabilityManager($devices[0][0]['ipv4'],
+                                  $devices[0][0]['id'],
+                                  $device_credentials);
+
+      /* Set the new remote service in the device */
+      $cm->dispatch_device($portal_ips,
+                           $portal_admin_username,
+                           $portal_admin_password);
+
+    }
+  }
 
 function device_info($sql,
                      $device_id,
@@ -282,21 +362,43 @@ function device_info($sql,
   }
 
   $cm = new CapabilityManager($devices[0][0]['ipv4'],
-                              $device_credentials);
+                                $devices[0][0]['id'],
+                                $device_credentials);
 
-  $remote_service = null;
-  $oak = null;
-
-  /* Fetch the remote service parameter from the device */
   $remote_service = $cm->get_remote_service();
 
-  /* Fetch the device OAK from the dispatcher */
   $cm->set_proxy($proxy_address, $proxy_port);
-  $oak = $cm->get_oak($device_id);
+  $server = 'allocate';
+  $oak = $cm->get_oak($server);
   $cm->set_proxy(null, null);
 
-  return array('id' => $device_id, 'remote_service' => $remote_service, 'oak' => $oak);
+  return array('id' => $device_id,
+               'remote_service' => $remote_service,
+               'oak' => $oak,
+               'on_dispatcher' => (!(false === strpos($server, 'dispatcher')) ? 'yes' : 'no'));
 
+}
+
+function has_device_been_dispatched($sql,
+                                    $device_id,
+                                    $device_credentials,
+                                    $age,
+                                    $proxy_address,
+                                    $proxy_port) {
+
+  $remote_service = device_info($sql,
+                                $device_id,
+                                $device_credentials,
+                                $age,
+                                $proxy_address,
+                                $proxy_port);
+
+  $remote_service = $remote_service['remote_service'];
+
+  if(!(false === strpos($remote_service, 'dispatch'))) {
+    return false;
+  }
+  return true;
 }
 
 function gui_list($user,
@@ -476,17 +578,19 @@ function gui_list($user,
     $round_border_bottom_left = '';
     $round_border_bottom_right = '';
     $bottom_padding = '';
+    $lighter_bg = ' lighter_bg_gradient ';
     if($results_index++ == $results_size - 1) {
       $round_border_bottom_left = ' border_bottom_left_radius';
       $round_border_bottom_right = ' border_bottom_right_radius';
       $bottom_padding = ' bottom_cell';
+      $lighter_bg = ' lighter_bg_gradient_last ';
     }
     printf("\t\t\t\t<tr>\n");
     printf("\t\t\t\t\t<td class=\"cell_padding%s%s%s%s\"><input name=\"device_ids[]\" type=\"checkbox\" value=\"%s\" onchange=\"javascript:group_action_visibility();\" /></td>\n",
            $round_border_bottom_left,
            $round_border_bottom_right,
            $bottom_padding,
-           ($results_index % 2 ? ' lighter_bg' : ''),
+           ($results_index % 2 ? $lighter_bg : ''),
            $result['id'], // TODO: make a 'clean_name' function that removes weird chars
            $result['id']);
 
@@ -503,24 +607,24 @@ function gui_list($user,
     printf("\t\t\t\t\t<td class=\"cell_padding%s%s%s\"><a target=\"_blank\" href=\"http://%s/admin/maintenance.shtml\">%s</a>&nbsp;<a target=\"_blank\" href=\"?action=gui_device_info&device_id=%s&age=$age\"><img style=\"height: 1em;\" src=\"info.png\" alt=\"[i]\" /></a></td>\n",
            $round_border_bottom_left,
            $bottom_padding,
-           ($results_index % 2 ? ' lighter_bg' : ''),
+           ($results_index % 2 ? $lighter_bg : ''),
            $result['ipv4'],
            $result['ipv4'],
            $result['id']);
 
     printf("\t\t\t\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
-           ($results_index % 2 ? ' lighter_bg' : ''),
+           ($results_index % 2 ? $lighter_bg : ''),
            $result['model_name']);
 
     printf("\t\t\t\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
-           ($results_index % 2 ? ' lighter_bg' : ''),
+           ($results_index % 2 ? $lighter_bg : ''),
            $result['firmware_version']);
 
     printf("\t\t\t\t\t<td class=\"cell_padding%s%s\">\n%s\n\t\t\t\t</td>\n",
            $bottom_padding,
-           ($results_index % 2 ? ' lighter_bg' : ''),
+           ($results_index % 2 ? $lighter_bg : ''),
            get_capabilities_icons($result['capabilities'], 5));
 
     $time_lapsed = '&nbsp;';
@@ -552,7 +656,7 @@ function gui_list($user,
     }
     printf("\t\t\t\t\t<td class=\"cell_padding%s%s\">%s</td>\n",
            $bottom_padding,
-           ($results_index % 2 ? ' lighter_bg' : ''),
+           ($results_index % 2 ? $lighter_bg : ''),
            $time_lapsed);
 
     $occupant_and_time_lapsed = '&nbsp';
@@ -588,7 +692,7 @@ function gui_list($user,
     printf("\t\t\t\t\t<td class=\"cell_padding%s%s%s\">%s</td>\n",
            $round_border_bottom_right,
            $bottom_padding,
-           ($results_index % 2 ? ' lighter_bg' : ''),
+           ($results_index % 2 ? $lighter_bg : ''),
            $occupant_and_time_lapsed);
 
     printf("\t\t\t\t</tr>\n");
@@ -598,10 +702,13 @@ function gui_list($user,
   printf("\t\t\t\t\t\t<img style=\"height: 2em; vertical-align: -0.3em;\" src=\"down_right_arrow.png\" alt=\"->\">\n");
   printf("\t\t\t\t\t\t<input type=\"hidden\" id=\"portal_ips\" name=\"portal_ips\" value=\"\">\n");
   printf("\t\t\t\t\t\t<input type=\"hidden\" name=\"url\" value=\"%s\">\n", urlencode($current_request));
-  printf("\t\t\t\t\t\t<select name=\"action\">\n");
-  printf("\t\t\t\t\t\t\t<option value=\"move_devices_to_portal\">Move to portal</option>\n");
+  printf("\t\t\t\t\t\t<select id=\"select_action\" name=\"action\">\n");
+  printf("\t\t\t\t\t\t\t<option value=\"dispatch_devices\">Dispatch to portal</option>\n");
+  printf("\t\t\t\t\t\t\t<option value=\"enable_avhs\">Enable AVHS</option>\n");
+  printf("\t\t\t\t\t\t\t<option value=\"restart_avhs\">Restart AVHS</option>\n");
+  printf("\t\t\t\t\t\t\t<option value=\"factory_default\">Factory default</option>\n");
   printf("\t\t\t\t\t\t</select>\n");
-  printf("\t\t\t\t\t\t<input type=\"submit\" value=\"Go\" onclick=\"return set_portal_ips();\" />\n");
+  printf("\t\t\t\t\t\t<input type=\"submit\" value=\"Go\" onclick=\"return dropdown_check();\" />\n");
   printf("\t\t\t\t\t</td>\n");
   printf("\t\t\t\t</tr>\n");
   printf("\t\t\t</table>\n\t\t\t</form>\n\t\t</td>\n\t</tr>\n\n");
@@ -750,8 +857,164 @@ case 'list_devices':
   }
   break;
 
+/* Restart AVHS */
+case 'restart_avhs':
+
+  try {
+    $device_ids = null;
+    if(isset($_POST['device_ids']) && !empty($_POST['device_ids'])) {
+      $device_ids = $_POST['device_ids'];
+    }
+    else if(isset($_GET['device_ids']) && !empty($_GET['device_ids'])) {
+      $device_ids = $_GET['device_ids'];
+    }
+    else {
+      throw new Exception('Missing arguments \'device_ids[]\'', 0);
+    }
+
+    $age = 16;
+    if(isset($_POST['age']) && !empty($_POST['age'])) {
+      $age = $_POST['age'];
+    }
+    else if(isset($_GET['age']) && !empty($_GET['age'])) {
+      $age = $_GET['age'];
+    }
+
+    $url = null;
+    if(isset($_POST['url']) && !empty($_POST['url'])) {
+      $url = urldecode($_POST['url']);
+    }
+    else if(isset($_GET['url']) && !empty($_GET['url'])) {
+      $url = $_GET['url'];
+    }
+
+    restart_avhs($sql,
+                 $device_ids,
+                 $axis_device_credentials,
+                 $age);
+
+    if(empty($url)) {
+      header('Content-type: application/json; charset=utf-8');
+      printf('{\'result\':\'OK\'}');
+    }
+    else {
+      header(sprintf("Location: %s", $url));
+    }
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+
+  break;
+
+/* Enable AVHS */
+case 'enable_avhs':
+
+  try {
+    $device_ids = null;
+    if(isset($_POST['device_ids']) && !empty($_POST['device_ids'])) {
+      $device_ids = $_POST['device_ids'];
+    }
+    else if(isset($_GET['device_ids']) && !empty($_GET['device_ids'])) {
+      $device_ids = $_GET['device_ids'];
+    }
+    else {
+      throw new Exception('Missing arguments \'device_ids[]\'', 0);
+    }
+
+    $age = 16;
+    if(isset($_POST['age']) && !empty($_POST['age'])) {
+      $age = $_POST['age'];
+    }
+    else if(isset($_GET['age']) && !empty($_GET['age'])) {
+      $age = $_GET['age'];
+    }
+
+    $url = null;
+    if(isset($_POST['url']) && !empty($_POST['url'])) {
+      $url = urldecode($_POST['url']);
+    }
+    else if(isset($_GET['url']) && !empty($_GET['url'])) {
+      $url = $_GET['url'];
+    }
+
+    enable_avhs($sql,
+                $device_ids,
+                $axis_device_credentials,
+                $age);
+
+    if(empty($url)) {
+      header('Content-type: application/json; charset=utf-8');
+      printf('{\'result\':\'OK\'}');
+    }
+    else {
+      header(sprintf("Location: %s", $url));
+    }
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+
+  break;
+
+/* Factory-default a list of devices */
+case 'factory_default':
+
+  try {
+    $device_ids = null;
+    if(isset($_POST['device_ids']) && !empty($_POST['device_ids'])) {
+      $device_ids = $_POST['device_ids'];
+    }
+    else if(isset($_GET['device_ids']) && !empty($_GET['device_ids'])) {
+      $device_ids = $_GET['device_ids'];
+    }
+    else {
+      throw new Exception('Missing arguments \'device_ids[]\'', 0);
+    }
+
+    $age = 16;
+    if(isset($_POST['age']) && !empty($_POST['age'])) {
+      $age = $_POST['age'];
+    }
+    else if(isset($_GET['age']) && !empty($_GET['age'])) {
+      $age = $_GET['age'];
+    }
+
+    $url = null;
+    if(isset($_POST['url']) && !empty($_POST['url'])) {
+      $url = urldecode($_POST['url']);
+    }
+    else if(isset($_GET['url']) && !empty($_GET['url'])) {
+      $url = $_GET['url'];
+    }
+
+    factory_default($sql,
+                    $device_ids,
+                    $axis_device_credentials,
+                    $age);
+
+    if(empty($url)) {
+      header('Content-type: application/json; charset=utf-8');
+      printf('{\'result\':\'OK\'}');
+    }
+    else {
+      header(sprintf("Location: %s", $url));
+    }
+  }
+  catch(Exception $e) {
+    header('HTTP/1.0 500');
+    printf("Error [%d]: %s", $e->getCode(), $e->getMessage());
+    exit(1);
+  }
+
+  break;
+
 /* Move device to portal */
-case 'move_devices_to_portal':
+case 'dispatch_devices':
 
   try {
     $device_ids = null;
@@ -792,17 +1055,17 @@ case 'move_devices_to_portal':
       $url = $_GET['url'];
     }
 
-    move_devices_to_portal($sql,
-                           $device_ids,
-                           $axis_device_credentials,
-                           $age,
-                           explode(',', $portal_ips),
-                           $avhs_portal_admin_username,
-                           $avhs_portal_admin_password);
+    dispatch_devices($sql,
+                     $device_ids,
+                     $axis_device_credentials,
+                     $age,
+                     explode(',', $portal_ips),
+                     $avhs_portal_admin_username,
+                     $avhs_portal_admin_password);
 
     if(empty($url)) {
       header('Content-type: application/json; charset=utf-8');
-      printf('OK');
+      printf('{\'result\':\'OK\'}');
     }
     else {
       header(sprintf("Location: %s", $url));
@@ -846,7 +1109,7 @@ case 'device_info':
                           $axis_proxy_address,
                           $axis_proxy_port);
 
-    printf("%s", json_encode(array($result['remote_service'], $result['oak'])));
+    printf("%s", json_encode($result));
   }
   catch(Exception $e) {
     header('HTTP/1.0 500');
@@ -886,11 +1149,12 @@ case 'gui_device_info':
                           $axis_proxy_address,
                           $axis_proxy_port);
 
-    printf("<table border=\"1\"><tr><td style=\"font-weight: bold;\">ID</td><td style=\"font-weight: bold;\">Remote service</td><td style=\"font-weight: bold;\">OAK</td></tr>");
-    printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr></table>\n",
+    printf("<table border=\"1\"><tr><td style=\"font-weight: bold;\">ID</td><td style=\"font-weight: bold;\">Remote service</td><td style=\"font-weight: bold;\">OAK</td><td style=\"font-weight: bold;\">Is on dispatcher</td></tr>");
+    printf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr></table>\n",
            $result['id'],
            str_replace(",", "<br />\n", $result['remote_service']),
-           $result['oak']);
+           $result['oak'],
+           $result['on_dispatcher']);
   }
   catch(Exception $e) {
     header('HTTP/1.0 500');

@@ -80,6 +80,18 @@ input[type=button]:active, input.cool_button:active {
 .lighter_bg {
   background-color: rgba(255, 255, 255, 0.3);
 }
+.lighter_bg_gradient {
+  background: -webkit-linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1)); /* For Safari 5.1 to 6.0 */
+  background: -o-linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1)); /* For Opera 11.1 to 12.0 */
+  background: -moz-linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1)); /* For Firefox 3.6 to 15 */
+  background: linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1)); /* Standard syntax */
+}
+.lighter_bg_gradient_last {
+  background: -webkit-linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.0)); /* For Safari 5.1 to 6.0 */
+  background: -o-linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.0)); /* For Opera 11.1 to 12.0 */
+  background: -moz-linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.0)); /* For Firefox 3.6 to 15 */
+  background: linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.0)); /* Standard syntax */
+}
 .div_device_bookable, .div_device_booked {
   font-weight: bold;
   cursor: pointer;

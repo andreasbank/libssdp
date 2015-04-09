@@ -153,6 +153,7 @@ foreach($abused_results as $abused_result) {
     else if(!(false === stripos($model_name, 'axis'))) {
 
       $cm = new CapabilityManager(($ipv4 ? $ipv4 : $ipv6),
+                                  null,
                                   $axis_device_credentials);
   
       /* Fetch the firmware version from the device */
