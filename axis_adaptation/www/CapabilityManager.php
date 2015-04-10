@@ -520,6 +520,8 @@ class CapabilityManager {
           break;
         }
         sleep(1);
+        $oak = $this->get_oak($on_dispatcher);
+        $on_dispatcher = (empty($on_dispatcher) ? false : true);
       }
 
       if(!$on_dispatcher) {
@@ -551,12 +553,13 @@ class CapabilityManager {
                                        $portal_admin_password,
                                        $oak) {
 
-    $this->send_request(sprintf("http://%s/admin/device?a=add&u=%s&p=%s&deviceid=%s&method=oak&key=%s",
-                                $portal_ip,
-                                $portal_admin_username,
-                                $portal_admin_password,
-                                $this->id,
-                                $oak));
+    $url = sprintf("https://%s/admin/device.php?a=add&u=%s&p=%s&deviceid=%s&method=oak&key=%s",
+                   $portal_ip,
+                   $portal_admin_username,
+                   $portal_admin_password,
+                   $this->id,
+                   $oak);
+    $this->send_request($url);
   }
 
   public function factory_default() {
