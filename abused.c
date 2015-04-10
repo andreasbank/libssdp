@@ -1263,15 +1263,15 @@ int main(int argc, char **argv) {
         /* If message is not filtered then use it */
         if(filters_factory == NULL || !drop_message) {
 
-          /* Fetch custom fields */
-          if(conf.fetch_info && !fetch_custom_fields(ssdp_message)) {
-            PRINT_DEBUG("Could not fetch custom fields");
-          }
-
           /* Add ssdp_message to ssdp_cache */
           if(!add_ssdp_message_to_cache(&ssdp_cache, &ssdp_message)) {
             PRINT_ERROR("Failed adding SSDP message to SSDP cache, skipping");
             continue;
+          }
+
+          /* Fetch custom fields */
+          if(ssdp_message && conf.fetch_info && !fetch_custom_fields(ssdp_message)) {
+            PRINT_DEBUG("Could not fetch custom fields");
           }
           ssdp_message = NULL;
 
@@ -2429,7 +2429,7 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
 
       /* Create socket */
       PRINT_DEBUG("creating socket");
-      SOCKET resolve_sock = setup_socket(conf.use_ipv6,
+      SOCKET fetch_sock = setup_socket(conf.use_ipv6,
                  FALSE,
                  FALSE,
                  conf.interface,
@@ -2440,7 +2440,7 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
                  FALSE,
                  FALSE);
 
-      if(resolve_sock == SOCKET_ERROR) {
+      if(fetch_sock == SOCKET_ERROR) {
         PRINT_ERROR("fetch_custom_fields(); setup_socket(): (%d) %s", errno, strerror(errno));
         free(ip);
         free(rest);
@@ -2449,18 +2449,10 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
         return 0;
       }
 
-      if(!set_receive_timeout(resolve_sock, 5)) {
+      if(!set_receive_timeout(fetch_sock, 5) ||
+         !set_send_timeout(fetch_sock, 1)) {
         free(ip);
-        close(resolve_sock);
-        free(rest);
-        free(request);
-        free(response);
-        return 0;
-      }
-
-      if(!set_send_timeout(resolve_sock, 1)) {
-        free(ip);
-        close(resolve_sock);
+        close(fetch_sock);
         free(rest);
         free(request);
         free(response);
@@ -2478,7 +2470,7 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
           PRINT_ERROR("The destination IP address could be determined (%s)\n", (ip_length < 1 ? "empty" : ip));
         }
         free(ip);
-        close(resolve_sock);
+        close(fetch_sock);
         free(rest);
         free(request);
         free(response);
@@ -2504,10 +2496,10 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
       free(tmp_ip);
       tmp_ip = NULL;
       #endif
-      if(connect(resolve_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) == SOCKET_ERROR) {
+      if(connect(fetch_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) == SOCKET_ERROR) {
         PRINT_ERROR("fetch_custom_fields(); connect(): (%d) %s", errno, strerror(errno));
         free(ip);
-        close(resolve_sock);
+        close(fetch_sock);
         free(rest);
         free(request);
         free(response);
@@ -2527,17 +2519,17 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
       used_length += snprintf(request + used_length, 1024 - used_length, "Host: %s\r\n", ip);
       snprintf(request + used_length, 1024 - used_length, "User-Agent: abused-%s\r\n\r\n", ABUSED_VERSION);
       PRINT_DEBUG("sending string:\n%s", request);
-      int bytes = send(resolve_sock, request, strlen(request), 0);
+      int bytes = send(fetch_sock, request, strlen(request), 0);
       PRINT_DEBUG("sent %d bytes", bytes);
       do {
         bytes = 0;
-        bytes = recv(resolve_sock, response + bytes_received, DEVICE_INFO_SIZE - bytes_received, 0);
+        bytes = recv(fetch_sock, response + bytes_received, DEVICE_INFO_SIZE - bytes_received, 0);
         bytes_received += bytes;
       } while(bytes > 0);
       PRINT_DEBUG("received %d bytes", bytes_received);
       PRINT_DEBUG("%s", response);
       PRINT_DEBUG("closing socket");
-      close(resolve_sock);
+      close(fetch_sock);
       free(ip);
       free(rest);
       free(request);
@@ -4086,9 +4078,9 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
     while(ssdp_cache) {
       if(0 == strcmp(ssdp_message->ip, ssdp_cache->ssdp_message->ip)) {
         /* Found a duplicate, update existing instead */
-        PRINT_DEBUG("Found duplicate SSDP message, updating");
+        PRINT_DEBUG("Found duplicate SSDP message (%s), updating", ssdp_cache->ssdp_message->ip);
         strcpy(ssdp_cache->ssdp_message->datetime, ssdp_message->datetime);
-        if(!ssdp_cache->ssdp_message->mac) {
+        if(strlen(ssdp_cache->ssdp_message->mac) < 1) {
           strcpy(ssdp_cache->ssdp_message->mac, ssdp_message->mac);
         }
         // TODO: make it update all existing fields before freeing it...
