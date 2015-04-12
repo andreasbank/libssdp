@@ -258,7 +258,6 @@ try {
                       <input type="input" name="capability" value="<?=$capability?>" />
                     </td>
                     <td rowspan="3" style="text-align: center;">
-                      <input type="hidden" name="action" value="gui_list" />
                       <input type="hidden" name="user" value="<?=$user?>" />
                       <input type="submit" class="apply_button" style="border: none; background-color: transparent; box-shadow: none; margin-left: 1em; margin-right: 2em;" title="Apply filters" value="" />
                     </td>
@@ -300,7 +299,7 @@ try {
                       Sort by:
                     </td>
                     <td>
-                      <select style="width: 100%%;" name="sort_by">
+                      <select style="width: 100%;" name="sort_by">
                         <option <?=(empty($sort_by) ? 'selected="selected" ' : '')?>value="">none</option>
 <?php
   foreach($result_columns as $option) {
@@ -319,7 +318,7 @@ try {
           </tr>
           <tr>
             <td>
-              <form id="group_action_form" method="post" action="">
+              <form id="group_action_form" method="post" action="./">
                 <table class="no_cell_space" style="margin: none; width: 100%;">
                   <tr>
                     <td class="title_td_result_table">&nbsp;</td>

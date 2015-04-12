@@ -56,6 +56,14 @@ function parse_http_args() {
     $args['locked_by'] = $_GET['locked_by'];
   }
 
+  $args['device_ids'] = null;
+  if(isset($_POST['device_ids']) && !empty($_POST['device_ids'])) {
+    $args['device_ids'] = $_POST['device_ids'];
+  }
+  else if(isset($_GET['device_ids']) && !empty($_GET['device_ids'])) {
+    $args['device_ids'] = $_GET['device_ids'];
+  }
+
   $args['device_id'] = null;
   if(isset($_POST['device_id']) && !empty($_POST['device_id'])) {
     $args['device_id'] = $_POST['device_id'];
@@ -107,10 +115,10 @@ function parse_http_args() {
 
   $args['url'] = null;
   if(isset($_POST['url']) && !empty($_POST['url'])) {
-    $args['url'] = $_POST['url'];
+    $args['url'] = urldecode($_POST['url']);
   }
   else if(isset($_GET['url']) && !empty($_GET['url'])) {
-    $args['url'] = $_GET['url'];
+    $args['url'] = urldecode($_GET['url']);
   }
 
   return $args;
@@ -192,7 +200,7 @@ try {
     if(!isset($args['device_ids']) || empty($args['device_ids'])) {
       throw new Exception('Missing arguments \'device_ids[]\'', 0);
     }
-  
+ 
     $controller->factory_default($args['device_ids'],
                                  $args['age']);
   

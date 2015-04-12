@@ -107,7 +107,7 @@ class Controller {
 
     /* Sort the results if $sort_by is set */
     if(!empty($sort_by)) {
-      $this->sort_results($results, $sort_by);
+      $this->sort_results($results[0], $sort_by);
     }
 
     return $results;
