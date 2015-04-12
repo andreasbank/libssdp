@@ -3,8 +3,8 @@
 # /etc/init.d/abused
 # Subsystem file for "abused" server
 #
-# chkconfig: 2345 95 05
-# description: abused daemon
+# chkconfig: 2345 99 01
+# description: Abused daemon for scanning UPnP devices
 #
 # processname: abused
 # pidfile: /var/run/abused.pid
@@ -18,7 +18,7 @@
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: Start abused daemon at boot time
-# Description:       abused daemon for scanning UPnP devices.
+# Description:       Abused daemon for scanning UPnP devices
 ### END INIT INFO
 
 ###

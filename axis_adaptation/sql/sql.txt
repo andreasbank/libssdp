@@ -300,6 +300,7 @@
                                   IN `v_capability_state` VARCHAR(255),
                                   IN `v_age` INT,
                                   IN `v_locked_by` VARCHAR(255),
+                                  IN `v_ip` VARCHAR(255),
                                   IN `v_device_id` VARCHAR(255))
     SQL SECURITY INVOKER
   DELIMITER //

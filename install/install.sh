@@ -80,7 +80,7 @@ case "$1" in
 		if [ ! -z "$(which chkconfig)" ]; then
 		  chkconfig --add $SERVIE_NAME
     elif [ ! -z "$(which update-rc.d)" ]; then
-      update-rc.d $SERVICE_NAME defaults
+      update-rc.d $SERVICE_NAME defaults 99
     else
       echo "Missing chkconfig or update-rc.d, can not install"
       exit 1
