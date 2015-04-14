@@ -494,11 +494,15 @@ static unsigned int cache_to_xml(ssdp_cache_s *ssdp_cache,
                          xml_buffer_size,
                          "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n");
   while(ssdp_cache) {
-    PRINT_DEBUG("cache_to_xml buffer used: %d; left: %d", used_buffer, xml_buffer_size - used_buffer);
+    PRINT_DEBUG("cache_to_xml(): buffer used: %d; left: %d", used_buffer, xml_buffer_size - used_buffer);
+    PRINT_DEBUG("start with with '%s'",
+                ssdp_cache->ssdp_message->ip);
     used_buffer += to_xml(ssdp_cache->ssdp_message,
                           FALSE,
                           (xml_buffer + used_buffer),
                           (xml_buffer_size - used_buffer));
+    PRINT_DEBUG("done with '%s'",
+                ssdp_cache->ssdp_message->ip);
     ssdp_cache = ssdp_cache->next;
   }
   used_buffer += snprintf((xml_buffer + used_buffer),
@@ -1263,14 +1267,15 @@ int main(int argc, char **argv) {
         /* If message is not filtered then use it */
         if(filters_factory == NULL || !drop_message) {
 
-          /* Add ssdp_message to ssdp_cache */
+          /* Add ssdp_message to ssdp_cache
+             (this internally checks for duplicates) */
           if(!add_ssdp_message_to_cache(&ssdp_cache, &ssdp_message)) {
             PRINT_ERROR("Failed adding SSDP message to SSDP cache, skipping");
             continue;
           }
 
           /* Fetch custom fields */
-          if(ssdp_message && conf.fetch_info && !fetch_custom_fields(ssdp_message)) {
+          if(conf.fetch_info && !fetch_custom_fields(ssdp_message)) {
             PRINT_DEBUG("Could not fetch custom fields");
           }
           ssdp_message = NULL;
@@ -1282,10 +1287,10 @@ int main(int argc, char **argv) {
             if(*ssdp_cache->ssdp_messages_count >= conf.ssdp_cache_size) {
               PRINT_DEBUG("Cache max size reached, sending and emptying");
               if(!flush_ssdp_cache(&ssdp_cache,
-                               "/abused/post.php",
-                               notif_recipient_addr,
-                               80,
-                               1)) {
+                                   "/abused/post.php",
+                                   notif_recipient_addr,
+                                   80,
+                                  1)) {
                 PRINT_DEBUG("Failed flushing SSDP cache");
                 continue;
               }
@@ -2398,6 +2403,17 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
   int bytes_received = 0;
   char *location_header = NULL;
   ssdp_header_s *ssdp_headers = ssdp_message->headers;
+
+  if(ssdp_message->custom_fields) {
+    PRINT_DEBUG("Custom info has already been fetched for this device");
+    return 1;
+  }
+
+  if(!ssdp_headers) {
+    PRINT_ERROR("Missing headers, cannot fetch custom info");
+    return 0;
+  }
+
   while(ssdp_headers) {
     if(ssdp_headers->type == SSDP_HEADER_LOCATION) {
       location_header = ssdp_headers->contents;
@@ -2552,27 +2568,31 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
       PRINT_DEBUG("fields_size: %d", fields_size);
 
       for(i = 0; i < fields_size; i++) {
+        ssdp_custom_field_s *cf = NULL;
 
-        /* Create a new ssdp_custom_field_s */
-        ssdp_custom_field_s *cf = (ssdp_custom_field_s *)malloc(sizeof(ssdp_custom_field_s));
-        memset(cf, 0, sizeof(ssdp_custom_field_s));
-
-        /* Parse 'name' and 'contents' */
         int field_length = strlen(field[i]);
-
-        cf->name = (char *)malloc(sizeof(char) * field_length + 1);
-        strcpy(cf->name, field[i]);
 
         char needle[field_length + 4];
         sprintf(needle, "<%s>", field[i]);
         tmp_pointer = strstr(response, needle);
 
         if(tmp_pointer) {
+
+          /* Create a new ssdp_custom_field_s */
+          cf = (ssdp_custom_field_s *)malloc(sizeof(ssdp_custom_field_s));
+          memset(cf, 0, sizeof(ssdp_custom_field_s));
+
+          /* Set 'name' */
+          cf->name = (char *)malloc(sizeof(char) * field_length + 1);
+          strcpy(cf->name, field[i]);
+
+          /* Parse 'contents' */
           sprintf(needle, "</%s>", field[i]);
           buffer_size = (int)(strstr(response, needle) - (tmp_pointer + field_length + 2) + 1);
           cf->contents = (char *)malloc(sizeof(char) * buffer_size);
           memset(cf->contents, '\0', buffer_size);
           strncpy(cf->contents, (tmp_pointer + field_length + 2), buffer_size - 1);
+
           PRINT_DEBUG("Found expected custom field (%d) '%s' with value '%s'",
                       ssdp_message->custom_field_count,
                       cf->name,
@@ -2580,6 +2600,7 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
         }
         else {
           PRINT_DEBUG("Expected custom field '%s' is missing", field[i]);
+          continue;
         }
 
         /* If it is the first one then set this as the
@@ -2653,9 +2674,11 @@ static unsigned int to_xml(const ssdp_message_s *ssdp_message,
 
   if(xml_buffer == NULL) {
     PRINT_ERROR("to_xml(): No XML message buffer specified");
+    return -1;
   }
   else if(ssdp_message == NULL) {
     PRINT_ERROR("to_xml(): No SSDP message specified");
+    return -1;
   }
 
   memset(xml_buffer, '\0', sizeof(char) * xml_buffer_size);
@@ -2663,6 +2686,7 @@ static unsigned int to_xml(const ssdp_message_s *ssdp_message,
     used_length = snprintf(xml_buffer, xml_buffer_size,
     "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n");
   }
+  PRINT_DEBUG("Setting upnp xml-fields");
   used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
   "\t<message length=\"%d\">\n", ssdp_message->message_length);
   used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
@@ -2690,18 +2714,20 @@ static unsigned int to_xml(const ssdp_message_s *ssdp_message,
     /* Leading (29) and tailing (13) string sizes combined */
     int needed_size = 48;
 
+  PRINT_DEBUG("Setting custom xml-fields");
     /* Calculate needed buffer size */
     while(cf) {
 
       /* Each header combined (46 + X + Y + 18) string size */
       needed_size += strlen(cf->name) + strlen(cf->contents) + 50;
       cf = cf->next;
+  PRINT_DEBUG("Done calculating buffer");
 
     }
     cf = ssdp_message->custom_fields->first;
 
     /* Check if buffer has enought room */
-    PRINT_DEBUG("buffer left: %d, buffer_needed: %d", (xml_buffer_size - used_length), needed_size);
+    PRINT_DEBUG("to_xml(): XML custom fields buffer left: %d, buffer_needed: %d", (xml_buffer_size - used_length), needed_size);
     if((xml_buffer_size - used_length) < needed_size) {
       PRINT_ERROR("to_xml(): Not enought buffer space left to convert the SSDP message custom fields to XML, skipping\n");
     }
@@ -2712,19 +2738,22 @@ static unsigned int to_xml(const ssdp_message_s *ssdp_message,
       "\t\t<custom_fields count=\"%d\">\n", ssdp_message->custom_field_count);
 
       while(cf) {
+  PRINT_DEBUG("Setting:");
+  PRINT_DEBUG("'%s'", cf->name);
         used_length += snprintf(xml_buffer + used_length,
                                 xml_buffer_size - used_length,
                                 "\t\t\t<custom_field name=\"%s\">\n\t\t\t\t%s\n\t\t\t</custom_field>\n",
                                 cf->name,
                                 cf->contents);
         cf = cf->next;
+        PRINT_DEBUG("Done with this one");
       }
 
       cf = NULL;
       used_length += snprintf(xml_buffer + used_length,
                               xml_buffer_size - used_length,
                               "\t\t</custom_fields>\n");
-      PRINT_DEBUG("XML custom-fields bytes: %d", (int)strlen(xml_buffer));
+      PRINT_DEBUG("to_xml(): XML custom-fields bytes used: %d", (int)strlen(xml_buffer));
     }
 
   }
@@ -4078,13 +4107,17 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
     while(ssdp_cache) {
       if(0 == strcmp(ssdp_message->ip, ssdp_cache->ssdp_message->ip)) {
         /* Found a duplicate, update existing instead */
-        PRINT_DEBUG("Found duplicate SSDP message (%s), updating", ssdp_cache->ssdp_message->ip);
+        PRINT_DEBUG("Found duplicate SSDP message (IP '%s'), updating", ssdp_cache->ssdp_message->ip);
         strcpy(ssdp_cache->ssdp_message->datetime, ssdp_message->datetime);
         if(strlen(ssdp_cache->ssdp_message->mac) < 1) {
+          PRINT_DEBUG("Field MAC was empty, updating to '%s'", ssdp_message->mac);
           strcpy(ssdp_cache->ssdp_message->mac, ssdp_message->mac);
         }
         // TODO: make it update all existing fields before freeing it...
+        PRINT_DEBUG("Trowing away the duplicate ssdp message and using existing instead");
         free_ssdp_message(ssdp_message_pointer);
+        /* Point to the existing ssdp message */
+        *ssdp_message_pointer = ssdp_cache->ssdp_message;
         return TRUE;
       }
       ssdp_cache = ssdp_cache->next;
@@ -4100,9 +4133,9 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
   if(NULL != ssdp_cache->next) {
     PRINT_DEBUG("Given SSDP Cache list is not pointing to the last element");
     while(NULL != ssdp_cache->next) {
-      PRINT_DEBUG("Moving to the next element in the cache list");
       ssdp_cache = ssdp_cache->next;
     }
+    PRINT_DEBUG("Moved to the last element in the cache list");
   }
 
   /* If working on an preexisting cache list
