@@ -2623,9 +2623,11 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
 
       }
 
-      /* End the linked list and reset the pointer to the beginning */
-      ssdp_message->custom_fields->next = NULL;
-      ssdp_message->custom_fields = ssdp_message->custom_fields->first;
+      if(ssdp_message->custom_fields) {
+        /* End the linked list and reset the pointer to the beginning */
+        ssdp_message->custom_fields->next = NULL;
+        ssdp_message->custom_fields = ssdp_message->custom_fields->first;
+      }
 
     }
 
