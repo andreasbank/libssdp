@@ -10,7 +10,7 @@
  *
  *  [A]bused is [B]anks [U]ber-[S]exy-[E]dition [D]aemon
  *
- *  Copyright(C) 2014 by Andreas Bank, andreas.mikael.bank@gmail.com
+ *  Copyright(C) 2014-1017 by Andreas Bank, andreas.mikael.bank@gmail.com
  */
 
 /*
@@ -39,15 +39,6 @@
    abused repository (<repo>/udhisapi.xml) */
 #define DEBUG_MSG_LOCATION_HEADER "http://127.0.0.1:80/udhisapi.xml"
 
-/* Uncomment the line below to enable detailed debug information */
-#define DEBUG___
-/* Uncomment the line below to write to a to a file instead of stdout */
-#define DEBUG_TO_FILE___
-
-#define DEBUG_COLOR_BEGIN "\x1b[0;32m"
-#define ERROR_COLOR_BEGIN "\x1b[0;31m"
-#define DEBUG_COLOR_END "\x1b[0;0m"
-
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -58,7 +49,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
-#include <sys/stat.h>
 #include <netdb.h>
 
 #include <netinet/in.h>
@@ -81,59 +71,14 @@
 #include <net/if_types.h>
 #include <net/route.h> //test if needed?
 #include <sys/file.h>
-#define IPV6_ADD_MEMBERSHIP IPV6_JOIN_GROUP
-#define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
 #endif
 
-/* PORTABILITY */
-#define TRUE              1
-#define FALSE             0
-#define INVALID_SOCKET   -1
-#define SOCKET_ERROR     -1
-
-#ifndef SIOCGARP
-    #define SIOCGARP SIOCARPIPLL
-#endif
-
-#ifdef DEBUG___
-  #define DEBUG_PRINT(...)  printf(__VA_ARGS__)
-#else
-  #define DEBUG_PRINT(...)  do { } while (false)
-#endif
-
-#ifdef DEBUG___
-  #define PRINT_DEBUG(...)  print_debug(NULL, DEBUG_COLOR_BEGIN, __FILE__, __LINE__, __VA_ARGS__)
-  #define PRINT_ERROR(...)  print_debug(stderr, ERROR_COLOR_BEGIN, __FILE__, __LINE__, __VA_ARGS__)
-  #define ADD_ALLOC(...)    add_alloc(__VA_ARGS__)
-  #define REMOVE_ALLOC(...) remove_alloc(__VA_ARGS__)
-  #define PRINT_ALLOC()     print_alloc()
-#else
-  #define PRINT_DEBUG(...)  do { } while (FALSE)
-  #define PRINT_ERROR(...)  fprintf(stderr, __VA_ARGS__)
-  #define ADD_ALLOC(...)    do { } while (FALSE)
-  #define REMOVE_ALLOC(...) do { } while (FALSE)
-  #define PRINT_ALLOC(...)  do { } while (FALSE)
-#endif
-
-#define DAEMON_PORT           43210   // port the daemon will listen on
-#define RESULT_SIZE           1048576 // 1MB for the scan results
-#define SSDP_ADDR             "239.255.255.250" // SSDP address
-#define SSDP_ADDR6_LL         "ff02::c" // SSDP IPv6 link-local address
-#define SSDP_ADDR6_SL         "ff05::c" // SSDP IPv6 site-local address
-#define SSDP_PORT             1900 // SSDP port
-#define NOTIF_RECV_BUFFER     2048 // notification receive-buffer
-#define XML_BUFFER_SIZE       2048 // XML buffer/container string
-#define IPv4_STR_MAX_SIZE     16 // aaa.bbb.ccc.ddd
-#define IPv6_STR_MAX_SIZE     46 // xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:aaa.bbb.ccc.ddd
-#define MAC_STR_MAX_SIZE      18 // 00:40:8C:1A:2B:3C + '\0'
-#define PORT_MAX_NUMBER       65535
-#define LISTEN_QUEUE_LENGTH   2
-#define DEVICE_INFO_SIZE      16384
-#define MULTICAST_TIMEOUT     2
-
-#define ANSI_COLOR_GREEN   "\x1b[1;32m"
-#define ANSI_COLOR_RED     "\x1b[1;31m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
+#include "configuration.h"
+#include "common_definitions.h"
+#include "log.h"
+#include "net_definitions.h"
+#include "ssdp.h"
+#include "string_utils.h"
 
 /* SSDP header types string representations */
 #define SSDP_HEADER_HOST_STR        "host"
@@ -166,10 +111,6 @@
 #define SSDP_HEADER_XUSERAGENT      12
 #define SSDP_HEADER_USN             13
 #define SSDP_HEADER_UNKNOWN         0
-
-
-typedef int SOCKET;
-typedef int BOOL;
 
 /* Structs */
 typedef struct ssdp_header_struct {
@@ -226,29 +167,6 @@ typedef struct filters_factory_struct {
   unsigned char filters_count;
 } filters_factory_s;
 
-typedef struct configuration_struct {
-  char                interface[IPv6_STR_MAX_SIZE];   /* Interface to use */
-  char                ip[IPv6_STR_MAX_SIZE];          /* Interface IP to use */
-  BOOL                run_as_daemon;                  /* Run the program as a daemon ignoring control signals and terminal */
-  BOOL                run_as_server;                  /* Run the program as a server, open a port and wait for incoming connection (requests) */
-  BOOL                listen_for_upnp_notif;          /* Switch for enabling listening for UPnP (SSDP) notifications */
-  BOOL                scan_for_upnp_devices;          /* Switch to perform an active UPnP (SSDP) scan */
-  BOOL                forward_enabled;                /* Switch to enable forwarding of the scan results */
-  BOOL                fetch_info;                     /* Don't try to fetch device info from the url in the "Location" header */
-  BOOL                ssdp_cache_size;                /* The size of the ssdp_cache list */
-  BOOL                json_output;                    /* Convert to JSON before forwarding */
-  BOOL                xml_output;                     /* Convert to XML before forwarding */
-  unsigned char       ttl;                            /* Time-To-Live value, how many routers the multicast shall propagate through */
-  BOOL                ignore_search_msgs;             /* Automatically add a filter to ignore M-SEARCH messages*/
-  char               *filter;                         /* Grep-like filter string */
-  BOOL                use_ipv4;                       /* Force the usage of the IPv4 protocol */
-  BOOL                use_ipv6;                       /* Force the usage of the IPv6 protocol */
-  BOOL                quiet_mode;                     /* Minimize informative output */
-  int                 upnp_timeout;                   /* The time to wait for a device to answer a query */
-  BOOL                enable_loopback;                /* Enable multicast loopback traffic */
-} configuration_s;
-
-
 /* Globals */
 static SOCKET               notif_server_sock = 0;       /* The main socket for listening for UPnP (SSDP) devices (or device answers) */
 static SOCKET               notif_client_sock = 0;       /* The sock that we want to ask/look for devices on (unicast) */
@@ -259,13 +177,10 @@ static configuration_s      conf;                         /* The program configu
 
 /* Functions */
 static void free_stuff();
-static void set_default_configuration(configuration_s *);
-static void parse_args(int, char * const *, configuration_s *);
 static void exitSig(int);
 static BOOL build_ssdp_message(ssdp_message_s *, char *, char *, int, const char *);
 static unsigned char get_header_type(const char *);
 static const char *get_header_string(const unsigned int, const ssdp_header_s *);
-static int strpos(const char*, const char *);
 static int send_stuff(const char *, const char *, const struct sockaddr_storage *, int, int);
 static void free_ssdp_message(ssdp_message_s **);
 static int fetch_custom_fields(ssdp_message_s *);
@@ -275,7 +190,6 @@ static BOOL parse_url(const char *, char *, int, int *, char *, int);
 static void parse_filters(char *, filters_factory_s **, BOOL);
 //static char *get_ip_address_from_socket(const SOCKET);
 static char *get_mac_address_from_socket(const SOCKET, struct sockaddr_storage *, char *);
-static BOOL parse_address(const char *, struct sockaddr_storage **);
 static int find_interface(struct sockaddr_storage *, char *, char *);
 static SOCKET create_upnp_listener(char *, int, int);
 static BOOL set_send_timeout(SOCKET, int);
@@ -300,13 +214,6 @@ static void display_ssdp_cache(ssdp_cache_s *, BOOL);
 static void move_cursor(int, int);
 static void get_window_size(int *, int *);
 static ssdp_custom_field_s *get_custom_field(ssdp_message_s *, const char *);
-#ifdef DEBUG_TO_FILE___
-static int fsize(const char *);
-#endif
-#ifdef DEBUG___
-static int chr_count(char *, char);
-static void print_debug(FILE *, const char *, const char*, int, char *, ...);
-#endif
 
 /**
  * Prepares the process to run as a daemon
@@ -334,10 +241,8 @@ static void daemonize() {
 
   /* If started with init then no need to detach and do all the stuff */
   if(getppid() == 1) {
-    
     PRINT_DEBUG("Started by init, skipping some daemon setup");
     goto started_with_init;
-
   }
 
   /* Ignore signals */
@@ -721,184 +626,6 @@ static void free_stuff() {
 
 }
 
-static void usage() {
-  printf("[A]bused is [B]anks [U]ber-[S]exy-[E]dition [D]aemon\"\n\n");
-  printf("USAGE: abused [OPTIONS]\n");
-  printf("OPTIONS:\n");
-  //printf("\t-C <file.conf>    Configuration file to use\n");
-  printf("\t-i                Interface to use, default is all\n");
-  printf("\t-I                Interface IP address to use, default is a bind-all address\n");
-  printf("\t-t                TTL value (routers to hop), default is 1\n");
-  printf("\t-f <string>       Filter for capturing, 'grep'-like effect. Also works\n");
-  printf("\t                  for -u and -U where you can specify a list of\n");
-  printf("\t                  comma separated filters\n");
-  printf("\t-M                Don't ignore UPnP M-SEARCH messages\n");
-  printf("\t-S                Run as a server,\n");
-  printf("\t                  listens on port 43210 and returns a\n");
-  printf("\t                  UPnP scan result (formatted list) for AXIS devices\n");
-  printf("\t                  upon receiving the string 'abused'\n");
-  printf("\t-d                Run as a UNIX daemon,\n");
-  printf("\t                  only works in combination with -S or -a\n");
-  printf("\t-u                Listen for local UPnP (SSDP) notifications\n");
-  printf("\t-U                Perform an active search for UPnP devices\n");
-  printf("\t-a <ip>:<port>    Forward the events to the specified ip and port,\n");
-  printf("\t                  also works in combination with -u.\n");
-  printf("\t-F                Do not try to parse the \"Location\" header and fetch device info\n");
-  //printf("\t-j                Convert results to JSON before sending\n");
-  printf("\t-x                Convert results to XML before sending\n");
-  //printf("\t-4                Force the use of the IPv4 protocol\n");
-  //printf("\t-6                Force the use of the IPv6 protocol\n");
-  printf("\t-q                Be quiet!\n");
-  printf("\t-T                The time to wait for a device to answer a query\n");
-  printf("\t-L                Enable multicast loopback traffic\n");
-}
-
-static void set_default_configuration(configuration_s *c) {
-
-  /* Default configuration */
-  memset(c->interface, '\0', IPv6_STR_MAX_SIZE);
-  memset(c->ip, '\0', IPv6_STR_MAX_SIZE);
-  c->run_as_daemon         = FALSE;
-  c->run_as_server         = FALSE;
-  c->listen_for_upnp_notif = FALSE;
-  c->scan_for_upnp_devices = FALSE;
-  c->forward_enabled       = FALSE;
-  c->ssdp_cache_size       = 10;
-  c->fetch_info            = TRUE;
-  c->json_output           = FALSE;
-  c->xml_output            = FALSE;
-  c->ttl                   = 1;
-  c->filter                = NULL;
-  c->ignore_search_msgs    = TRUE;
-  c->use_ipv4              = FALSE;
-  c->use_ipv6              = FALSE;
-  c->quiet_mode            = FALSE;
-  c->upnp_timeout          = MULTICAST_TIMEOUT;
-  c->enable_loopback       = FALSE;
-}
-
-/* Parse arguments */
-static void parse_args(const int argc, char * const *argv, configuration_s *conf) {
-  int opt;
-
-  while ((opt = getopt(argc, argv, "C:i:I:t:f:MSduUma:RFc:jx64qT:L")) > 0) {
-    char *pend = NULL;
-
-    switch (opt) {
-
-    case 'C':
-      /*if(!parse_configuration_file(conf, optarg)) {
-        printf("Parsing of '%s' failed!, optarg);
-      };*/
-      break;
-
-    case 'i':
-      strncpy(conf->interface, optarg, IPv6_STR_MAX_SIZE);
-      break;
-
-    case 'I':
-      strncpy(conf->ip, optarg, IPv6_STR_MAX_SIZE);
-      break;
-
-    case 't':
-      // TODO: errorhandling
-      pend = NULL;
-      conf->ttl = (unsigned char)strtol(optarg, &pend, 10);
-      break;
-
-    case 'f':
-      conf->filter = optarg;
-      break;
-
-    case 'M':
-      conf->ignore_search_msgs = FALSE;
-      break;
-
-    case 'S':
-      conf->run_as_server = TRUE;
-      break;
-
-    case 'd':
-      conf->run_as_daemon = TRUE;
-      break;
-
-    case 'u':
-      conf->listen_for_upnp_notif = TRUE;
-      break;
-
-    case 'U':
-      conf->scan_for_upnp_devices = TRUE;
-      break;
-
-    case 'a':
-      if(optarg != NULL && strlen(optarg) > 0) {
-        PRINT_DEBUG("parse_address()");
-        if(!parse_address(optarg, &notif_recipient_addr)) {
-          usage();
-          free_stuff();
-          exit(EXIT_FAILURE);
-        }
-        conf->forward_enabled = TRUE;
-      }
-      break;
-
-    case 'm':
-      printf("         {\n      {   }\n       }_{ __{\n    .-{   }   }-.\n   (   }     {   )\n   |`-.._____..-'|\n   |             ;--.\n   |            (__  \\\n   |             | )  )\n   |   ABUSED    |/  /\n   |             /  /\n   |            (  /\n   \\             y'\n    `-.._____..-'\n");
-      free_stuff();
-      exit(EXIT_SUCCESS);
-
-    case 'F':
-      conf->fetch_info = FALSE;
-      break;
-
-    case 'c':
-      // TODO: errorhandling
-      pend = NULL;
-      conf->ssdp_cache_size = (int)strtol(optarg, &pend, 10);
-      break;
-
-    case 'j':
-      conf->xml_output = FALSE;
-      conf->json_output = TRUE;
-      break;
-
-    case 'x':
-      conf->json_output = FALSE;
-      conf->xml_output = TRUE;
-      break;
-
-    case '4':
-      conf->use_ipv6 = FALSE;
-      conf->use_ipv4 = TRUE;
-      break;
-
-    case '6':
-      conf->use_ipv4 = FALSE;
-      conf->use_ipv6 = TRUE;
-      break;
-
-    case 'q':
-      conf->quiet_mode = TRUE;
-      break;
-
-    case 'T':
-      // TODO: errorhandling
-      pend = NULL;
-      conf->upnp_timeout = (int)strtol(optarg, &pend, 10);
-      break;
-
-    case 'L':
-      conf->enable_loopback = TRUE;
-      break;
-
-    default:
-      usage();
-      free_stuff();
-      exit(EXIT_FAILURE);
-    }
-  }
-}
-
 static void get_window_size(int *width, int *height) {
     struct winsize w;
     ioctl(0, TIOCGWINSZ, &w);
@@ -1049,7 +776,10 @@ int main(int argc, char **argv) {
   #endif
 
   set_default_configuration(&conf);
-  parse_args(argc, argv, &conf);
+  if (parse_args(argc, argv, &conf)) {
+    free_stuff();
+    exit(EXIT_FAILURE);
+  }
 
   /* Output forward status */
   if(!conf.quiet_mode && notif_recipient_addr) {
@@ -1811,43 +1541,6 @@ static BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac, int
   message->headers = message->headers->first;
 
   return TRUE;
-
-}
-
-/**
-* Fins the position of a string in a string (or char in a string)
-*
-* @return int The position of the string/char in the searched string
-*/
-static int strpos(const char *haystack, const char *needle) {
-  char *p = strstr(haystack, needle);
-  if(p) {
-    return p-haystack;
-  }
-  return -1;
-}
-
-/**
-* Counts how many times a string is present in another string
-*
-* @param const char * haystack The string to be searched in
-* @param const char * needle The string to be searched for
-*
-* @return unsigned char The number of times needle is preent in haystack
-*/
-static unsigned char strcount(const char *haystack, const char *needle) {
-  unsigned char count = 0;
-  const char *pos = haystack;
-
-  do {
-    pos = strstr(pos, needle);
-    if(pos != NULL) {
-      count++;
-      pos++;
-    }
-  } while(pos != NULL);
-
-  return count;
 
 }
 
@@ -2914,81 +2607,6 @@ static BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *r
 
   free(working_str);
   free(ip_with_brackets);
-  return TRUE;
-}
-
-/**
-* Parse a given ip:port combination into an internet address structure
-*
-* @param char *raw_address The <ip>:<port> string combination to be parsed
-* @param sockaddr_storage ** The IP internet address structute to be allocated and filled
-*
-* @return BOOL TRUE on success
-*/
-static BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address) {
-  char *ip;
-  struct sockaddr_storage *address = NULL;
-  int colon_pos = 0;
-  int port = 0;
-  BOOL is_ipv6;
-
-  PRINT_DEBUG("parse:address()");
-
-  if(strlen(raw_address) < 1) {
-    PRINT_ERROR("No valid IP address specified");
-    return FALSE;
-  }
-
-  /* Allocate the input address */
-  *pp_address = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
-
-  /* Get rid of the "pointer to a pointer" */
-  address = *pp_address;
-  memset(address, 0, sizeof(struct sockaddr_storage));
-  colon_pos = strpos(raw_address, ":");
-
-  if(colon_pos < 1) {
-    PRINT_ERROR("No valid port specified (%s)\n", raw_address);
-    return FALSE;
-  }
-
-  ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-  memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
-
-  /* Get rid of [] if IPv6 */
-  strncpy(ip, strchr(raw_address, '[') + 1, strchr(raw_address, '[') - strchr(raw_address, ']'));
-
-  is_ipv6 = inet_pton(AF_INET6, ip, address);
-  PRINT_DEBUG("is_ipv6 == %s", is_ipv6 ? "TRUE" : "FALSE");
-  if(is_ipv6) {
-    address->ss_family = AF_INET6;
-    port = atoi(strrchr(raw_address, ':') + 1);
-  }
-  else {
-    memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
-    strncpy(ip, raw_address, colon_pos);
-    if(!inet_pton(AF_INET, ip, &(((struct sockaddr_in *)address)->sin_addr))) {
-      PRINT_ERROR("No valid IP address specified (%s)\n", ip);
-      return FALSE;
-    }
-    address->ss_family = AF_INET;
-    port = atoi(raw_address + colon_pos + 1);
-  }
-
-  if(port < 80 || port > PORT_MAX_NUMBER) {
-    PRINT_ERROR("No valid port specified (%d)\n", port);
-    return FALSE;
-  }
-
-  if(is_ipv6) {
-    ((struct sockaddr_in6 *)address)->sin6_port = htons(port);
-  }
-  else {
-    ((struct sockaddr_in *)address)->sin_port = htons(port);
-  }
-
-  free(ip);
-
   return TRUE;
 }
 
@@ -4220,194 +3838,4 @@ static void free_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer) {
   }
   #endif
 }
-
-#ifdef DEBUG___
-/**
- * Counts the number of times needle occurs in haystack
- *
- * @param haystack The string to search in
- * @param needle The character to search for
- *
- * @return int The number of occurrences
- */
-static int chr_count(char *haystack, char needle) {
-  int count = 0;
-  int len = strlen(haystack);
-  int i;
-  for (i = 0; i < len; i++) {
-    if (haystack[i] == needle) {
-      count++;
-    }
-  }
-  return count;
-}
-
-#ifdef DEBUG_TO_FILE___
-/**
- * Retrieves the size of a file
- *
- * @param file The file to stat
- *
- * @return The size of the file in Bytes
- */
-static int fsize(const char *file) {
-  struct stat st;
-
-  if(stat(file, &st) == 0) {
-    return st.st_size;
-  }
-
-  return -1;
-}
-#endif
-
-/**
- * Prints a debug message, mimicking printf-like function, supports only %d, %s and %c
- *
- * @param const char* file The file the debug message generated in
- * @param int line The line number in the file the debug message generated at
- * @param const char* message The debug message to be displayed
- * @param ... variable number of optional arguments that match with the va_format
- */
-
-static void print_debug(FILE *std, const char *color, const char* file, int line, char *va_format, ...) {
-  va_list va;
-  char message[20480];
-  int message_used = 0;
-  char *from_pointer = va_format;
-  char header[50];
-  char *to_pointer = va_format;
-  int args_count = chr_count(va_format, '%');
-  const char *no_memory = "Not enought memory in buffer to build debug message";
-  char *s = NULL;
-  char c;
-  int d;
-
-  /* Create a nice header for the output */
-  sprintf(header, "%s[%d][%s:%04d] ", color, (int)getpid(), file, line);
-
-  if(!va_format) {
-    fprintf(stderr, "%s[%d][%s:%d] Error, va_arg input format (va_format) not set%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, DEBUG_COLOR_END);
-    return;
-  }
-
-  int message_length = 20480;
-  memset(message, '\0', sizeof(char) * message_length);
-  message_length -= 50; // compensate for additional chars in the message
-  va_start(va, va_format);
-
-  int copy_length = 0;
-  int args_pos;
-
-  for (args_pos = 1; (from_pointer && *from_pointer != '\0'); from_pointer = to_pointer) {
-
-    to_pointer = strchr(from_pointer, '%');
-
-    if(to_pointer && strlen(to_pointer) > 1) {
-      copy_length = to_pointer - from_pointer;
-
-      if(copy_length > message_length - message_used) {
-      fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
-        return;
-      }
-
-      strncpy(message + message_used, from_pointer, copy_length);
-      message_used += copy_length;
-
-    switch(to_pointer[1]) {
-    case 's':
-      /* string */
-      s = va_arg(va, char *);
-      if(s) {
-        copy_length = strlen(s);
-        if(copy_length > message_length - message_used) {
-          fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
-          return;
-        }
-        strncpy(message + message_used, s, copy_length);
-        message_used += copy_length;
-      }
-      else {
-        copy_length = 6;
-        strncpy(message + message_used, "NULL", copy_length);
-        message_used += copy_length;
-      }
-      break;
-    case 'c':
-      /* character */
-      c = (char)va_arg(va, int);
-      copy_length = 1;
-      if(copy_length > message_length - message_used) {
-        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
-        return;
-      }
-      strncpy(message + message_used, &c, copy_length);
-      message_used += copy_length;
-      break;
-    case 'd':
-      /* integer */
-      d = va_arg(va, int);
-      char *d_char = (char *)malloc(sizeof(char) * 10);
-      memset(d_char, '\0', 10);
-      sprintf(d_char, "%d", d);
-      copy_length = strlen(d_char);
-      if(copy_length > message_length - message_used) {
-        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
-        free(d_char);
-        return;
-      }
-      strncpy(message + message_used, d_char, copy_length);
-      message_used += copy_length;
-      free(d_char);
-      break;
-    default:
-      break;
-    }
-
-    to_pointer += 2;
-  }
-  else {
-    strcat(message, from_pointer);
-    to_pointer = NULL;
-  }
-
-  if(args_pos > args_count) {
-    break;
-  }
-    args_pos++;
-  }
-
-  if(!std) {
-    std = stdout;
-  }
-
-  #ifdef DEBUG_TO_FILE___
-  /* Debug file to write to */
-  const char debug_file[] = "debug.log";
-  FILE *fh = NULL;
-  int file_size = fsize(debug_file);
-  /* Max file size is 500 KB */
-  int max_size = 512000;
-  /* If file is larger than 500KB then trunkate it */
-  if(file_size > max_size) {
-    fh = fopen(debug_file, "w");
-  }
-  /* Else continue writing to it */
-  else {
-    fh = fopen(debug_file, "a");
-  }
-
-  if(NULL == fh) {
-    fprintf(stderr, "%s[%d][%s:%d] Failed to create debug file%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, DEBUG_COLOR_END);
-  }
-  else {
-    fprintf(fh, "%s%s%s\n", header, message, DEBUG_COLOR_END);
-    fclose(fh);
-  }
-  #else
-  fprintf(std, "%s%s%s\n", header, message, DEBUG_COLOR_END);
-  #endif
-
-}
-#endif
 
