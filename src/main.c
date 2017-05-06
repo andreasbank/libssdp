@@ -50,6 +50,7 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <netdb.h>
+#include <ifaddrs.h>
 
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
@@ -58,7 +59,6 @@
 #include <resolv.h>
 
 #include <net/if.h>
-#include <ifaddrs.h>
 #include <ctype.h>
 
 #include <errno.h>
@@ -77,83 +77,10 @@
 #include "common_definitions.h"
 #include "log.h"
 #include "net_definitions.h"
+#include "net_utils.h"
+#include "output_format.h"
 #include "ssdp.h"
 #include "string_utils.h"
-
-/* SSDP header types string representations */
-#define SSDP_HEADER_HOST_STR        "host"
-#define SSDP_HEADER_ST_STR          "st"
-#define SSDP_HEADER_MAN_STR         "man"
-#define SSDP_HEADER_MX_STR          "mx"
-#define SSDP_HEADER_CACHE_STR       "cache"
-#define SSDP_HEADER_LOCATION_STR    "location"
-#define SSDP_HEADER_OPT_STR         "opt"
-#define SSDP_HEADER_01NLS_STR       "01-nls"
-#define SSDP_HEADER_NT_STR          "nt"
-#define SSDP_HEADER_NTS_STR         "nts"
-#define SSDP_HEADER_SERVER_STR      "server"
-#define SSDP_HEADER_XUSERAGENT_STR  "x-user-agent"
-#define SSDP_HEADER_USN_STR         "usn"
-#define SSDP_HEADER_UNKNOWN_STR     "unknown"
-
-/* SSDP header types uchars */
-#define SSDP_HEADER_HOST            1
-#define SSDP_HEADER_ST              2
-#define SSDP_HEADER_MAN             3
-#define SSDP_HEADER_MX              4
-#define SSDP_HEADER_CACHE           5
-#define SSDP_HEADER_LOCATION        6
-#define SSDP_HEADER_OPT             7
-#define SSDP_HEADER_01NLS           8
-#define SSDP_HEADER_NT              9
-#define SSDP_HEADER_NTS             10
-#define SSDP_HEADER_SERVER          11
-#define SSDP_HEADER_XUSERAGENT      12
-#define SSDP_HEADER_USN             13
-#define SSDP_HEADER_UNKNOWN         0
-
-/* Structs */
-typedef struct ssdp_header_struct {
-  unsigned char type;
-  char *unknown_type;
-  char *contents;
-  struct ssdp_header_struct *first;
-  struct ssdp_header_struct *next;
-} ssdp_header_s;
-
-typedef struct ssdp_custom_field_struct {
-  char *name;
-  char *contents;
-  struct ssdp_custom_field_struct *first;
-  struct ssdp_custom_field_struct *next;
-} ssdp_custom_field_s;
-
-typedef struct ssdp_message_struct {
-  char *mac;
-  char *ip;
-  int  message_length;
-  char *datetime;
-  char *request;
-  char *protocol;
-  char *answer;
-  char *info;
-  unsigned char header_count;
-  struct ssdp_header_struct *headers;
-  unsigned char custom_field_count;
-  struct ssdp_custom_field_struct *custom_fields;
-} ssdp_message_s;
-
-/* the ssdp_message_s cache that
-   acts as a buffer for sending
-   bulks of messages instead of spamming;
-   *ssdp_message should always point to
-   the last ssdp_message in the buffer */
-typedef struct ssdp_cache_struct {
-  struct ssdp_cache_struct *first;
-  ssdp_message_s *ssdp_message;
-  struct ssdp_cache_struct *next;
-  unsigned int *ssdp_messages_count;
-} ssdp_cache_s;
 
 typedef struct filter_struct {
   char *header;
@@ -177,20 +104,12 @@ static configuration_s      conf;                         /* The program configu
 
 /* Functions */
 static void free_stuff();
-static void exitSig(int);
+static void exit_sig(int);
 static BOOL build_ssdp_message(ssdp_message_s *, char *, char *, int, const char *);
-static unsigned char get_header_type(const char *);
-static const char *get_header_string(const unsigned int, const ssdp_header_s *);
 static int send_stuff(const char *, const char *, const struct sockaddr_storage *, int, int);
 static void free_ssdp_message(ssdp_message_s **);
 static int fetch_custom_fields(ssdp_message_s *);
-static unsigned int to_json(const ssdp_message_s *, BOOL, char *, int);
-static unsigned int to_xml(const ssdp_message_s *, BOOL, char *, int);
-static BOOL parse_url(const char *, char *, int, int *, char *, int);
 static void parse_filters(char *, filters_factory_s **, BOOL);
-//static char *get_ip_address_from_socket(const SOCKET);
-static char *get_mac_address_from_socket(const SOCKET, struct sockaddr_storage *, char *);
-static int find_interface(struct sockaddr_storage *, char *, char *);
 static SOCKET create_upnp_listener(char *, int, int);
 static BOOL set_send_timeout(SOCKET, int);
 static BOOL set_receive_timeout(SOCKET, int);
@@ -207,8 +126,6 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **, ssdp_message_s **);
 static void free_ssdp_cache(ssdp_cache_s **);
 static void daemonize();
 static BOOL filter(ssdp_message_s *, filters_factory_s *);
-static unsigned int cache_to_json(ssdp_cache_s *, char *, unsigned int);
-static unsigned int cache_to_xml(ssdp_cache_s *, char *, unsigned int);
 static BOOL flush_ssdp_cache(ssdp_cache_s **, const char *, struct sockaddr_storage *, int, int);
 static void display_ssdp_cache(ssdp_cache_s *, BOOL);
 static void move_cursor(int, int);
@@ -336,84 +253,6 @@ static void daemonize() {
 
   PRINT_DEBUG("Now running in daemon mode");
 
-}
-
-/**
- * Convert a ssdp cache list (multiple ssdp_messages)
- * to a single JSON blob
- * @param ssdp_cache The SSDP messages to convert
- * @param json_message The buffer to write to
- * @param json_buffer_size The buffer size
- *
- * @return The number of byter written
- */
-static unsigned int cache_to_json(ssdp_cache_s *ssdp_cache,
-                                  char *json_buffer,
-                                  unsigned int json_buffer_size) {
-  unsigned int used_buffer = 0;
-
-  /* Point at the beginning */
-  ssdp_cache = ssdp_cache->first;
-
-  /* For every element in the ssdp cache */
-  used_buffer = snprintf(json_buffer,
-                         json_buffer_size,
-                         "root {\n");
-  while(ssdp_cache) {
-    used_buffer += to_json(ssdp_cache->ssdp_message,
-                          FALSE,
-                          (json_buffer + used_buffer),
-                          (json_buffer_size - used_buffer));
-    ssdp_cache = ssdp_cache->next;
-  }
-  used_buffer += snprintf((json_buffer + used_buffer),
-                          (json_buffer_size - used_buffer),
-                          "}\n");
-  return used_buffer;
-}
-
-/**
- * Convert a ssdp cache list (multiple ssdp_messages)
- * to a single XML blob
- * @param ssdp_cache The SSDP messages to convert
- * @param xml_message The buffer to write to
- * @param xml_buffer_size The buffer size
- *
- * @return The number of byter written
- */
-static unsigned int cache_to_xml(ssdp_cache_s *ssdp_cache,
-                                 char *xml_buffer,
-                                 unsigned int xml_buffer_size) {
-  unsigned int used_buffer = 0;
-
-  if(NULL == ssdp_cache) {
-    PRINT_ERROR("No valid SSDP cache given (NULL)");
-    return 0;
-  }
-
-  /* Point at the beginning */
-  ssdp_cache = ssdp_cache->first;
-
-  /* For every element in the ssdp cache */
-  used_buffer = snprintf(xml_buffer,
-                         xml_buffer_size,
-                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n");
-  while(ssdp_cache) {
-    PRINT_DEBUG("cache_to_xml(): buffer used: %d; left: %d", used_buffer, xml_buffer_size - used_buffer);
-    PRINT_DEBUG("start with with '%s'",
-                ssdp_cache->ssdp_message->ip);
-    used_buffer += to_xml(ssdp_cache->ssdp_message,
-                          FALSE,
-                          (xml_buffer + used_buffer),
-                          (xml_buffer_size - used_buffer));
-    PRINT_DEBUG("done with '%s'",
-                ssdp_cache->ssdp_message->ip);
-    ssdp_cache = ssdp_cache->next;
-  }
-  used_buffer += snprintf((xml_buffer + used_buffer),
-                          (xml_buffer_size - used_buffer),
-                          "</root>\n");
-  return used_buffer;
 }
 
 /**
@@ -766,9 +605,9 @@ int main(int argc, char **argv) {
   struct sockaddr_storage notif_client_addr;
   int recvLen = 1;
 
-  signal(SIGTERM, &exitSig);
-  signal(SIGABRT, &exitSig);
-  signal(SIGINT, &exitSig);
+  signal(SIGTERM, &exit_sig);
+  signal(SIGABRT, &exit_sig);
+  signal(SIGINT, &exit_sig);
 
   #ifdef DEBUG___
   PRINT_DEBUG("%sDebug color%s", DEBUG_COLOR_BEGIN, DEBUG_COLOR_END);
@@ -1281,104 +1120,17 @@ int main(int argc, char **argv) {
   exit(EXIT_SUCCESS);
 } // main end
 
-static void exitSig(int param) {
+static void exit_sig(int param) {
   free_stuff();
   exit(EXIT_SUCCESS);
 }
 
 /**
-* Returns the appropriate unsigned char (number) representation of the header string
-*
-* @param const char *header_string The header string to be looked up
-*
-* @return unsigned char A unsigned char representing the header type
-*/
-static unsigned char get_header_type(const char *header_string) {
-  int headers_size;
-  int header_string_length = 0;
-  char *header_lower = NULL;
-  const char *header_strings[] = {
-    SSDP_HEADER_UNKNOWN_STR,
-    SSDP_HEADER_HOST_STR,
-    SSDP_HEADER_ST_STR,
-    SSDP_HEADER_MAN_STR,
-    SSDP_HEADER_MX_STR,
-    SSDP_HEADER_CACHE_STR,
-    SSDP_HEADER_LOCATION_STR,
-    SSDP_HEADER_HOST_STR,
-    SSDP_HEADER_OPT_STR,
-    SSDP_HEADER_01NLS_STR,
-    SSDP_HEADER_NT_STR,
-    SSDP_HEADER_NTS_STR,
-    SSDP_HEADER_SERVER_STR,
-    SSDP_HEADER_XUSERAGENT_STR,
-    SSDP_HEADER_USN_STR
-  };
-  headers_size = sizeof(header_strings)/sizeof(char *);
-
-  header_string_length = strlen(header_string);
-  if(header_string_length < 1) {
-    PRINT_ERROR("Erroneous header string detected");
-    return (unsigned char)SSDP_HEADER_UNKNOWN;
-  }
-  header_lower = (char *)malloc(sizeof(char) * (header_string_length + 1));
-
-  memset(header_lower, '\0', sizeof(char) * (header_string_length + 1));
-
-  int i;
-  for(i = 0; header_string[i] != '\0'; i++){
-    header_lower[i] = tolower(header_string[i]);
-  }
-
-  for(i=0; i<headers_size; i++) {
-    if(strcmp(header_lower, header_strings[i]) == 0) {
-      free(header_lower);
-      return (unsigned char)i;
-    }
-  }
-  free(header_lower);
-  return (unsigned char)SSDP_HEADER_UNKNOWN;
-}
-
-/**
-* Returns the appropriate string representation of the header type
-*
-* @param const unsigned int header_type The header type (int) to be looked up
-*
-* @return char * A string representing the header type
-*/
-static const char *get_header_string(const unsigned int header_type, const ssdp_header_s *header) {
-  const char *header_strings[] = {
-    SSDP_HEADER_UNKNOWN_STR,
-    SSDP_HEADER_HOST_STR,
-    SSDP_HEADER_ST_STR,
-    SSDP_HEADER_MAN_STR,
-    SSDP_HEADER_MX_STR,
-    SSDP_HEADER_CACHE_STR,
-    SSDP_HEADER_LOCATION_STR,
-    SSDP_HEADER_HOST_STR,
-    SSDP_HEADER_OPT_STR,
-    SSDP_HEADER_01NLS_STR,
-    SSDP_HEADER_NT_STR,
-    SSDP_HEADER_NTS_STR,
-    SSDP_HEADER_SERVER_STR,
-    SSDP_HEADER_XUSERAGENT_STR,
-    SSDP_HEADER_USN_STR
-  };
-
-  if((header_type == 0 || header_type > (sizeof(header_strings)/sizeof(char *) - 1)) && header != NULL && header->unknown_type != NULL) {
-    return header->unknown_type;
-  }
-
-  return header_strings[header_type];
-}
-
-/**
-* Parse a single SSDP header
-*
-* @param ssdp_header_s *header The location where the parsed result should be stored
-* @param const char *raw_header The header string to be parsed
-*/
+ * Parse a single SSDP header.
+ *
+ * @param header The location where the parsed result should be stored.
+ * @param raw_header The header string to be parsed.
+ */
 static void build_ssdp_header(ssdp_header_s *header, const char *raw_header) {
 /*
 [172.26.150.15][458B] "NOTIFY * HTTP/1.1
@@ -1546,7 +1298,8 @@ static BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac, int
 
 // TODO: remove port, it is contained in **pp_address
 // TODO: make it not use global variables (conf.interface, conf.ip)
-static int send_stuff(const char *url, const char *data, const struct sockaddr_storage *da, int port, int timeout) {
+static int send_stuff(const char *url, const char *data,
+    const struct sockaddr_storage *da, int port, int timeout) {
 
   if(url == NULL || strlen(url) < 1) {
     PRINT_ERROR("send_stuff(): url not set");
@@ -1766,16 +1519,15 @@ static void free_ssdp_message(ssdp_message_s **message_pointer) {
 
   free(message);
   *message_pointer = NULL;
-  
 }
 
 /**
-* Parses the filter argument
-*
-* @param const char *raw_filter The raw filter string
-* @param const unsigned char filters_count The number of filters found
-* @param const char **filters The parsed filters array
-*/
+ * Parses the filter argument.
+ *
+ * @param raw_filter The raw filter string.
+ * @param filters_count The number of filters found.
+ * @param filters The parsed filters array.
+ */
 static void parse_filters(char *raw_filter, filters_factory_s **filters_factory, BOOL print_filters) {
   char *pos = NULL, *last_pos = raw_filter, *splitter = NULL;
   unsigned char filters_count = 0;
@@ -1853,244 +1605,12 @@ static void parse_filters(char *raw_filter, filters_factory_s **filters_factory,
 }
 
 /**
-* Get the remote MAC address from a given sock
-*
-* @param sock The socket to extract the MAC address from
-*
-* @return int The remote MAC address as a string
-*/
-// TODO: fix for IPv6
-static char *get_mac_address_from_socket(const SOCKET sock, struct sockaddr_storage *sa_ip, char *ip) {
-  char *mac_string = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
-  memset(mac_string, '\0', MAC_STR_MAX_SIZE);
-
-  #if defined BSD || defined APPLE
-  /* xxxBSD or MacOS solution */
-  PRINT_DEBUG("Using BSD style MAC discovery (sysctl)");
-  int sysctl_flags[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_LLINFO };
-  char *arp_buffer = NULL;
-  char *arp_buffer_end = NULL;
-  char *arp_buffer_next = NULL;
-  struct rt_msghdr *rtm = NULL;
-  struct sockaddr_inarp *sin_arp = NULL;
-  struct sockaddr_dl *sdl = NULL;
-  size_t arp_buffer_size;
-  BOOL found_arp = FALSE;
-  struct sockaddr_storage *tmp_sin = NULL;
-
-  /* Sanity check, choose IP source */
-  if(NULL == sa_ip && NULL != ip) {
-    tmp_sin = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
-    memset(tmp_sin, '\0', sizeof(struct sockaddr_storage));
-    if(!inet_pton(sa_ip->ss_family, ip, (sa_ip->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)sa_ip)->sin_addr : (void *)&((struct sockaddr_in6 *)sa_ip)->sin6_addr))) {
-      PRINT_ERROR("get_mac_address_from_socket(): Failed to get MAC from given IP (%s)", ip);
-      free(mac_string);
-      free(tmp_sin);
-      return NULL;
-    }
-    sa_ip = tmp_sin;
-  }
-  else if(NULL == sa_ip) {
-    PRINT_ERROR("Neither IP nor SOCKADDR given, MAC not fetched");
-    free(mac_string);
-    return NULL;
-  }
-
-  /* See how much we need to allocate */
-  if(sysctl(sysctl_flags, 6, NULL, &arp_buffer_size, NULL, 0) < 0) {
-    PRINT_ERROR("get_mac_address_from_socket(): sysctl(): Could not determine neede size");
-    free(mac_string);
-    if(NULL != tmp_sin) {
-      free(tmp_sin);
-    }
-    return NULL;
-  }
-
-  /* Allocate needed memmory */
-  if((arp_buffer = malloc(arp_buffer_size)) == NULL) {
-    PRINT_ERROR("get_mac_address_from_socket(): Failed to allocate memory for the arp table buffer");
-    free(mac_string);
-    if(NULL != tmp_sin) {
-      free(tmp_sin);
-    }
-    return NULL;
-  }
-
-  /* Fetch the arp table */
-  if(sysctl(sysctl_flags, 6, arp_buffer, &arp_buffer_size, NULL, 0) < 0) {
-    PRINT_ERROR("get_mac_address_from_socket(): sysctl(): Could not retrieve arp table");
-    free(arp_buffer);
-    free(mac_string);
-    if(NULL != tmp_sin) {
-      free(tmp_sin);
-    }
-    return NULL;
-  }
-
-  /* Loop through the arp table/list */
-  arp_buffer_end = arp_buffer + arp_buffer_size;
-  for(arp_buffer_next = arp_buffer; arp_buffer_next < arp_buffer_end; arp_buffer_next += rtm->rtm_msglen) {
-
-    /* See it through another perspective */
-    rtm = (struct rt_msghdr *)arp_buffer_next;
-
-    /* Skip to the address portion */
-    sin_arp = (struct sockaddr_inarp *)(rtm + 1);
-    sdl = (struct sockaddr_dl *)(sin_arp + 1);
-
-    /* Check if address is the one we are looking for */
-    if(((struct sockaddr_in *)sa_ip)->sin_addr.s_addr != sin_arp->sin_addr.s_addr) {
-      continue;
-    }
-    found_arp = TRUE;
-
-    /* The proudly save the MAC to a string */
-    if (sdl->sdl_alen) {
-      unsigned char *cp = (unsigned char *)LLADDR(sdl);
-      sprintf(mac_string, "%x:%x:%x:%x:%x:%x", cp[0], cp[1], cp[2], cp[3], cp[4], cp[5]);
-    }
-
-    free(arp_buffer);
-
-    if(NULL != tmp_sin) {
-      free(tmp_sin);
-    }
-  }
-  #else
-  /* Linux (and rest) solution */
-  PRINT_DEBUG("Using Linux style MAC discovery (ioctl SIOCGARP)");
-  struct arpreq arp;
-  unsigned char *mac = NULL;
-
-  memset(&arp, '\0', sizeof(struct arpreq));
-  sa_family_t ss_fam = AF_INET;
-  struct in_addr *sin_a = NULL;
-  struct in6_addr *sin6_a = NULL;
-  BOOL is_ipv6 = FALSE;
-
-  /* Sanity check */
-  if(sa_ip == NULL && ip == NULL){
-    PRINT_ERROR("Neither IP string nor sockaddr given, MAC not fetched");
-    free(mac_string);
-    return NULL;
-  }
-
-  /* Check if IPv6 */
-  struct sockaddr_in6 *tmp = (struct sockaddr_in6 *)malloc(sizeof(struct sockaddr_in6));
-  if((sa_ip != NULL && sa_ip->ss_family == AF_INET6)
-  || (ip != NULL && inet_pton(AF_INET6, ip, tmp))) {
-    is_ipv6 = TRUE;
-    ss_fam = AF_INET6;
-    PRINT_DEBUG("Looking for IPv6-MAC association");
-  }
-  else if((sa_ip != NULL && sa_ip->ss_family == AF_INET)
-  || (ip != NULL && inet_pton(AF_INET, ip, tmp))) {
-    PRINT_DEBUG("Looking for IPv4-MAC association");
-  }
-  else {
-    PRINT_ERROR("sa_ip or ip variable error");
-  }
-  free(tmp);
-  tmp = NULL;
-
-  /* Assign address family for arpreq */
-  ((struct sockaddr_storage *)&arp.arp_pa)->ss_family = ss_fam;
-
-  /* Point the needed pointer */
-  if(!is_ipv6){
-    sin_a = &((struct sockaddr_in *)&arp.arp_pa)->sin_addr;
-  }
-  else if(is_ipv6){
-    sin6_a = &((struct sockaddr_in6 *)&arp.arp_pa)->sin6_addr;
-  }
-
-  /* Fill the fields */
-  if(sa_ip != NULL) {
-    if(ss_fam == AF_INET) {
-      *sin_a = ((struct sockaddr_in *)sa_ip)->sin_addr;
-    }
-    else {
-      *sin6_a = ((struct sockaddr_in6 *)sa_ip)->sin6_addr;
-    }
-  }
-  else if(ip != NULL) {
-
-    if(!inet_pton(ss_fam,
-        ip,
-        (ss_fam == AF_INET ? (void *)sin_a: (void *)sin6_a))) {
-    PRINT_ERROR("Failed to get MAC from given IP (%s)", ip);
-    PRINT_ERROR("Error %d: %s", errno, strerror(errno));
-    free(mac_string);
-    return NULL;
-    }
-  }
-
-  /* Go through all interfaces' arp-tables and search for the MAC */
-  /* Possible explanation: Linux arp-tables are if-name specific */
-  struct ifaddrs *interfaces = NULL, *ifa = NULL;
-  if(getifaddrs(&interfaces) < 0) {
-    PRINT_ERROR("get_mac_address_from_socket(): getifaddrs():Could not retrieve interfaces");
-    free(mac_string);
-    return NULL;
-  }
-
-  /* Start looping through the interfaces*/
-  for(ifa = interfaces; ifa && ifa->ifa_next; ifa = ifa->ifa_next) {
-
-    /* Skip the loopback interface */
-    if(strcmp(ifa->ifa_name, "lo") == 0) {
-      PRINT_DEBUG("Skipping interface 'lo'");
-      continue;
-    }
-
-    /* Copy current interface name into the arpreq structure */
-    PRINT_DEBUG("Trying interface '%s'", ifa->ifa_name);
-    strncpy(arp.arp_dev, ifa->ifa_name, 15);
-
-    ((struct sockaddr_storage *)&arp.arp_ha)->ss_family = ARPHRD_ETHER;
-
-    /* Ask for thE arp-table */
-    if(ioctl(sock, SIOCGARP, &arp) < 0) {
-
-      /* Handle failure */
-      if(errno == 6) {
-        /* if error is "Unknown device or address" then continue/try next interface */
-        PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): (%d) %s", errno, strerror(errno));
-        continue;
-      }
-      else {
-        PRINT_ERROR("get_mac_address_from_socket(): ioctl(): (%d) %s", errno, strerror(errno));
-        continue;
-      }
-    }
-
-    mac = (unsigned char *)&arp.arp_ha.sa_data[0];
-
-  }
-
-  freeifaddrs(interfaces);
-
-  if(!mac) {
-    PRINT_DEBUG("mac is NULL");
-    free(mac_string);
-    return NULL;
-  }
-
-  sprintf(mac_string, "%x:%x:%x:%x:%x:%x", *mac, *(mac + 1), *(mac + 2), *(mac + 3), *(mac + 4), *(mac + 5));
-  mac = NULL;
-  #endif
-
-  PRINT_DEBUG("Determined MAC string: %s", mac_string);
-  return mac_string;
-}
-
-/**
  * Fetches additional info from a UPnP message "Location" header
- * and stores it in the custom_fields in the ssdp_message
+ * and stores it in the custom_fields in the ssdp_message.
  *
- * @param ssdp_message_s * The message whos "Location" header to use
+ * @param ssdp_message The message whos "Location" header to use.
  *
- * @return The number of bytes received
+ * @return The number of bytes received.
  */
 static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
   int bytes_received = 0;
@@ -2330,454 +1850,6 @@ static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
   return bytes_received;
 }
 
-/**
-* Converts a UPnP message to a JSON string
-*
-* @param ssdp_message The message to be converted
-* @param full_json Whether to contain the JSON opening hash
-* @param fetch_info Whether to follow the Location header to fetch additional data
-* @param hide_headers Whether to include the ssdp headers in the resulting JSON document
-* @param json_buffer The JSON buffer to write the JSON document to
-* @param json_size The size of the passed buffer (json_buffer)
-*/
-static unsigned int to_json(const ssdp_message_s *ssdp_message,
-                            BOOL full_json,
-                            char *json_buffer,
-                            int json_buffer_size) {
-  int used_length = 0;
-
-  // TODO: write it!
-
-  return used_length;
-}
-
-/**
-* Converts a UPnP message to a XML string
-*
-* @param ssdp_message The message to be converted
-* @param full_xml Whether to contain the XML declaration and the root tag
-* @param fetch_info Whether to follow the Location header to fetch additional data
-* @param hide_headers Whether to include the ssdp headers in the resulting XML document
-* @param xml_buffer The XML buffer to write the XML document to
-* @param xml_buffer_size The size of the passed buffer (xml_buffer)
-*/
-static unsigned int to_xml(const ssdp_message_s *ssdp_message,
-                           BOOL full_xml,
-                           char *xml_buffer,
-                           int xml_buffer_size) {
-  int used_length = 0;
-
-  if(xml_buffer == NULL) {
-    PRINT_ERROR("to_xml(): No XML message buffer specified");
-    return -1;
-  }
-  else if(ssdp_message == NULL) {
-    PRINT_ERROR("to_xml(): No SSDP message specified");
-    return -1;
-  }
-
-  memset(xml_buffer, '\0', sizeof(char) * xml_buffer_size);
-  if(full_xml) {
-    used_length = snprintf(xml_buffer, xml_buffer_size,
-    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n");
-  }
-  PRINT_DEBUG("Setting upnp xml-fields");
-  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-  "\t<message length=\"%d\">\n", ssdp_message->message_length);
-  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-  "\t\t<mac>\n\t\t\t%s\n\t\t</mac>\n", ssdp_message->mac);
-  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-  "\t\t<ip>\n\t\t\t%s\n\t\t</ip>\n", ssdp_message->ip);
-  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-  "\t\t<request protocol=\"%s\">\n\t\t\t%s\n\t\t</request>\n", ssdp_message->protocol, ssdp_message->request);
-  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-  "\t\t<datetime>\n\t\t\t%s\n\t\t</datetime>\n", ssdp_message->datetime);
-
-  if(ssdp_message->custom_fields) {
-
-    ssdp_custom_field_s *cf = ssdp_message->custom_fields->first;
-
-    /**
-     * The whole needed size is calculated as:
-     * leading headers string: +29
-     * each header constant string +50
-     * each header name string +X
-     * each header contents string +Y
-     * tailing header tailing string +19
-     */
-
-    /* Leading (29) and tailing (13) string sizes combined */
-    int needed_size = 48;
-
-  PRINT_DEBUG("Setting custom xml-fields");
-    /* Calculate needed buffer size */
-    while(cf) {
-
-      /* Each header combined (46 + X + Y + 18) string size */
-      needed_size += strlen(cf->name) + strlen(cf->contents) + 50;
-      cf = cf->next;
-  PRINT_DEBUG("Done calculating buffer");
-
-    }
-    cf = ssdp_message->custom_fields->first;
-
-    /* Check if buffer has enought room */
-    PRINT_DEBUG("to_xml(): XML custom fields buffer left: %d, buffer_needed: %d", (xml_buffer_size - used_length), needed_size);
-    if((xml_buffer_size - used_length) < needed_size) {
-      PRINT_ERROR("to_xml(): Not enought buffer space left to convert the SSDP message custom fields to XML, skipping\n");
-    }
-    else {
-
-      /* Convert to XML format */
-      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-      "\t\t<custom_fields count=\"%d\">\n", ssdp_message->custom_field_count);
-
-      while(cf) {
-  PRINT_DEBUG("Setting:");
-  PRINT_DEBUG("'%s'", cf->name);
-        used_length += snprintf(xml_buffer + used_length,
-                                xml_buffer_size - used_length,
-                                "\t\t\t<custom_field name=\"%s\">\n\t\t\t\t%s\n\t\t\t</custom_field>\n",
-                                cf->name,
-                                cf->contents);
-        cf = cf->next;
-        PRINT_DEBUG("Done with this one");
-      }
-
-      cf = NULL;
-      used_length += snprintf(xml_buffer + used_length,
-                              xml_buffer_size - used_length,
-                              "\t\t</custom_fields>\n");
-      PRINT_DEBUG("to_xml(): XML custom-fields bytes used: %d", (int)strlen(xml_buffer));
-    }
-
-  }
-
-  if(ssdp_message->headers) {
-
-    ssdp_header_s *h = ssdp_message->headers->first;
-
-    /**
-     * The whole needed size is calculated as:
-     * leading headers string: +23
-     * each header leading string +46
-     * each header type as two digits
-     * each header type as string +X
-     * each header contents string +Y
-     * each header tailing string +18
-     * tailing header tailing string +13
-     */
-
-    /* Leading (23) and tailing (13) string sizes combined */
-    int needed_size = 36;
-
-    /* Calculate needed buffer size */
-    while(h) {
-
-      /* Each header combined (46 + X + Y + 18) string size */
-      needed_size += (h->unknown_type ?
-                        strlen(h->unknown_type) :
-                        strlen(get_header_string(h->type, h))) + strlen(h->contents) + 64;
-      h = h->next;
-
-    }
-    h = ssdp_message->headers->first;
-
-    /* Check if buffer has enought room */
-    PRINT_DEBUG("buffer left: %d, buffer needed: %d", (xml_buffer_size - used_length), needed_size);
-    if((xml_buffer_size - used_length) < needed_size) {
-      PRINT_ERROR("to_xml(): Not enought buffer space left to convert the SSDP message headers to XML, skipping\n");
-    }
-    else {
-
-      used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-      "\t\t<headers count=\"%d\">\n", (unsigned int)ssdp_message->header_count);
-
-      while(h) {
-        used_length += snprintf(xml_buffer + used_length,
-                                xml_buffer_size - used_length,
-                                "\t\t\t<header typeInt=\"%d\" typeStr=\"%s\">\n",
-                                h->type,
-                                get_header_string(h->type, h));
-        used_length += snprintf(xml_buffer + used_length,
-                                xml_buffer_size - used_length,
-                                "\t\t\t\t%s\n\t\t\t</header>\n",
-                                h->contents);
-        h = h->next;
-      }
-      h = NULL;
-
-      used_length += snprintf(xml_buffer + used_length,
-                              xml_buffer_size - used_length,
-                              "\t\t</headers>\n");
-    }
-
-  }
-
-  used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-                          "\t</message>\n");
-
-  if(full_xml) {
-    used_length += snprintf(xml_buffer + used_length, xml_buffer_size - used_length,
-                            "</root>\n");
-  }
-
-  return used_length;
-}
-
-// TODO: remove ip_size ?
-static BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *rest, int rest_size) {
-
-  /* Check if HTTPS */
-  if(!url || strlen(url) < 8) {
-    PRINT_ERROR("The argument 'url' is not set or is empty");
-    return FALSE;
-  }
-
-  PRINT_DEBUG("passed url: %s", url);
-
-  if(*(url + 4) == 's') {
-    /* HTTPS is not supported at the moment, skip */
-    PRINT_DEBUG("HTTPS is not supported, skipping");
-    return FALSE;
-  }
-
-  const char *ip_begin = strchr(url, ':') + 3;              // http[s?]://^<ip>:<port>/<rest>
-  PRINT_DEBUG("ip_begin: %s", ip_begin);
-  BOOL is_ipv6 = *ip_begin == '[' ? TRUE : FALSE;
-  PRINT_DEBUG("is_ipv6: %s", (is_ipv6 ? "TRUE" : "FALSE"));
-
-  char *rest_begin = NULL;
-  if(is_ipv6) {
-    if(!(rest_begin = strchr(ip_begin, ']')) || !(rest_begin = strchr(rest_begin, '/'))) {
-      // [<ipv6>]^:<port>/<rest>             && :<port>^/<rest>
-      PRINT_ERROR("Error: (IPv6) rest_begin is NULL\n");
-      return FALSE;
-    }
-    PRINT_DEBUG("rest_begin: %s", rest_begin);
-  }
-  else {
-    if(!(rest_begin = strchr(ip_begin, '/'))) {                // <ip>:<port>^/<rest>
-      PRINT_ERROR("Error: rest_begin is NULL\n");
-      return FALSE;
-    }
-  }
-
-  if(rest_begin != NULL) {
-    strcpy(rest, rest_begin);
-  }
-
-  char *working_str = (char *)malloc(sizeof(char) * 256); // temporary string buffer
-  char *ip_with_brackets = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE + 2); // temporary IP buffer
-  memset(working_str, '\0', 256);
-  memset(ip_with_brackets, '\0', IPv6_STR_MAX_SIZE + 2);
-  PRINT_DEBUG("size to copy: %d", (int)(rest_begin - ip_begin));
-  strncpy(working_str, ip_begin, (size_t)(rest_begin - ip_begin)); // "<ip>:<port>"
-  PRINT_DEBUG("working_str: %s", working_str);
-  char *port_begin = strrchr(working_str, ':');                 // "<ip>^:<port>^"
-  PRINT_DEBUG("port_begin: %s", port_begin);
-  if(port_begin != NULL) {
-    *port_begin = ' ';                                           // "<ip>^ <port>^"
-    // maybe memset instead of value assignment ?
-    sscanf(working_str, "%s %d", ip_with_brackets, port);      // "<%s> <%d>"
-    PRINT_DEBUG("port: %d", *port);
-    if(strlen(ip_with_brackets) < 1) {
-      PRINT_ERROR("Malformed header_location detected in: '%s'", url);
-      free(working_str);
-      free(ip_with_brackets);
-      return FALSE;
-    }
-    if(*ip_with_brackets == '[') {
-      PRINT_DEBUG("ip_with_brackets: %s", ip_with_brackets);
-      //strncpy(ip, ip_with_brackets + 1, strlen(ip_with_brackets) - 1); // uncomment in case we dont need brackets
-    }
-    else {
-      //strcpy(ip, ip_with_brackets); // uncomment in case we dont need brackets
-    }
-      strcpy(ip, ip_with_brackets);
-      PRINT_DEBUG("ip: %s", ip);
-  }
-
-  if(rest_begin == NULL) {
-    PRINT_ERROR("Malformed header_location detected in: '%s'", url);
-    free(working_str);
-    free(ip_with_brackets);
-    return FALSE;
-  }
-
-  free(working_str);
-  free(ip_with_brackets);
-  return TRUE;
-}
-
-/**
-* Tries to find a interface with the specified name or IP address
-*
-* @param struct sockaddr_storage *saddr A pointer to the buffer of the address that should be updated
-* @param char * address The address or interface name we want to find
-*
-* @return int The interface index
-*/
-static int find_interface(struct sockaddr_storage *saddr, char *interface, char *address) {
-  // TODO: for porting to Windows see http://msdn.microsoft.com/en-us/library/aa365915.aspx
-  struct ifaddrs *interfaces, *ifa;
-  struct sockaddr_in6 *saddr6 = (struct sockaddr_in6 *)saddr;
-  struct sockaddr_in *saddr4 = (struct sockaddr_in *)saddr;
-  char *compare_address = NULL;
-  int ifindex = -1;
-  BOOL is_ipv6 = FALSE;
-
-  PRINT_DEBUG("find_interface(%s, \"%s\", \"%s\")",
-              saddr == NULL ? NULL : "saddr",
-              interface,
-              address);
-
-  /* Make sure we have the buffers allocated */
-  if(interface == NULL) {
-    PRINT_ERROR("No interface string-buffer available");
-    return -1;
-  }
-
-  if(address == NULL) {
-    PRINT_ERROR("No IP address string-buffer available");
-    return -1;
-  }
-
-  if(saddr == NULL) {
-    PRINT_ERROR("No address structure-buffer available");
-    return -1;
-  }
-
-  /* Check if address is IPv6*/
-  is_ipv6 = inet_pton(AF_INET6,
-                      address,
-                      (void *)&saddr6->sin6_addr) > 0;
-
-  /* If address not set or is bind-on-all
-     then set a bindall address in the struct */
-  if(((strlen(interface) == 0) && (strlen(address) == 0)) ||
-    (strcmp("0.0.0.0", address) == 0) || (strcmp("::", address) == 0)) {
-    if(is_ipv6) {
-      saddr->ss_family = AF_INET6;
-      saddr6->sin6_addr = in6addr_any;
-      PRINT_DEBUG("find_interface(): Matched all addresses (::)\n");
-    }
-    else {
-      saddr->ss_family = AF_INET;
-      saddr4->sin_addr.s_addr = htonl(INADDR_ANY);
-      PRINT_DEBUG("find_interface(): Matched all addresses (0.0.0.0)");
-    }
-    return 0;
-  }
-
-  /* Try to query for all devices on the system */
-  if(getifaddrs(&interfaces) < 0) {
-    PRINT_ERROR("Could not find any interfaces\n");
-    return -1;
-  }
-
-  compare_address = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-
-  /* Loop through the interfaces*/
-  for(ifa=interfaces; ifa&&ifa->ifa_next; ifa=ifa->ifa_next) {
-
-    /* Helpers */
-    struct sockaddr_in6 *ifaddr6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-    struct sockaddr_in *ifaddr4 = (struct sockaddr_in *)ifa->ifa_addr;
-    int ss_family = ifa->ifa_addr->sa_family;
-
-    memset(compare_address, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
-
-    /* Extract the IP address in printable format */
-    if(is_ipv6 && ss_family == AF_INET6) {
-      PRINT_DEBUG("Extracting a IPv6 address");
-      if(inet_ntop(AF_INET6,
-                (void *)&ifaddr6->sin6_addr,
-                compare_address,
-                IPv6_STR_MAX_SIZE) == NULL) {
-        PRINT_ERROR("Could not extract printable IPv6 for the interface %s: (%d) %s",
-                    ifa->ifa_name,
-                    errno,
-                    strerror(errno));
-        return -1;
-      }
-    }
-    else if(!is_ipv6 && ss_family == AF_INET) {
-      PRINT_DEBUG("Extracting a IPv4 address");
-      if(inet_ntop(AF_INET,
-                (void *)&ifaddr4->sin_addr,
-                compare_address,
-                IPv6_STR_MAX_SIZE) == NULL) {
-        PRINT_ERROR("Could not extract printable IPv4 for the interface %s: (%d) %s",
-                    ifa->ifa_name,
-                    errno,
-                    strerror(errno));
-        return -1;
-      }
-    }
-    else {
-      continue;
-    }
-
-    /* Check if this is the desired interface and/or address
-       5 possible scenarios:
-       interface and address given
-       only interface given (address is automatically bindall)
-       only address given
-       none given (address is automatically bindall) */
-    BOOL if_present = strlen(interface) > 0 ? TRUE : FALSE;
-    BOOL addr_present = strlen(address) > 0 ? TRUE : FALSE;
-    BOOL addr_is_bindall = ((strcmp("0.0.0.0", address) == 0) ||
-                            (strcmp("::", address) == 0) ||
-                            (strlen(address) == 0)) ?
-                            TRUE :
-                            FALSE;
-
-    if((if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
-       addr_present && (strcmp(address, compare_address))) ||
-      (if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
-       addr_is_bindall) ||
-      (!if_present &&
-       addr_present && (strcmp(address, compare_address) == 0)) ||
-      (!if_present &&
-       addr_is_bindall)) {
-
-      /* Set the interface index to be returned*/
-      ifindex = if_nametoindex(ifa->ifa_name);
-
-      PRINT_DEBUG("Matched interface (with index %d) name '%s' with %s address %s", ifindex, ifa->ifa_name, (ss_family == AF_INET ? "IPv4" : "IPv6"), compare_address);
-
-      /* Set the appropriate address in the sockaddr struct */
-      if(!is_ipv6 && ss_family == AF_INET) {
-        saddr4->sin_addr = ifaddr4->sin_addr;
-        PRINT_DEBUG("Setting IPv4 saddr...");
-      }
-      else if(is_ipv6 && ss_family == AF_INET6){
-        saddr6->sin6_addr = ifaddr6->sin6_addr;
-        PRINT_DEBUG("Setting IPv6 saddr");
-      }
-
-      /* Set family to IP version*/
-      saddr->ss_family = ss_family;
-
-      break;
-    }
-
-  }
-
-  /* Free getifaddrs allocations */
-  if(interfaces) {
-    freeifaddrs(interfaces);
-  }
-
-  /* free our compare buffer */
-  if(compare_address != NULL) {
-    free(compare_address);
-  }
-
-  return ifindex;
-}
-
 /* Create a UPNP listener */
 // TODO: Write it...
 static SOCKET create_upnp_listener(char *interface, int send_timeout, int receive_timeout) {
@@ -2879,8 +1951,6 @@ static BOOL disable_multicast_loopback(SOCKET sock, int family) {
   }
   return TRUE;
 }
-
-
 
 /* Join the multicast group on required interfaces */
 static BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip) {
@@ -3395,116 +2465,20 @@ static SOCKET setup_socket(BOOL is_ipv6,
     return -1;
   }
 
-  /* DEPRECATED
-  if(FALSE && is_server && is_multicast) {
-    PRINT_DEBUG("***************************");
-    PRINT_DEBUG("is_server == TRUE && is_multicast == TRUE");
-
-      // Check if it is the correct IP version and skip if needed
-      if((conf->use_ipv6 && ifa->ifa_addr->sa_family == AF_INET) ||
-        (conf->use_ipv4 && ifa->ifa_addr->sa_family == AF_INET6) ||
-        (ifa->ifa_addr->sa_family != AF_INET && ifa->ifa_addr->sa_family != AF_INET6)) {
-        PRINT_DEBUG("skipping ifa %s", if_indextoname(ifindex));
-        continue;
-      }
-
-      if(!conf->use_ipv6 && ifa->ifa_addr->sa_family == AF_INET) {
-
-        struct sockaddr_in *ifaddr4 = (struct sockaddr_in *)ifa->ifa_addr;
-        mreq.imr_interface.s_addr = ifaddr4->sin_addr.s_addr;
-
-        #ifdef DEBUG___
-        {
-          PRINT_DEBUG("    is_ipv6 == FALSE");
-          PRINT_DEBUG("      IP_ADD_MEMBERSHIP");
-          char a[100];
-          inet_ntop(AF_INET, (void *)&mreq.imr_interface, a, 100);
-          PRINT_DEBUG("      mreq->imr_interface: %s", a);
-          inet_ntop(AF_INET, (void *)&mreq.imr_multiaddr, a, 100);
-          PRINT_DEBUG("      mreq->imr_multiaddr: %s", a);
-        }
-        #endif
-
-        if(setsockopt(sock, protocol, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
-         PRINT_ERROR("setup_socket(); setsockopt() IP_ADD_MEMBERSHIP: (%d) %s", errno, strerror(errno));
-         close(sock);
-         free(saddr);
-          if(sa != NULL) {
-            free(interface);
-          }
-          free_stuff();
-          exit(EXIT_FAILURE);
-        }
-      }
-      else if(!conf->use_ipv4 && ifa->ifa_addr->sa_family == AF_INET6) {
-
-        mreq6.ipv6mr_interface = if_nametoindex(ifa->ifa_name);
-
-        #ifdef DEBUG___
-        {
-          PRINT_DEBUG("    is_ipv6 == TRUE");
-          PRINT_DEBUG("      IPV6_ADD_MEMBERSHIP");
-          char a[100];
-          inet_ntop(AF_INET6, (void *)&mreq6.ipv6mr_interface, a, 100);
-          PRINT_DEBUG("      mreq6->ipv6mr_interface: %s", a);
-        }
-        #endif
-        if(setsockopt(sock, protocol, IPV6_ADD_MEMBERSHIP, &mreq6, sizeof(struct ipv6_mreq)) < 0) {
-          PRINT_ERROR("setup_socket(); setsockopt() IPV6_ADD_MEMBERSHIP: (%d) %s", errno, strerror(errno));
-          close(sock);
-          free(saddr);
-          if(sa != NULL) {
-            free(interface);
-          }
-          free_stuff();
-          exit(EXIT_FAILURE);
-        }
-      }
-
-
-
-      if(!conf->quiet_mode) {
-        char mcast_str[IPV6_STR_MAX_SIZE];
-        char if_str[IPV6_STR_MAX_SIZE];
-        inet_ntop(ifa->ifa_addr->sa_family,
-                 (ifa->ifa_addr->sa_family == AF_INET6 ? (void *)&mreq6.ipv6mr_multiaddr : (void *)&mreq.imr_multiaddr),
-                 mcast_str,
-                 sizeof(char) * IPV6_STR_MAC_SIZE);
-        inet_ntop(ifa->ifa_addr->sa_family, (void *)ifa-ifa_addr.in_addr, interface, IPV6_STR_MAX_SIZE);
-        printf("Interface %s joined multicast group %s\n", interface, mcast_str);
-      }
-
-      free(mcast_str);
-
-      // If it is is not a bindall address then end the loop
-      if(!is_bindall) {
-        ifa = NULL;
-      }
-
-    }
-
-    // Free ifaddrs interfaces
-    if(interfaces != NULL) {
-      freeifaddrs(interfaces);
-      interfaces = NULL;
-    }
-  }
-  */
-
   free(saddr);
 
   return sock;
 }
 
 /**
-* Check whether a given IP is a multicast IP
-* (if IPV6 checks for UPnP multicast IP, should be
-* changed to check if multicast at all)
-*
-* @param const char *address The address to check
-*
-* @return BOOL Obvious.
-*/
+ * Check whether a given IP is a multicast IP
+ * (if IPV6 checks for UPnP multicast IP, should be
+ * changed to check if multicast at all).
+ *
+ * @param address The address to check.
+ *
+ * @return TRUE on success, FALSE otherwise.
+ */
 static BOOL is_address_multicast(const char *address) {
   char *str_first = NULL;
   int int_first = 0;
@@ -3544,10 +2518,10 @@ static BOOL is_address_multicast(const char *address) {
 }
 
 /**
-* Initializes (allocates neccessary memory) for a SSDP message
-*
-* @param message The message to initialize
-*/
+ * Initializes (allocates neccessary memory) for a SSDP message.
+ *
+ * @param message The message to initialize.
+ */
 static BOOL init_ssdp_message(ssdp_message_s **message_pointer) {
   if(NULL == *message_pointer) {
     *message_pointer = (ssdp_message_s *)malloc(sizeof(ssdp_message_s));
@@ -3650,7 +2624,6 @@ static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_messa
         ssdp_message->protocol);
 
   while(cf) {
-    
     buffer_used += snprintf(results + buffer_used,
                             buffer_size - buffer_used,
                             "Custom field[%d][%s]: %s\n",
@@ -3681,10 +2654,11 @@ static BOOL create_plain_text_message(char *results, int buffer_size, ssdp_messa
  * Adds a ssdp message to a ssdp messages list. If the list hasn't been
  * initialized then it is initialized first.
  *
- * @param **ssdp_cache_pointer The address of a pointer to a ssdp cache list
- * @param *ssdp_message The ssdp message to be appended to the cache list
+ * @param ssdp_cache_pointer The address of a pointer to a ssdp cache list
+ * @param ssdp_message_pointer The ssdp message to be appended to the cache
+ *        list.
  *
- * @return TRUE on success, exits on error
+ * @return TRUE on success, exits on failure.
  */
 static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_message_s **ssdp_message_pointer) {
   ssdp_message_s *ssdp_message = *ssdp_message_pointer;
@@ -3722,7 +2696,7 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
 
     /* Point to the begining of the cache list */
     ssdp_cache = (*ssdp_cache_pointer)->first;
-  
+
     /* Check for duplicate and update it if found */
     while(ssdp_cache) {
       if(0 == strcmp(ssdp_message->ip, ssdp_cache->ssdp_message->ip)) {
@@ -3785,9 +2759,9 @@ static BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer, ssdp_me
 }
 
 /**
- * Frees all the elements in the ssdp messages list
+ * Frees all the elements in the ssdp messages list.
  *
- * @param **ssdp_cache_pointer The ssdp cache list to be cleared
+ * @param ssdp_cache_pointer The ssdp cache list to be cleared.
  */
 static void free_ssdp_cache(ssdp_cache_s **ssdp_cache_pointer) {
   ssdp_cache_s *ssdp_cache = NULL;
