@@ -3,6 +3,8 @@
 
 #include <sys/socket.h>
 
+#include "common_definitions.h"
+
 /**
  * Parse a given ip:port combination into an internet address structure
  *
@@ -35,5 +37,16 @@ int find_interface(struct sockaddr_storage *, char *, char *);
  */
 char *get_mac_address_from_socket(const SOCKET sock,
     struct sockaddr_storage *sa_ip, char *ip);
+
+/**
+ * Check whether a given IP is a multicast IP
+ * (if IPV6 checks for UPnP multicast IP, should be
+ * changed to check if multicast at all).
+ *
+ * @param address The address to check.
+ *
+ * @return TRUE on success, FALSE otherwise.
+ */
+BOOL is_address_multicast(const char *address);
 
 #endif /* __NET_UTILS_H__ */

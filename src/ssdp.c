@@ -4,6 +4,7 @@
 
 #include "log.h"
 #include "ssdp.h"
+#include "ssdp_static_defs.h"
 
 unsigned char get_header_type(const char *header_string) {
   int headers_size;

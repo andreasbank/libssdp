@@ -553,3 +553,41 @@ char *get_mac_address_from_socket(const SOCKET sock,
   return mac_string;
 }
 
+BOOL is_address_multicast(const char *address) {
+  char *str_first = NULL;
+  int int_first = 0;
+  BOOL is_ipv6;
+  if(address != NULL) {
+    // TODO: Write a better IPv6 discovery mechanism
+    is_ipv6 = strchr(address, ':') != NULL ? TRUE : FALSE;
+    if(strcmp(address, "0.0.0.0") == 0) {
+      return TRUE;
+    }
+    if(is_ipv6) {
+      struct in6_addr ip6_ll;
+      struct in6_addr ip6_addr;
+      inet_pton(AF_INET6, "ff02::c", &ip6_ll);
+      inet_pton(AF_INET6, address, &ip6_addr);
+      if(ip6_ll.s6_addr == ip6_addr.s6_addr) {
+        return TRUE;
+      }
+      return FALSE;
+    }
+    else {
+      str_first = (char *)malloc(sizeof(char) * 4);
+      memset(str_first, '\0', sizeof(char) * 4);
+      strncpy(str_first, address, 3);
+      int_first = atoi(str_first);
+      free(str_first);
+      if(int_first > 223 && int_first < 240) {
+        return TRUE;
+      }
+      return FALSE;
+    }
+  }
+
+  printf("Supplied address ('%s') is not valid\n", address);
+
+  return FALSE;
+}
+
