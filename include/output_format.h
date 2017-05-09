@@ -2,6 +2,7 @@
 #define __OUTPUT_FORMAT_H__
 
 #include "ssdp.h"
+#include "ssdp_cache.h"
 
 /**
  * Convert a ssdp cache list (multiple ssdp_messages) to a single JSON blob

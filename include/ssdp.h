@@ -72,18 +72,6 @@ typedef struct ssdp_message_struct {
   struct ssdp_custom_field_struct *custom_fields;
 } ssdp_message_s;
 
-/* the ssdp_message_s cache that
-   acts as a buffer for sending
-   bulks of messages instead of spamming;
-   *ssdp_message should always point to
-   the last ssdp_message in the buffer */
-typedef struct ssdp_cache_struct {
-  struct ssdp_cache_struct *first;
-  ssdp_message_s *ssdp_message;
-  struct ssdp_cache_struct *next;
-  unsigned int *ssdp_messages_count;
-} ssdp_cache_s;
-
 /**
  * Returns the appropriate unsigned char (number) representation of the header
  * string.

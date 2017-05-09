@@ -343,9 +343,9 @@ BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip
  * TODO: >>>TO BE DEPRECATED SOON<<<
  */
 SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
-    char *interface, char *if_ip, struct sockaddr_storage *sa, const char *ip,
-    int port, BOOL is_server, int queue_length, BOOL keepalive, int ttl,
-    BOOL loopback) {
+    char *interface, char *if_ip, struct sockaddr_storage *sa,
+    const char *ip, int port, BOOL is_server, int queue_length, BOOL keepalive,
+    int ttl, BOOL loopback) {
   SOCKET sock;
   int protocol;
   int ifindex = 0;

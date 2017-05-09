@@ -167,7 +167,8 @@ BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *rest,
   return TRUE;
 }
 
-int find_interface(struct sockaddr_storage *saddr, char *interface, char *address) {
+int find_interface(struct sockaddr_storage *saddr, const char *interface,
+    const char *address) {
   // TODO: for porting to Windows see http://msdn.microsoft.com/en-us/library/aa365915.aspx
   struct ifaddrs *interfaces, *ifa;
   struct sockaddr_in6 *saddr6 = (struct sockaddr_in6 *)saddr;

@@ -1,6 +1,9 @@
 #ifndef __COMMON_DEFINITIONS__
 #define __COMMON_DEFINITIONS__
 
+/* The current version of the program */
+#define ABUSED_VERSION "0.0.3"
+
 /* PORTABILITY */
 #define TRUE             (1==1)
 #define FALSE            (!TRUE)

@@ -21,12 +21,14 @@ BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *rest,
 /**
 * Tries to find a interface with the specified name or IP address
 *
-* @param struct sockaddr_storage *saddr A pointer to the buffer of the address that should be updated
-* @param char * address The address or interface name we want to find
+* @param saddr A pointer to the buffer of the address that should be updated.
+* @param interface The interface name we want to find.
+* @param address The address name we want to find.
 *
-* @return int The interface index
+* @return The interface index (int).
 */
-int find_interface(struct sockaddr_storage *, char *, char *);
+int find_interface(struct sockaddr_storage *saddr, const char *interface,
+    const char *address);
 
 /**
  * Get the remote MAC address from a given sock.
