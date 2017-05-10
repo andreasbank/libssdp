@@ -8,13 +8,10 @@
 #include "configuration.h"
 #include "log.h"
 #include "socket_helpers.h"
-#include "ssdp.h"
+#include "ssdp_message.h"
 #include "ssdp_cache.h"
 #include "ssdp_message.h"
-#include "output_format.h"
-
-// TODO: fix when ssdp file is complete!!!
-extern void free_ssdp_message(ssdp_message_s **message_pointer);
+#include "ssdp_cache_output_format.h"
 
 /**
  * Create a plain-text message.

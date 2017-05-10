@@ -3,8 +3,8 @@
 
 #include "common_definitions.h"
 #include "log.h"
-#include "output_format.h"
-#include "ssdp.h"
+#include "ssdp_cache_output_format.h"
+#include "ssdp_message.h"
 
 unsigned int cache_to_json(ssdp_cache_s *ssdp_cache, char *json_buffer,
     unsigned int json_buffer_size) {

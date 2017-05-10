@@ -2,7 +2,7 @@
 #define __SSDP_CACHE_H__
 
 #include "configuration.h"
-#include "ssdp.h"
+#include "ssdp_message.h"
 #include "sys/socket.h"
 
 /* the ssdp_message_s cache that

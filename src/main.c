@@ -44,11 +44,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/stat.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/ioctl.h>
 #include <netdb.h>
 #include <ifaddrs.h>
 
@@ -63,7 +61,6 @@
 
 #include <errno.h>
 #include <signal.h>
-#include <time.h>
 
 #ifdef BSD
 #include <sys/sysctl.h>
@@ -75,298 +72,44 @@
 
 #include "configuration.h"
 #include "common_definitions.h"
+#include "daemon.h"
+#include "ssdp_filter.h"
 #include "log.h"
 #include "net_definitions.h"
 #include "net_utils.h"
-#include "output_format.h"
+#include "ssdp_cache_output_format.h"
 #include "socket_helpers.h"
-#include "ssdp.h"
 #include "ssdp_cache.h"
+#include "ssdp_cache_display.h"
 #include "ssdp_message.h"
 #include "ssdp_static_defs.h"
 #include "string_utils.h"
 
-typedef struct filter_struct {
-  char *header;
-  char *value;
-} filter_s;
+/* The main socket for listening for UPnP (SSDP) devices (or device answers) */
+static SOCKET notif_server_sock = 0;
 
-typedef struct filters_factory_struct {
-  filter_s *filters;
-  filter_s *first_filter;
-  char *raw_filters;
-  unsigned char filters_count;
-} filters_factory_s;
+/* The sock that we want to ask/look for devices on (unicast) */
+static SOCKET notif_client_sock = 0;
 
-/* Globals */
-static SOCKET               notif_server_sock = 0;       /* The main socket for listening for UPnP (SSDP) devices (or device answers) */
-static SOCKET               notif_client_sock = 0;       /* The sock that we want to ask/look for devices on (unicast) */
-static SOCKET               notif_recipient_sock = 0;    /* Notification recipient socket, where the results will be forwarded */
-struct sockaddr_storage    *notif_recipient_addr = NULL; /* The sockaddr where we store the recipient address */
-static filters_factory_s   *filters_factory = NULL;      /* The structure contining all the filters information */
-static configuration_s      conf;                         /* The program configuration */
+/* Notification recipient socket, where the results will be forwarded */
+static SOCKET notif_recipient_sock = 0;
 
-/* Functions */
-static void free_stuff();
-static void exit_sig(int);
-static BOOL build_ssdp_message(ssdp_message_s *, char *, char *, int, const char *);
-static int fetch_custom_fields(ssdp_message_s *);
-static void parse_filters(char *, filters_factory_s **, BOOL);
-static BOOL init_ssdp_message(ssdp_message_s **);
-static void daemonize();
-static BOOL filter(ssdp_message_s *, filters_factory_s *);
-static void display_ssdp_cache(ssdp_cache_s *, BOOL);
-static void move_cursor(int, int);
-static void get_window_size(int *, int *);
-static ssdp_custom_field_s *get_custom_field(ssdp_message_s *, const char *);
+/* The sockaddr where we store the recipient address */
+struct sockaddr_storage *notif_recipient_addr = NULL;
+
+/* The structure contining all the filters information */
+static filters_factory_s *filters_factory = NULL;
+
+/* The program configuration */
+static configuration_s conf;
+
+
+
 
 /**
- * Prepares the process to run as a daemon
+ * Frees all global allocations.
  */
-static void daemonize() {
-
-  PRINT_DEBUG("Running as daemon");
-
-  int fd, max_open_fds;
-
-  /**
-   * Daemon preparation steps:
-   *
-   * 1. Set up rules for ignoring all (tty related)
-   *    signals that can stop the process
-   *
-   * 2. Fork to child and exit parent to free
-   *    the terminal and the starting process
-   *
-   * 3. Change PGID to ignore parent stop signals
-   *    and disassociate from controlling terminal
-   *    (two solutions, normal and BSD)
-   *
-   */
-
-  /* If started with init then no need to detach and do all the stuff */
-  if(getppid() == 1) {
-    PRINT_DEBUG("Started by init, skipping some daemon setup");
-    goto started_with_init;
-  }
-
-  /* Ignore signals */
-  #ifdef SIGTTOU
-  signal(SIGTTOU, SIG_IGN);
-  #endif
-
-  #ifdef SIGTTIN
-  signal(SIGTTIN, SIG_IGN);
-  #endif
-
-  #ifdef SIGTSTP
-  signal(SIGTSTP, SIG_IGN);
-  #endif
-
-  /*  Get new PGID (not PG-leader and not zero) and free parent process
-  so terminal can be used/closed */
-  if(fork() != 0) {
-
-    /* Exit parent */
-    exit(EXIT_SUCCESS);
-
-  }
-
-  #ifdef BSD
-  PRINT_DEBUG("Using BSD daemon proccess");
-  setpgrp();
-
-  if((fd = open("/dev/tty", O_RDWR)) >= 0) {
-
-    /* Get rid of the controlling terminal */
-    ioctl(fd, TIOCNOTTY, 0);
-    close(fd);
-
-  }
-  else {
-
-    PRINT_ERROR("Could not dissassociate from controlling terminal: openning /dev/tty failed.");
-    free_stuff();
-    exit(EXIT_FAILURE);
-
-  }
-  #else
-  PRINT_DEBUG("Using UNIX daemon proccess");
-
-  /* Non-BSD UNIX systems do the above with a single call to setpgrp() */
-  setpgrp();
-
-  /* Ignore death if parent dies */
-  signal(SIGHUP,SIG_IGN);
-
-  /*  Get new PGID (not PG-leader and not zero)
-      because non-BSD systems don't allow assigning
-      controlling terminals to non-PG-leader processes */
-  pid_t pid = fork();
-  if(pid < 0) {
-
-    /* Exit the both processess */
-    exit(EXIT_FAILURE);
-
-  }
-
-  if(pid > 0) {
-
-    /* Exit the parent */
-    exit(EXIT_SUCCESS);
-
-  }
-  #endif
-
-  started_with_init:
-
-  /* Close all possibly open descriptors */
-  PRINT_DEBUG("Closing all open descriptors");
-  max_open_fds = sysconf(_SC_OPEN_MAX);
-  for(fd = 0; fd < max_open_fds; fd++) {
-
-    close(fd);
-
-  }
-
-  /* Change cwd in case it was on a mounted system */
-  if(-1 == chdir("/")) {
-    PRINT_ERROR("Failed to change to a safe directory");
-    free_stuff();
-    exit(EXIT_FAILURE);
-  }
-
-  /* Clear filemode creation mask */
-  umask(0);
-
-  PRINT_DEBUG("Now running in daemon mode");
-
-}
-
-/**
- * Check if the SSDP message needs to be filtered-out (dropped)
- *
- * @param ssdp_message The SSDP message to be checked
- * @param filters_factory The filters to check against
- */
-static BOOL filter(ssdp_message_s *ssdp_message, filters_factory_s *filters_factory) {
-
-  PRINT_DEBUG("traversing filters");
-  BOOL drop_message = FALSE;
-  int fc;
-  for(fc = 0; fc < filters_factory->filters_count; fc++) {
-
-    BOOL filter_found = FALSE;
-    char *filter_value = filters_factory->filters[fc].value;
-    char *filter_header = filters_factory->filters[fc].header;
-
-    /* If IP filtering has been set, check values */
-    if(strcmp(filter_header, "ip") == 0) {
-      filter_found = TRUE;
-      if(strstr(ssdp_message->ip, filter_value) == NULL) {
-        PRINT_DEBUG("IP filter mismatch, dropping message");
-        drop_message = TRUE;
-        break;
-      }
-    }
-
-    /* If mac filtering has been set, check values */
-    if(strcmp(filter_header, "mac") == 0) {
-      filter_found = TRUE;
-      if(strstr(ssdp_message->mac, filter_value) == NULL) {
-        PRINT_DEBUG("MAC filter mismatch, dropping message");
-        drop_message = TRUE;
-        break;
-      }
-    }
-
-    /* If protocol filtering has been set, check values */
-    if(strcmp(filter_header, "protocol") == 0) {
-      filter_found = TRUE;
-      if(strstr(ssdp_message->protocol, filter_value) == NULL) {
-        PRINT_DEBUG("Protocol filter mismatch, dropping message");
-        drop_message = TRUE;
-        break;
-      }
-    }
-
-    /* If request filtering has been set, check values */
-    if(strcmp(filter_header, "request") == 0) {
-      filter_found = TRUE;
-      if(strstr(ssdp_message->request, filter_value) == NULL) {
-        PRINT_DEBUG("Request filter mismatch, dropping message");
-        drop_message = TRUE;
-        break;
-      }
-    }
-
-    ssdp_header_s *ssdp_headers = ssdp_message->headers;
-
-    /* If any other filter has been set try to match it
-       with a header type and then check values */
-    while(ssdp_headers) {
-
-      /* See if the headet type matches the filter type
-         and if so check the values */
-      char const *ssdp_header_string = get_header_string(ssdp_headers->type, ssdp_headers);
-      if(strcmp(ssdp_header_string, filter_header) == 0) {
-        filter_found = TRUE;
-
-        /* Then see if the values match */
-        if(strstr(ssdp_headers->contents, filter_value) == NULL) {
-          PRINT_DEBUG("Header (%s) filter mismatch, marked for dropping", filter_header);
-          drop_message = TRUE;
-          break;
-        }
-      }
-      ssdp_headers = ssdp_headers->next;
-    }
-
-    /* If no comparison (match or missmatch) was made then drop the message */
-    if(!filter_found) {
-      PRINT_DEBUG("Filter type not found, marked for dropping");
-      drop_message = TRUE;
-    }
-
-    if(drop_message) {
-      break;
-    }
-  }
-
-  return drop_message;
-}
-
-/**
- * Searches the SSDP message custom-fields for the given custom-field name
- *
- * @param ssdp_message The SSDP message to search in
- * @param custom_field The Custom Field to search for
- *
- * @return Returns the found custom-field or NULL
- */
-static ssdp_custom_field_s *get_custom_field(ssdp_message_s *ssdp_message, const char *custom_field) {
-  ssdp_custom_field_s *cf = NULL;
-
-  if(ssdp_message && custom_field) {
-    cf = ssdp_message->custom_fields;
-
-    /* Loop through the custom-fields */
-    while(cf) {
-
-      /* If anyone matches return its value */
-      if(0 == strcmp(custom_field, cf->name)) {
-        return cf;
-      }
-
-      cf = cf->next;
-    }
-
-  }
-
-  return NULL;
-}
-
-static void free_stuff() {
+static void cleanup() {
 
   if(notif_server_sock != 0) {
     close(notif_server_sock);
@@ -403,145 +146,100 @@ static void free_stuff() {
     filters_factory = NULL;
   }
 
-  if(!conf.quiet_mode) {
-    printf("\nCleaning up and exitting...\n");
-  }
-
-}
-
-static void get_window_size(int *width, int *height) {
-    struct winsize w;
-    ioctl(0, TIOCGWINSZ, &w);
-
-    *width = w.ws_col;
-    *height = w.ws_row;
-}
-
-/* Moves the terminal cursor to the given coords */
-static void move_cursor(int row, int col) {
-  printf("\033[%d;%dH", row, col);
+  PRINT_DEBUG("\nCleaning up and exitting...\n");
 }
 
 /**
- * Displays the SSDP cache list as a table
+ * The exit callback function called on any exit signal.
+ *
+ * @param param The signal handler parameter (ignored).
  */
-static void display_ssdp_cache(ssdp_cache_s *ssdp_cache, BOOL draw_asci) {
-  int horizontal_lines_printed = 4;
-  const char **tbl_ele = NULL;
+static void exit_sig(int param) {
+  cleanup();
+  exit(EXIT_SUCCESS);
+}
 
-  const char *single_line_table_elements[] = {
-    "┤", // 185 "\e(0\x75\e(B"
-    "│", // 186 "\e(0\x78\e(B"
-    "┐", // 187 "\e(0\x6b\e(B"
-    "┘", // 188 "\e(0\x6a\e(B"
-    "└", // 200 "\e(0\x6d\e(B"
-    "┌", // 201 "\e(0\x6c\e(B"
-    "┴", // 202 "\e(0\x76\e(B"
-    "┬", // 203 "\e(0\x77\e(B"
-    "├", // 204 "\e(0\x74\e(B"
-    "─", // 205 "\e(0\x71\e(B"
-    "┼"  // 206 "\e(0\x6e\e(B"
-  };
+/**
+ * Decides what the program will run as and does the neccessary
+ * deamonizing and forking.
+ *
+ * @param conf The global configuration to use.
+ */
+static void decide_running_states(configuration_s *conf) {
 
-  const char *asci_table_elements[] = {
-    "+",
-    "|",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "-",
-    "+",
-  };
+  if(conf->run_as_daemon &&
+     !(conf->run_as_server ||
+       (conf->listen_for_upnp_notif && conf->forward_enabled) ||
+       conf->scan_for_upnp_devices)) {
+    /* If missconfigured, stop and notify the user */
 
-  const char *columns[] = {
-    " ID                  ",
-    " IPv4            ",
-    " MAC               ",
-    " Model           ",
-    " Version         "
-  };
+    PRINT_ERROR("Cannot start as daemon.\nUse -d in combination with "
+        "-S or -a.\n");
+    exit(EXIT_FAILURE);
 
-  if(draw_asci) {
-    tbl_ele = asci_table_elements;
   }
-  else {
-    tbl_ele = single_line_table_elements;
+  else if(conf->run_as_daemon) {
+    /* If run as a daemon */
+    daemonize();
   }
 
-  move_cursor(0, 0);
-
-  /* Draw the topmost line */
-  int i;
-  for(i = 0; i < sizeof(columns) / sizeof(char *); i++) {
-    printf("%s",
-           (i == 0 ? tbl_ele[5] : tbl_ele[7]));
-    int j;
-    for(j = 0; j < strlen(columns[i]); j++) {
-      printf("%s", tbl_ele[9]);
+  /* If set to listen for UPnP notifications then
+     fork() and live a separate life */
+  if (conf->listen_for_upnp_notif &&
+     ((conf->run_as_daemon && conf->forward_enabled) ||
+     conf->run_as_server)) {
+    if (fork() != 0) {
+      /* listen_for_upnp_notif went to the forked process,
+         so it is set to false in parent so it doesn't run twice'*/
+      conf->listen_for_upnp_notif = FALSE;
     }
-  }
-  printf("%s\n", tbl_ele[2]);
-
-  /* Draw first row with column titles */
-  for(i = 0; i < sizeof(columns) / sizeof(char *); i++) {
-    printf("%s\x1b[1m%s\x1b[0m", tbl_ele[1], columns[i]);
-  }
-  printf("%s\n", tbl_ele[1]);
-
-  if(ssdp_cache) {
-
-    /* Draw a row-dividing line */
-    for(i = 0; i < sizeof(columns) / sizeof(char *); i++) {
-      printf("%s", (i == 0 ? tbl_ele[8] : tbl_ele[10]));
-      int j;
-      for(j = 0; j < strlen(columns[i]); j++) {
-        printf("%s", tbl_ele[9]);
-      }
-    }
-    printf("%s\n", tbl_ele[0]);
-
-    ssdp_custom_field_s *cf = NULL;
-    ssdp_cache = ssdp_cache->first;
-    const char no_info[] = "-";
-    while(ssdp_cache) {
-        cf = get_custom_field(ssdp_cache->ssdp_message, "serialNumber");
-        printf("%s %-20s", tbl_ele[1], (cf && cf->contents ? cf->contents : no_info));
-        printf("%s %-16s", tbl_ele[1], ssdp_cache->ssdp_message->ip);
-        printf("%s %-18s", tbl_ele[1], (ssdp_cache->ssdp_message->mac &&
-                                 0 != strcmp(ssdp_cache->ssdp_message->mac, "") ?
-                                 ssdp_cache->ssdp_message->mac :
-                                 no_info));
-        cf = get_custom_field(ssdp_cache->ssdp_message, "modelName");
-        printf("%s %-*s", tbl_ele[1], 16, (cf && cf->contents ? cf->contents : no_info));
-        cf = get_custom_field(ssdp_cache->ssdp_message, "modelNumber");
-        printf("%s %-16s", tbl_ele[1], (cf && cf->contents ? cf->contents : no_info));
-        printf("%s\n", tbl_ele[1]);
-
-        horizontal_lines_printed++;
-
-        ssdp_cache = ssdp_cache->next;
+    else {
+      PRINT_DEBUG("Created a process for listening of UPnP notifications");
+      /* scan_for_upnp_devices is set to false
+         so it doesn't run in this child (if it will be run at all) */
+      conf->scan_for_upnp_devices = FALSE;
     }
   }
 
-  /* Draw the bottom line */
-  for(i = 0; i < sizeof(columns) / sizeof(char *); i++) {
-    printf("%s",
-           (i == 0 ? tbl_ele[4] : tbl_ele[6]));
-    int j;
-    for(j = 0; j < strlen(columns[i]); j++) {
-      printf("%s", tbl_ele[9]);
+  /* If set to scan for UPnP-enabled devices then
+     fork() and live a separate life */
+  if(conf->scan_for_upnp_devices &&
+      (conf->run_as_daemon || conf->run_as_server)) {
+    if (fork() != 0) {
+      /* scan_for_upnp_devices went to the forked process,
+         so it set to false in parent so it doesn't run twice */
+      conf->scan_for_upnp_devices = FALSE;
+    }
+    else {
+      PRINT_DEBUG("Created a process for scanning UPnP devices");
+      /* listen_for_upnp_notif is set to false
+         so it doesn't run in this child (if it will be run at all) */
+      conf->listen_for_upnp_notif = FALSE;
     }
   }
-  printf("%s\n", tbl_ele[3]);
-  int width, height;
+}
 
-  get_window_size(&width, &height);
-  for(i = 1; i < height - horizontal_lines_printed; i++) {
-    printf("%*s\n", width, " ");
+/**
+ * Print forwarding status.
+ *
+ * @param conf The global configuration to use.
+ * @param sa The address of the forward recipient.
+ */
+static void print_forwarding_config(configuration_s *conf,
+    struct sockaddr_storage *sa) {
+  if(!conf->quiet_mode && notif_recipient_addr) {
+    char ip[IPv6_STR_MAX_SIZE];
+    memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
+    inet_ntop(notif_recipient_addr->ss_family,
+        (notif_recipient_addr->ss_family == AF_INET ?
+        (void *)&(((struct sockaddr_in *)notif_recipient_addr)->sin_addr) :
+        (void *)&(((struct sockaddr_in6 *)notif_recipient_addr)->sin6_addr)),
+        ip, sizeof(char) * IPv6_STR_MAX_SIZE);
+    printf("Forwarding is enabled, ");
+    printf("forwarding to IP %s on port %d\n", ip,
+        ntohs((notif_recipient_addr->ss_family == AF_INET ?
+        ((struct sockaddr_in *)notif_recipient_addr)->sin_port :
+        ((struct sockaddr_in6 *)notif_recipient_addr)->sin6_port)));
   }
 }
 
@@ -560,81 +258,18 @@ int main(int argc, char **argv) {
 
   set_default_configuration(&conf);
   if (parse_args(argc, argv, &conf)) {
-    free_stuff();
+    cleanup();
     exit(EXIT_FAILURE);
   }
 
-  /* Output forward status */
-  if(!conf.quiet_mode && notif_recipient_addr) {
-    char ip[IPv6_STR_MAX_SIZE];
-    memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
-    inet_ntop(notif_recipient_addr->ss_family,
-              (notif_recipient_addr->ss_family == AF_INET ?
-                (void *)&(((struct sockaddr_in *)notif_recipient_addr)->sin_addr) :
-                (void *)&(((struct sockaddr_in6 *)notif_recipient_addr)->sin6_addr)),
-              ip,
-              sizeof(char) * IPv6_STR_MAX_SIZE);
-    printf("Forwarding is enabled, ");
-    printf("forwarding to IP %s on port %d\n",
-           ip,
-           ntohs((notif_recipient_addr->ss_family == AF_INET ?
-                   ((struct sockaddr_in *)notif_recipient_addr)->sin_port :
-                   ((struct sockaddr_in6 *)notif_recipient_addr)->sin6_port)));
-  }
+  print_forwarding_config(&conf, notif_recipient_addr);
 
-  /* If missconfigured, stop and notify the user */
-  if(conf.run_as_daemon &&
-     !(conf.run_as_server ||
-       (conf.listen_for_upnp_notif && conf.forward_enabled) ||
-       conf.scan_for_upnp_devices)) {
+  decide_running_states(&conf);
 
-    PRINT_ERROR("Cannot start as daemon.\nUse -d in combination with -S or -a.\n");
-    exit(EXIT_FAILURE);
-
-  }
-  /* If run as a daemon */
-  else if(conf.run_as_daemon) {
-    daemonize();
-  }
-
-  /* If set to listen for UPnP notifications then
-     fork() and live a separate life */
-  if(conf.listen_for_upnp_notif &&
-     ((conf.run_as_daemon && conf.forward_enabled) ||
-     conf.run_as_server)) {
-    if(fork() != 0) {
-      /* listen_for_upnp_notif went to the forked process,
-         so it is set to false in parent so it doesn't run twice'*/
-      conf.listen_for_upnp_notif = FALSE;
-    }
-    else {
-      PRINT_DEBUG("Created a process for listening of UPnP notifications");
-      /* scan_for_upnp_devices is set to false
-         so it doesn't run in this child (if it will be run at all) */
-      conf.scan_for_upnp_devices = FALSE;
-    }
-  }
-
-  /* If set to scan for UPnP-enabled devices then
-     fork() and live a separate life */
-  if(conf.scan_for_upnp_devices && (conf.run_as_daemon || conf.run_as_server)) {
-    if(fork() != 0) {
-      /* scan_for_upnp_devices went to the forked process,
-         so it set to false in parent so it doesn't run twice */
-      conf.scan_for_upnp_devices = FALSE;
-    }
-    else {
-      PRINT_DEBUG("Created a process for scanning UPnP devices");
-      /* listen_for_upnp_notif is set to false
-         so it doesn't run in this child (if it will be run at all) */
-      conf.listen_for_upnp_notif = FALSE;
-    }
-  }
-
-  /* If set to listen for AXIS devices notifications then
-     start listening for notifications but never continue
-     to do any other work the parent should be doing */
   if(conf.listen_for_upnp_notif) {
+    /* If set to listen for AXIS devices notifications then
+       start listening for notifications but never continue
+       to do any other work the parent should be doing */
     PRINT_DEBUG("listen_for_upnp_notif start");
 
     /* Init buffer for receiving messages */
@@ -658,7 +293,7 @@ int main(int argc, char **argv) {
               conf.enable_loopback
       )) == SOCKET_ERROR) {
       PRINT_ERROR("Could not create socket");
-      free_stuff();
+      cleanup();
       exit(errno);
     }
 
@@ -685,7 +320,7 @@ int main(int argc, char **argv) {
       /* Set a timeout limit when waiting for ssdp messages */
       if(!set_receive_timeout(notif_server_sock, 10)) {
         PRINT_ERROR("Failed to set the receive timeout");
-        free_stuff();
+        cleanup();
         exit(EXIT_FAILURE);
       }
 
@@ -792,7 +427,7 @@ int main(int argc, char **argv) {
           }
 
           /* Fetch custom fields */
-          if(conf.fetch_info && !fetch_custom_fields(ssdp_message)) {
+          if(conf.fetch_info && !fetch_custom_fields(&conf, ssdp_message)) {
             PRINT_DEBUG("Could not fetch custom fields");
           }
           ssdp_message = NULL;
@@ -855,7 +490,7 @@ int main(int argc, char **argv) {
               conf.enable_loopback
         )) == SOCKET_ERROR) {
       PRINT_ERROR("Could not create socket");
-      free_stuff();
+      cleanup();
       exit(errno);
     }
 
@@ -896,7 +531,7 @@ int main(int argc, char **argv) {
       free(port_str);
       free(response);
       free(request);
-      free_stuff();
+      cleanup();
       exit(EXIT_FAILURE);
     }
     free(port_str);
@@ -931,7 +566,7 @@ int main(int argc, char **argv) {
     free(request);
     freeaddrinfo(addri);
     if(recvLen < 0) {
-      free_stuff();
+      cleanup();
       PRINT_ERROR("sendto(): Failed sending any data");
       exit(EXIT_FAILURE);
     }
@@ -957,7 +592,7 @@ int main(int argc, char **argv) {
               conf.enable_loopback
     )) == SOCKET_ERROR) {
       PRINT_ERROR("Could not create socket");
-      free_stuff();
+      cleanup();
       exit(errno);
     }
 
@@ -970,7 +605,7 @@ int main(int argc, char **argv) {
     if(setsockopt(notif_server_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout, sizeof(rtimeout)) < 0) {
       PRINT_ERROR("setsockopt() SO_RCVTIMEO: (%d) %s", errno, strerror(errno));
       free(response);
-      free_stuff();
+      cleanup();
       exit(EXIT_FAILURE);
     }
     PRINT_DEBUG("reciving responses");
@@ -1000,7 +635,7 @@ int main(int argc, char **argv) {
       if(!inet_ntop(notif_client_addr.ss_family, (notif_client_addr.ss_family == AF_INET ? (void *)&((struct sockaddr_in *)&notif_client_addr)->sin_addr : (void *)&((struct sockaddr_in6 *)&notif_client_addr)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE)) {
         PRINT_ERROR("inet_ntop(): (%d) %s", errno, strerror(errno));
         free_ssdp_message(&ssdp_message);
-        free_stuff();
+        cleanup();
         exit(EXIT_FAILURE);
       }
 
@@ -1072,7 +707,7 @@ int main(int argc, char **argv) {
       free_ssdp_message(&ssdp_message);
     } while(recvLen > 0);
     free(response);
-    free_stuff();
+    cleanup();
     PRINT_DEBUG("scan_for_upnp_devices end");
     exit(EXIT_SUCCESS);
   } // scan_for_upnp_devices end
@@ -1081,587 +716,7 @@ int main(int argc, char **argv) {
     usage();
   }
 
-  free_stuff();
+  cleanup();
   exit(EXIT_SUCCESS);
 } // main end
-
-static void exit_sig(int param) {
-  free_stuff();
-  exit(EXIT_SUCCESS);
-}
-
-/**
- * Parse a single SSDP header.
- *
- * @param header The location where the parsed result should be stored.
- * @param raw_header The header string to be parsed.
- */
-static void build_ssdp_header(ssdp_header_s *header, const char *raw_header) {
-/*
-[172.26.150.15][458B] "NOTIFY * HTTP/1.1
-HOST: 239.255.255.250:1900
-CACHE-CONTROL: max-age=1800
-LOCATION: http://172.26.150.15:49154/rootdesc1.xml
-OPT: "http://schemas.upnp.org/upnp/1/0/"; ns=01
-01-NLS: 1966d9e6-1dd2-11b2-aa65-a2d9092ea049
-NT: urn:axis-com:service:BasicService:1
-NTS: ssdp:alive
-SERVER: Linux/3.4.0, UPnP/1.0, Portable SDK for UPnP devices/1.6.18
-X-User-Agent: redsonic
-USN: uuid:Upnp-BasicDevice-1_0-00408C184D0E::urn:axis-com:service:BasicService:1
-
-"
-*/
-  int header_name_length = -1, header_contents_length = -1;
-  int raw_header_length = 0;
-  char *header_name;
-
-  header_name_length = strpos(raw_header, ":");
-  if(header_name_length < 1) {
-    return;
-  }
-  header_name = (char *)malloc(sizeof(char) * (header_name_length + 1));
-  memset(header_name, '\0', sizeof(char) * (header_name_length + 1));
-  strncpy(header_name, raw_header, header_name_length);
-
-  header->type = (unsigned char)get_header_type(header_name);
-  if(header->type == SSDP_HEADER_UNKNOWN) {
-    header->unknown_type = (char *)malloc(sizeof(char) * header_name_length + 1);
-    memset(header->unknown_type, '\0', header_name_length + 1);
-    strcpy(header->unknown_type, header_name);
-  }
-  else {
-    header->unknown_type = NULL;
-  }
-
-  raw_header_length = strlen(raw_header);
-  header_contents_length = raw_header_length - header_name_length + 2;
-  header->contents = (char *)malloc(sizeof(char) * header_contents_length);
-  memset(header->contents, '\0', sizeof(char) * header_contents_length);
-  strcpy(header->contents, &raw_header[header_name_length + 1 + (raw_header[header_name_length + 2] == ' ' ? 1 : 0)]); // avoid ": " in header contents
-  free(header_name);
-}
-
-/**
-* Parse a SSDP message
-*
-* @param ssdp_message_s *message The location where the parsed result should be stored
-* @param const char *ip The IP address of the sender
-* @param const char *mac The MAC address of the sender
-* @param const const int *message_length The message length
-* @param const char *raw_message The message string to be parsed
-*/
-static BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac, int message_length, const char *raw_message) {
-  char *raw_header;
-  int newline = 0, last_newline = 0;
-  int raw_message_left = strlen(raw_message);
-  time_t t;
-
-  t = time(NULL);
-  strftime(message->datetime, 20, "%Y-%m-%d %H:%M:%S", localtime(&t));
-
-  if(mac) {
-    strncpy(message->mac, mac, MAC_STR_MAX_SIZE);
-  }
-
-  if(ip) {
-    strncpy(message->ip, ip, IPv6_STR_MAX_SIZE);
-  }
-  message->message_length = message_length;
-
-  /* find end of request string */
-  last_newline = strpos(raw_message, "\r\n");
-  if(last_newline < 0) {
-    PRINT_DEBUG("build_ssdp_message() failed: last_newline < 0");
-    return FALSE;
-  }
-  PRINT_DEBUG("last_newline: %d", last_newline);
-
-  /* get past request string, point at first header row */
-  last_newline += 2;
-
-  /* save request string and protocol */
-  /* TODO: make it search and save
-  * http-answer if present too
-  * eg. in "HTTP/1.1 200 OK",
-  * see if next is not newline and space
-  * and then save all the way to newline.
-  */
-  newline = strpos(raw_message, "HTTP");
-  if(newline < 0) {
-    free(message->datetime);
-    PRINT_DEBUG("build_ssdp_message() failed: newline < 0");
-    return FALSE;
-  }
-  strncpy(message->request, raw_message, (!newline? newline : newline - 1));
-  strncpy(message->protocol, &raw_message[newline], last_newline - 2 - newline);
-
-  /* allocate starting header heap */
-  message->headers = (ssdp_header_s *)malloc(sizeof(ssdp_header_s));
-  message->headers->first = message->headers;
-
-  BOOL has_next_header = TRUE;
-
-  do {
-    int pos;
-
-    /* find where new header ends in raw message */
-    pos = strpos(&raw_message[last_newline], "\r\n");
-    if(pos < 0) {
-      free(message->datetime);
-      PRINT_DEBUG("build_ssdp_message() failed: pos < 0");
-      return FALSE;
-    }
-    newline = last_newline + pos;
-    /* allocate new raw header (header name, contents and '\0') heap */
-    raw_header = (char *)malloc(sizeof(char) * (newline - last_newline + 1));
-    /* fill it with row from raw_message */
-    memset(raw_header, '\0', (newline - last_newline + 1));
-    strncpy(raw_header, &raw_message[last_newline], newline - last_newline);
-
-    /* now lets go and build the header struct */
-    build_ssdp_header(message->headers, raw_header);
-    if(message->headers->contents) {
-      message->header_count++;
-    }
-
-    free(raw_header);
-
-    raw_message_left = strlen(&raw_message[newline]);
-    if(raw_message_left < 4 || (raw_message[newline] == '\r' && raw_message[newline + 1] == '\n' &&
-      raw_message[newline + 2] == '\r' && raw_message[newline + 3] == '\n')) {
-      has_next_header = FALSE;
-    }
-
-    /* if there is another header */
-    if(has_next_header) {
-      /* make newline last_newline and skip "\r\n"*/
-      last_newline = newline + 2;
-      /* if this header was successfully created */
-      if(message->headers->contents) {
-        /* allocate next header heap */
-        message->headers->next = (ssdp_header_s *)malloc(sizeof(ssdp_header_s));
-        memset(message->headers->next, '\0', sizeof(ssdp_header_s));
-        /* pass over first header pointer */
-        message->headers->next->first = message->headers->first;
-        /* and move to it */
-        message->headers = message->headers->next;
-      }
-    }
-    else {
-      message->headers->next = NULL;
-    }
-
-  } while(has_next_header);
-
-  /* reset chain (linked list) */
-  message->headers = message->headers->first;
-
-  return TRUE;
-
-}
-
-/**
- * Parses the filter argument.
- *
- * @param raw_filter The raw filter string.
- * @param filters_count The number of filters found.
- * @param filters The parsed filters array.
- */
-static void parse_filters(char *raw_filter, filters_factory_s **filters_factory, BOOL print_filters) {
-  char *pos = NULL, *last_pos = raw_filter, *splitter = NULL;
-  unsigned char filters_count = 0;
-  filters_factory_s *ff = NULL;
-
-  if(raw_filter == NULL || strlen(raw_filter) < 1) {
-    if(print_filters) {
-      printf("No filters applied.\n");
-    }
-    return;
-  }
-
-  /* Get rid of leading and trailing ',' and '=' */
-  while(*last_pos == ',' || *last_pos == '=') {
-    last_pos++;
-  }
-
-  while(*(last_pos + strlen(last_pos) - 1) == ',' || *(last_pos + strlen(last_pos) - 1) == '=') {
-    memcpy((last_pos + strlen(last_pos) - 1), "\0", 1);
-  }
-
-  /* Number of filters (filter delimiters) found */
-  filters_count = strcount(last_pos, ",") + 1;
-
-  /* Create filter factory (a container for global use) */
-  *filters_factory = (filters_factory_s *)malloc(sizeof(filters_factory_s));
-
-  /* Simplify access name and initialize */
-  ff = *filters_factory;
-  memset(ff, '\0', sizeof(filters_factory_s));
-  ff->filters_count = filters_count;
-
-  /* Create place for all the filters */
-  ff->filters = (filter_s *)malloc(sizeof(filter_s) * filters_count);
-  memset(ff->filters, '\0', sizeof(filter_s) * filters_count);
-
-  int fc;
-  for(fc = 0; fc < filters_count; fc++) {
-
-    /* Header name which value to apply filter on */
-    ff->filters[fc].header = (char *)malloc(sizeof(char) * 64);
-    memset((ff->filters[fc]).header, '\0', sizeof(char) * 64);
-
-    /* Header value to filter on */
-    ff->filters[fc].value = (char *)malloc(sizeof(char) * 2048);
-    memset(ff->filters[fc].value, '\0', sizeof(char) * 2048);
-
-    /* Find filter splitter (',') */
-    pos = strstr(last_pos, ",");
-    if(pos == NULL) {
-      pos = last_pos + strlen(last_pos);
-    }
-
-    /* Find name and value splitter ('=') */
-    splitter = strstr(last_pos, "=");
-    if(splitter > 0) {
-      strncpy(ff->filters[fc].header, last_pos, splitter - last_pos);
-      splitter++;
-      strncpy(ff->filters[fc].value, splitter, pos - splitter);
-    }
-    else {
-      strncpy(ff->filters[fc].header, last_pos, pos - last_pos);
-    }
-    last_pos = pos + 1;
-
-  }
-
-  if(print_filters) {
-    printf("\nFilters applied:\n");
-    int c;
-    for(c = 0; c < filters_count; c++) {
-      printf("%d: %s = %s\n", c, ff->filters[c].header, ff->filters[c].value);
-    }
-  }
-}
-
-/**
- * Fetches additional info from a UPnP message "Location" header
- * and stores it in the custom_fields in the ssdp_message.
- *
- * @param ssdp_message The message whos "Location" header to use.
- *
- * @return The number of bytes received.
- */
-static int fetch_custom_fields(ssdp_message_s *ssdp_message) {
-  int bytes_received = 0;
-  char *location_header = NULL;
-  ssdp_header_s *ssdp_headers = ssdp_message->headers;
-
-  if(ssdp_message->custom_fields) {
-    PRINT_DEBUG("Custom info has already been fetched for this device");
-    return 1;
-  }
-
-  if(!ssdp_headers) {
-    PRINT_ERROR("Missing headers, cannot fetch custom info");
-    return 0;
-  }
-
-  while(ssdp_headers) {
-    if(ssdp_headers->type == SSDP_HEADER_LOCATION) {
-      location_header = ssdp_headers->contents;
-      // Ex. location_header:
-      //http://10.83.128.46:2869/upnphost/udhisapi.dll?content=uuid:59e293c8-9179-4efb-ac32-3c9514238505
-      PRINT_DEBUG("found header_location: %s", location_header);
-    }
-    ssdp_headers = ssdp_headers->next;
-  }
-  ssdp_headers = NULL;
-
-  if(location_header != NULL) {
-
-    /* URL parsing allocations*/
-    PRINT_DEBUG("allocating for URL parsing");
-    char *ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-    int port = 0;
-    char *rest = (char *)malloc(sizeof(char) * 256);
-    char *request = (char *)malloc(sizeof(char) * 1024); // 1KB
-    char *response = (char *)malloc(sizeof(char) * DEVICE_INFO_SIZE); // 8KB
-    memset(ip, '\0', IPv6_STR_MAX_SIZE);
-    memset(rest, '\0', 256);
-    memset(request, '\0', 1024);
-    memset(response, '\0', DEVICE_INFO_SIZE);
-
-    /* Try to parse the location_header URL */
-    PRINT_DEBUG("trying to parse URL");
-    if(parse_url(location_header, ip, IPv6_STR_MAX_SIZE, &port, rest, 256)) {
-
-      /* Create socket */
-      PRINT_DEBUG("creating socket");
-      SOCKET fetch_sock = setup_socket(conf.use_ipv6,
-                 FALSE,
-                 FALSE,
-                 conf.interface,
-                 conf.ip,
-                 NULL,
-                 NULL,
-                 0,
-                 FALSE,
-                 LISTEN_QUEUE_LENGTH,
-                 FALSE,
-                 conf.ttl,
-                 conf.enable_loopback);
-
-      if(fetch_sock == SOCKET_ERROR) {
-        PRINT_ERROR("fetch_custom_fields(); setup_socket(): (%d) %s", errno, strerror(errno));
-        free(ip);
-        free(rest);
-        free(request);
-        free(response);
-        return 0;
-      }
-
-      if(!set_receive_timeout(fetch_sock, 5) ||
-         !set_send_timeout(fetch_sock, 1)) {
-        free(ip);
-        close(fetch_sock);
-        free(rest);
-        free(request);
-        free(response);
-        return 0;
-      }
-
-      /* Setup socket destination address */
-      PRINT_DEBUG("setting up socket addresses");
-      struct sockaddr_storage *da = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
-      memset(da, 0, sizeof(struct sockaddr_storage));
-      da->ss_family = conf.use_ipv6 ? AF_INET6 : AF_INET;
-      if(!inet_pton(da->ss_family, ip, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr))) {
-        int ip_length = strlen(ip);
-        if(ip_length < 1) {
-          PRINT_ERROR("The destination IP address could be determined (%s)\n", (ip_length < 1 ? "empty" : ip));
-        }
-        free(ip);
-        close(fetch_sock);
-        free(rest);
-        free(request);
-        free(response);
-        free(da);
-        return 0;
-      }
-
-      if(da->ss_family == AF_INET) {
-        struct sockaddr_in *da_ipv4 = (struct sockaddr_in *)da;
-        da_ipv4->sin_port = htons(port);
-      }
-      else {
-        struct sockaddr_in6 *da_ipv6 = (struct sockaddr_in6 *)da;
-        da_ipv6->sin6_port = htons(port);
-      }
-
-      /* Connect socket to destination */
-      #ifdef DEBUG___
-      char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-      memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
-      inet_ntop(da->ss_family, (da->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)da)->sin_addr : (void *)&((struct sockaddr_in6 *)da)->sin6_addr), tmp_ip, IPv6_STR_MAX_SIZE);
-      PRINT_DEBUG("connecting to destination (%s; ss_family = %s [%d])", tmp_ip, (da->ss_family == AF_INET ? "AF_INET" : "AF_INET6"), da->ss_family);
-      free(tmp_ip);
-      tmp_ip = NULL;
-      #endif
-      if(connect(fetch_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) == SOCKET_ERROR) {
-        PRINT_ERROR("fetch_custom_fields(); connect(): (%d) %s", errno, strerror(errno));
-        free(ip);
-        close(fetch_sock);
-        free(rest);
-        free(request);
-        free(response);
-        free(da);
-        return 0;
-      }
-
-      free(da);
-      int used_length = 0;
-      /*
-      GET </path/file.html> HTTP/1.0\r\n
-      Host: <own_ip>\r\n
-      User-Agent: abused-<X>\r\n
-      \r\n
-      */
-      used_length += snprintf(request + used_length, 1024 - used_length, "GET %s HTTP/1.0\r\n", rest);
-      used_length += snprintf(request + used_length, 1024 - used_length, "Host: %s\r\n", ip);
-      snprintf(request + used_length, 1024 - used_length, "User-Agent: abused-%s\r\n\r\n", ABUSED_VERSION);
-      PRINT_DEBUG("sending string:\n%s", request);
-      int bytes = send(fetch_sock, request, strlen(request), 0);
-      PRINT_DEBUG("sent %d bytes", bytes);
-      do {
-        bytes = 0;
-        bytes = recv(fetch_sock, response + bytes_received, DEVICE_INFO_SIZE - bytes_received, 0);
-        bytes_received += bytes;
-      } while(bytes > 0);
-      PRINT_DEBUG("received %d bytes", bytes_received);
-      PRINT_DEBUG("%s", response);
-      PRINT_DEBUG("closing socket");
-      close(fetch_sock);
-      free(ip);
-      free(rest);
-      free(request);
-
-      /* Init the ssdp_custom_field struct */
-      int i;
-      char *tmp_pointer = NULL;
-      int buffer_size = 0;
-
-      const char *field[] = {
-        "serialNumber",
-        "friendlyName",
-        "manufacturer",
-        "manufacturerURL",
-        "modelName",
-        "modelNumber",
-        "modelURL"
-      };
-      int fields_size = sizeof(field) / sizeof(char *);
-      PRINT_DEBUG("fields_size: %d", fields_size);
-
-      for(i = 0; i < fields_size; i++) {
-        ssdp_custom_field_s *cf = NULL;
-
-        int field_length = strlen(field[i]);
-
-        char needle[field_length + 4];
-        sprintf(needle, "<%s>", field[i]);
-        tmp_pointer = strstr(response, needle);
-
-        if(tmp_pointer) {
-
-          /* Create a new ssdp_custom_field_s */
-          cf = (ssdp_custom_field_s *)malloc(sizeof(ssdp_custom_field_s));
-          memset(cf, 0, sizeof(ssdp_custom_field_s));
-
-          /* Set 'name' */
-          cf->name = (char *)malloc(sizeof(char) * field_length + 1);
-          strcpy(cf->name, field[i]);
-
-          /* Parse 'contents' */
-          sprintf(needle, "</%s>", field[i]);
-          buffer_size = (int)(strstr(response, needle) - (tmp_pointer + field_length + 2) + 1);
-          cf->contents = (char *)malloc(sizeof(char) * buffer_size);
-          memset(cf->contents, '\0', buffer_size);
-          strncpy(cf->contents, (tmp_pointer + field_length + 2), buffer_size - 1);
-
-          PRINT_DEBUG("Found expected custom field (%d) '%s' with value '%s'",
-                      ssdp_message->custom_field_count,
-                      cf->name,
-                      cf->contents);
-        }
-        else {
-          PRINT_DEBUG("Expected custom field '%s' is missing", field[i]);
-          continue;
-        }
-
-        /* If it is the first one then set this as the
-           start and set 'first' to it */
-        if(!ssdp_message->custom_fields) {
-          cf->first = cf;
-        }
-        /* Else set 'first' to previous 'first' 
-           and this one as 'next' */
-        else {
-          cf->first = ssdp_message->custom_fields->first;
-          ssdp_message->custom_fields->next = cf;
-        }
-
-        /* Add the custom field array to the ssdp_message */
-        ssdp_message->custom_fields = cf;
-
-        /* Tell ssdp_message that we added one ssdp_custom_field_s */
-        ssdp_message->custom_field_count++;
-
-      }
-
-      if(ssdp_message->custom_fields) {
-        /* End the linked list and reset the pointer to the beginning */
-        ssdp_message->custom_fields->next = NULL;
-        ssdp_message->custom_fields = ssdp_message->custom_fields->first;
-      }
-
-    }
-
-    free(response);
-  }
-
-  return bytes_received;
-}
-
-/**
- * Initializes (allocates neccessary memory) for a SSDP message.
- *
- * @param message The message to initialize.
- */
-static BOOL init_ssdp_message(ssdp_message_s **message_pointer) {
-  if(NULL == *message_pointer) {
-    *message_pointer = (ssdp_message_s *)malloc(sizeof(ssdp_message_s));
-    if(!*message_pointer) {
-      return FALSE;
-    }
-    memset(*message_pointer, 0, sizeof(ssdp_message_s));
-  }
-  ssdp_message_s *message = *message_pointer;
-  message->mac = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
-  if(NULL == message->mac) {
-    free(message);
-    return FALSE;
-  }
-  memset(message->mac, '\0', MAC_STR_MAX_SIZE);
-  message->ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-  if(NULL == message->ip) {
-    free(message->mac);
-    free(message);
-    return TRUE;
-  }
-  memset(message->ip, '\0', IPv6_STR_MAX_SIZE);
-  message->datetime = (char *)malloc(sizeof(char) * 20);
-  if(NULL == message->datetime) {
-    free(message->mac);
-    free(message->ip);
-    free(message);
-    return TRUE;
-  }
-  memset(message->datetime, '\0', 20);
-  message->request = (char *)malloc(sizeof(char) * 1024);
-  if(NULL == message->request) {
-    free(message->mac);
-    free(message->ip);
-    free(message->datetime);
-    free(message);
-    return FALSE;
-  }
-  memset(message->request, '\0', 1024);
-  message->protocol = (char *)malloc(sizeof(char) * 48);
-  if(NULL == message->protocol) {
-    free(message->mac);
-    free(message->ip);
-    free(message->datetime);
-    free(message->request);
-    free(message);
-    return FALSE;
-  }
-  memset(message->protocol, '\0', sizeof(char) * 48);
-  message->answer = (char *)malloc(sizeof(char) * 1024);
-  if(NULL == message->answer) {
-    free(message->mac);
-    free(message->ip);
-    free(message->datetime);
-    free(message->request);
-    free(message->protocol);
-    free(message);
-    return FALSE;
-  }
-  memset(message->answer, '\0', sizeof(char) * 1024);
-  message->info = NULL;
-  message->message_length = 0;
-  message->header_count = 0;
-
-  return TRUE;
-}
 

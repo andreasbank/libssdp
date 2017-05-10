@@ -10,7 +10,7 @@
 #include "configuration.h"
 #include "log.h"
 #include "net_utils.h"
-#include "ssdp.h"
+#include "ssdp_message.h"
 #include "string.h"
 
 //TODO: Fix globals!
