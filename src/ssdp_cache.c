@@ -99,7 +99,7 @@ static int send_stuff(const char *url, const char *data,
             NULL,
             0,
             FALSE,
-            LISTEN_QUEUE_LENGTH,
+            0,
             FALSE,
             conf->ttl,
             conf->enable_loopback);

@@ -5,9 +5,7 @@
 
 // TODO: move daemon port to daemon.h ?
 #define DAEMON_PORT           43210   // port the daemon will listen on
-#define NOTIF_RECV_BUFFER     2048 // notification receive-buffer
 #define XML_BUFFER_SIZE       2048 // XML buffer/container string
-#define LISTEN_QUEUE_LENGTH   2
 #define DEVICE_INFO_SIZE      16384
 #define MULTICAST_TIMEOUT     2
 

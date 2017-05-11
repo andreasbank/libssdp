@@ -205,7 +205,7 @@ int fetch_custom_fields(configuration_s *conf, ssdp_message_s *ssdp_message) {
                  NULL,
                  0,
                  FALSE,
-                 LISTEN_QUEUE_LENGTH,
+                 0,
                  FALSE,
                  conf->ttl,
                  conf->enable_loopback);
@@ -219,8 +219,8 @@ int fetch_custom_fields(configuration_s *conf, ssdp_message_s *ssdp_message) {
         return 0;
       }
 
-      if(!set_receive_timeout(fetch_sock, 5) ||
-         !set_send_timeout(fetch_sock, 1)) {
+      if(set_receive_timeout(fetch_sock, 5) ||
+         set_send_timeout(fetch_sock, 1)) {
         free(ip);
         close(fetch_sock);
         free(rest);

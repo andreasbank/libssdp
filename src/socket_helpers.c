@@ -14,14 +14,8 @@
 #include "socket_helpers.h"
 #include "ssdp_static_defs.h"
 
-/* Create a UPNP listener */
-// TODO: Write it...
-SOCKET create_upnp_listener(char *interface, int send_timeout, int receive_timeout) {
-  return FALSE;
-}
-
 /* Set send timeout */
-BOOL set_send_timeout(SOCKET sock, int timeout) {
+int set_send_timeout(SOCKET sock, int timeout) {
   struct timeval stimeout;
   stimeout.tv_sec = timeout;
   stimeout.tv_usec = 0;
@@ -34,13 +28,13 @@ BOOL set_send_timeout(SOCKET sock, int timeout) {
                 (char *)&stimeout,
                 sizeof(stimeout)) < 0) {
     PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return FALSE;
+    return 1;
   }
-  return TRUE;
+  return 0;
 }
 
 /* Set receive timeout */
-BOOL set_receive_timeout(SOCKET sock, int timeout) {
+int set_receive_timeout(SOCKET sock, int timeout) {
   struct timeval rtimeout;
   rtimeout.tv_sec = timeout;
   rtimeout.tv_usec = 0;
@@ -53,40 +47,43 @@ BOOL set_receive_timeout(SOCKET sock, int timeout) {
                 (char *)&rtimeout,
                 sizeof(rtimeout)) < 0) {
     PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return FALSE;
+    return 1;
   }
-  return TRUE;
+
+  return 0;
 }
 
 /* Enable socket to receive from an already used port */
-BOOL set_reuseaddr(SOCKET sock) {
+int set_reuseaddr(SOCKET sock) {
   int reuse = 1;
   PRINT_DEBUG("Setting reuseaddr");
   if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
     PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return FALSE;
+    return 1;
   }
   /* linux >= 3.9
   if(setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) == -1) {
     PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return FALSE;
+    return 1;
   }
   */
-  return TRUE;
+
+  return 0;
 }
 
 /* Set socket keepalive */
-BOOL set_keepalive(SOCKET sock, BOOL keepalive) {
+int set_keepalive(SOCKET sock, BOOL keepalive) {
   PRINT_DEBUG("Setting keepalive to %d", keepalive);
   if(setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char *)&keepalive, sizeof(BOOL)) < 0) {
     PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return FALSE;
+    return 1;
   }
-  return TRUE;
+
+  return 0;
 }
 
 /* Set TTL */
-BOOL set_ttl(SOCKET sock, int family, int ttl) {
+int set_ttl(SOCKET sock, int family, int ttl) {
     PRINT_DEBUG("Setting TTL to %d", ttl);
     if(setsockopt(sock,
                   (family == AF_INET ? IPPROTO_IP : IPPROTO_IPV6),
@@ -94,13 +91,14 @@ BOOL set_ttl(SOCKET sock, int family, int ttl) {
                   (char *)&ttl,
                   sizeof(ttl)) < 0) {
       PRINT_ERROR("(%d) %s", errno, strerror(errno));
-      return FALSE;
+      return 1;
     }
-    return TRUE;
+
+    return 0;
 }
 
 /* Disable multicast loopback traffic */
-BOOL disable_multicast_loopback(SOCKET sock, int family) {
+int disable_multicast_loopback(SOCKET sock, int family) {
   unsigned char loop = FALSE;
   PRINT_DEBUG("Disabling loopback multicast traffic");
   if(setsockopt(sock,
@@ -111,13 +109,14 @@ BOOL disable_multicast_loopback(SOCKET sock, int family) {
                 &loop,
                 sizeof(loop)) < 0) {
     PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return FALSE;
+    return 1;
   }
-  return TRUE;
+
+  return 0;
 }
 
 /* Join the multicast group on required interfaces */
-BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip) {
+int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip) {
   struct ifaddrs *ifa, *interfaces = NULL;
   BOOL is_bindall = FALSE;
   BOOL is_mc_ipv6 = FALSE;
@@ -133,12 +132,18 @@ BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip
     is_mc_ipv6 = TRUE;
   }
   else {
-  /* Check if multicast_group is a IPv4 address */
-    if (inet_pton(AF_INET, interface_ip,
-        (void *)&((struct sockaddr_in *)&sa_interface)->sin_addr) < 1) {
-      PRINT_ERROR("Given multicast group address '%s' is neither an IPv4 nor"
-          " IPv6, cannot continue", interface_ip);
-      return FALSE;
+    /* Check if multicast_group is a IPv4 address */
+    int res;
+
+    if ((res = inet_pton(AF_INET, interface_ip,
+        (void *)&((struct sockaddr_in *)&sa_interface)->sin_addr)) < 1) {
+      if (res == 0) {
+        PRINT_ERROR("interface_ip is NULL");
+      } else {
+        PRINT_ERROR("Given multicast group address '%s' is neither an IPv4 nor"
+            " IPv6, cannot continue (%d)", interface_ip);
+      }
+      return 1;
     }
   }
 
@@ -161,12 +166,18 @@ BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip
     is_ipv6 = TRUE;
   }
   else {
-  /* Check if interface_ip is a IPv4 address */
-    if (inet_pton(AF_INET, interface_ip,
-        (void *)&((struct sockaddr_in *)&sa_interface)->sin_addr) < 1) {
-      PRINT_ERROR("Given interface address '%s' is neither an IPv4 nor IPv6,"
-          " cannot continue", interface_ip);
-      return FALSE;
+    /* Check if interface_ip is a IPv4 address */
+    int res;
+
+    if ((res = inet_pton(AF_INET, interface_ip,
+        (void *)&((struct sockaddr_in *)&sa_interface)->sin_addr)) < 1) {
+      if (res == 0) {
+        PRINT_ERROR("interface_ip is NULL");
+      } else {
+        PRINT_ERROR("Given interface address '%s' is neither an IPv4 nor IPv6,"
+            " cannot continue", interface_ip);
+      }
+      return 1;
     }
   }
 
@@ -185,7 +196,7 @@ BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip
   if(getifaddrs(&interfaces) < 0) {
     PRINT_ERROR("Could not find any interfaces: (%d) %s\n", errno,
         strerror(errno));
-    return FALSE;
+    return 1;
   }
 
   /* DEBUG BEGIN */
@@ -281,12 +292,17 @@ BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip
       mreq6.ipv6mr_interface = if_nametoindex(ifa->ifa_name);
     }
 
-    if(inet_pton(ss_family,
+    int res;
+    if((res = inet_pton(ss_family,
                  multicast_group,
                  (is_ipv6 ? (void *)&mreq6.ipv6mr_multiaddr :
-                            (void *)&mreq.imr_multiaddr)) < 1) {
-      PRINT_ERROR("Incompatible multicast group");
-      return FALSE;;
+                            (void *)&mreq.imr_multiaddr))) < 1) {
+      if (res == 0) {
+        PRINT_ERROR("interface_ip is NULL");
+      } else {
+        PRINT_ERROR("Incompatible multicast group");
+      }
+      return 1;
     }
 
     #ifdef DEBUG___
@@ -323,7 +339,7 @@ BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip
       PRINT_ERROR("(%d) %s", errno, strerror(errno));
       close(sock);
       freeifaddrs(interfaces);
-      return FALSE;
+      return 1;
     }
   }
 
@@ -335,7 +351,7 @@ BOOL join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip
     interfaces = NULL;
   }
 
-  return TRUE;
+  return 0;
 }
 
 /**
@@ -424,7 +440,7 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   }
 
   /* Set reuseaddr */
-  if(!set_reuseaddr(sock)) {
+  if(set_reuseaddr(sock)) {
     free(saddr);
     if(sa != NULL) {
       free(interface);
@@ -433,7 +449,7 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   }
 
   /* Set keepalive */
-  if(!set_keepalive(sock, keepalive)) {
+  if(set_keepalive(sock, keepalive)) {
     free(saddr);
     if(sa != NULL) {
       free(interface);
@@ -547,7 +563,7 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
 
   /* Enable/disable loopback multicast */
   if(is_server && is_multicast && !loopback &&
-     !disable_multicast_loopback(sock, saddr->ss_family)) {
+     disable_multicast_loopback(sock, saddr->ss_family)) {
     free(saddr);
     if(sa != NULL) {
       free(interface);
@@ -620,7 +636,7 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   }
 
   /* Join the multicast group on required interfaces */
-  if(is_server && is_multicast && !join_multicast_group(sock,
+  if(is_server && is_multicast && join_multicast_group(sock,
                           is_ipv6 ? SSDP_ADDR6_SL :
                                     SSDP_ADDR,
                           iface_ip)) {

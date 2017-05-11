@@ -1,7 +1,6 @@
 #ifndef __OUTPUT_FORMAT_H__
 #define __OUTPUT_FORMAT_H__
 
-#include "ssdp.h"
 #include "ssdp_cache.h"
 
 /**
