@@ -7,6 +7,28 @@
 #include "ssdp_message.h"
 #include "string_utils.h"
 
+void free_ssdp_filters_factory(filters_factory_s *factory) {
+  if (factory) {
+    if (factory->filters) {
+      int fc;
+      for(fc = 0; fc < (factory->filters_count); fc++) {
+        if (factory->filters[fc].header) {
+          free(factory->filters[fc].header);
+          factory->filters[fc].header = NULL;
+        }
+        if ((factory->filters + fc)->value) {
+          free(factory->filters[fc].value);
+          factory->filters[fc].value = NULL;
+        }
+      }
+      free(factory->filters);
+      factory->filters = NULL;
+    }
+    free(factory);
+    factory = NULL;
+  }
+}
+
 void parse_filters(char *raw_filter, filters_factory_s **filters_factory,
     BOOL print_filters) {
   char *pos = NULL, *last_pos = raw_filter, *splitter = NULL;

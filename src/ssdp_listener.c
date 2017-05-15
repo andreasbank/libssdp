@@ -8,18 +8,18 @@
 #include "configuration.h"
 #include "log.h"
 #include "socket_helpers.h"
-#include "ssdp_server.h"
+#include "ssdp_listener.h"
 #include "ssdp_static_defs.h"
 
-#define LISTEN_QUEUE_LENGTH 5 /* The queue length for the server */
+#define LISTEN_QUEUE_LENGTH 5 /* The queue length for the listener */
 
-typedef struct ssdp_server {
+typedef struct ssdp_listener_s {
   SOCKET sock;
-} ssdp_server;
+} ssdp_listener_s;
 
-ssdp_server *create_ssdp_server(configuration_s *conf) {
+ssdp_listener_s *create_ssdp_listener(configuration_s *conf) {
   SOCKET sock = 0;
-  ssdp_server *s = NULL;
+  ssdp_listener_s *l = NULL;
 
   sock = setup_socket(
             FALSE,      // BOOL is_ipv6
@@ -42,15 +42,15 @@ ssdp_server *create_ssdp_server(configuration_s *conf) {
   }
 
   /* Set a timeout limit when waiting for ssdp messages */
-  if(set_receive_timeout(sock, 10)) {
+  if (set_receive_timeout(sock, 10)) {
     PRINT_ERROR("Failed to set the receive timeout");
     goto err;
   }
 
-  s = malloc(sizeof (ssdp_server));
-  s->sock = sock;
+  l = malloc(sizeof (ssdp_listener_s));
+  l->sock = sock;
 
-  return s;
+  return l;
 
 err:
   close(sock);
@@ -58,22 +58,23 @@ err:
   return NULL;
 }
 
-void destroy_ssdp_server(ssdp_server *server) {
+void destroy_ssdp_listener(ssdp_listener_s *listener) {
 
-  if (!server)
+  if (!listener)
     return;
 
-  if (server->sock)
-    close(server->sock);
+  if (listener->sock)
+    close(listener->sock);
 
-  free(server);
+  free(listener);
 }
 
-int read_ssdp_server(ssdp_server *server, char *buffer, size_t buffer_len,
-    struct sockaddr_storage *client_addr) {
+int read_ssdp_listener(ssdp_listener_s *listener, char *buffer,
+    size_t buffer_len, struct sockaddr_storage *client_addr) {
 
 
   size_t addr_size = sizeof *client_addr;
 
-  return recvfrom(server->sock, buffer, buffer_len, 0, (struct sockaddr *)client_addr, (socklen_t *)&addr_size);
+  return recvfrom(listener->sock, buffer, buffer_len, 0,
+      (struct sockaddr *)client_addr, (socklen_t *)&addr_size);
 }

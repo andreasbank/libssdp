@@ -16,6 +16,13 @@ typedef struct filters_factory_struct {
 } filters_factory_s;
 
 /**
+ * Free the given ssdp filter factory.
+ *
+ * @param factory The ssdp filter factory to free.
+ */
+void free_ssdp_filters_factory(filters_factory_s *factory);
+
+/**
  * Parses the filter argument.
  *
  * @param raw_filter The raw filter string.

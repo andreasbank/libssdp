@@ -82,7 +82,7 @@
 #include "ssdp_cache.h"
 #include "ssdp_cache_display.h"
 #include "ssdp_message.h"
-#include "ssdp_server.h"
+#include "ssdp_listener.h"
 #include "ssdp_static_defs.h"
 #include "string_utils.h"
 
@@ -90,7 +90,7 @@
 
 /* The main socket for listening for UPnP (SSDP) devices (or device answers) */
 static SOCKET notif_server_sock = 0;
-static ssdp_server *ssdp_listener = NULL;
+static ssdp_listener_s *ssdp_listener = NULL;
 
 /* The sock that we want to ask/look for devices on (unicast) */
 static SOCKET notif_client_sock = 0;
@@ -115,44 +115,26 @@ static configuration_s conf;
  */
 static void cleanup() {
 
-  if(notif_server_sock != 0) {
+  if (notif_server_sock != 0) {
     close(notif_server_sock);
     notif_server_sock = 0;
   }
 
   if (ssdp_listener) {
-    destroy_ssdp_server(ssdp_listener);
+    destroy_ssdp_listener(ssdp_listener);
   }
 
-  if(notif_client_sock != 0) {
+  if (notif_client_sock != 0) {
     close(notif_client_sock);
     notif_client_sock = 0;
   }
 
-  if(notif_recipient_sock != 0) {
+  if (notif_recipient_sock != 0) {
     close(notif_recipient_sock);
     notif_recipient_sock = 0;
   }
 
-  if(filters_factory != NULL) {
-    if(filters_factory->filters != NULL) {
-      int fc;
-      for(fc = 0; fc < (filters_factory->filters_count); fc++) {
-        if(filters_factory->filters[fc].header != NULL) {
-          free(filters_factory->filters[fc].header);
-          filters_factory->filters[fc].header = NULL;
-        }
-        if((filters_factory->filters + fc)->value) {
-          free(filters_factory->filters[fc].value);
-          filters_factory->filters[fc].value = NULL;
-        }
-      }
-      free(filters_factory->filters);
-      filters_factory->filters = NULL;
-    }
-    free(filters_factory);
-    filters_factory = NULL;
-  }
+  free_ssdp_filters_factory(filters_factory);
 
   PRINT_DEBUG("\nCleaning up and exitting...\n");
 }
@@ -286,7 +268,7 @@ int main(int argc, char **argv) {
 
     /* init socket */
     PRINT_DEBUG("setup_socket for listening to upnp");
-    ssdp_listener = create_ssdp_server(&conf);
+    ssdp_listener = create_ssdp_listener(&conf);
     if (!ssdp_listener) {
       PRINT_ERROR("Could not create socket");
       cleanup();
@@ -312,7 +294,7 @@ int main(int argc, char **argv) {
       memset(ssdp_recv_buffer, '\0', SSDP_RECV_BUFFER_LEN);
       PRINT_DEBUG("loop: ready to receive");
 
-      recvLen = read_ssdp_server(ssdp_listener, ssdp_recv_buffer,
+      recvLen = read_ssdp_listener(ssdp_listener, ssdp_recv_buffer,
           SSDP_RECV_BUFFER_LEN, &ssdp_client_addr);
 
       #ifdef __DEBUG
