@@ -21,21 +21,23 @@ ssdp_listener_s *create_ssdp_listener(configuration_s *conf) {
   SOCKET sock = 0;
   ssdp_listener_s *l = NULL;
 
-  sock = setup_socket(
-            FALSE,      // BOOL is_ipv6
-            TRUE,       // BOOL is_udp
-            TRUE,       // BOOL is_multicast
-            conf->interface,  // char interface
-            conf->ip,
-            NULL,       // struct sockaddr_storage *sa
-            SSDP_ADDR,  // const char *ip
-            SSDP_PORT,  // int port
-            TRUE,       // BOOL is_server
-            LISTEN_QUEUE_LENGTH,
-            FALSE,      // BOOL keepalive
-            conf->ttl,  // time to live (router hops)
-            conf->enable_loopback
-  );
+  socket_conf_s sock_conf = {
+    FALSE,      // BOOL is_ipv6
+    TRUE,       // BOOL is_udp
+    TRUE,       // BOOL is_multicast
+    conf->interface,  // char interface
+    conf->ip,
+    NULL,       // struct sockaddr_storage *sa
+    SSDP_ADDR,  // const char *ip
+    SSDP_PORT,  // int port
+    TRUE,       // BOOL is_server
+    LISTEN_QUEUE_LENGTH,
+    FALSE,      // BOOL keepalive
+    conf->ttl,  // time to live (router hops)
+    conf->enable_loopback
+  };
+
+  sock = setup_socket(&sock_conf);
   if (sock == SOCKET_ERROR) {
     PRINT_DEBUG("[%d] %s", errno, strerror(errno));
     return NULL;

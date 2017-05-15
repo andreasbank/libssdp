@@ -196,19 +196,23 @@ int fetch_custom_fields(configuration_s *conf, ssdp_message_s *ssdp_message) {
 
       /* Create socket */
       PRINT_DEBUG("creating socket");
-      SOCKET fetch_sock = setup_socket(conf->use_ipv6,
-                 FALSE,
-                 FALSE,
-                 conf->interface,
-                 conf->ip,
-                 NULL,
-                 NULL,
-                 0,
-                 FALSE,
-                 0,
-                 FALSE,
-                 conf->ttl,
-                 conf->enable_loopback);
+
+      socket_conf_s sock_conf = {
+        conf->use_ipv6,
+        FALSE,
+        FALSE,
+        conf->interface,
+        conf->ip,
+        NULL,
+        NULL,
+        0,
+        FALSE,
+        0,
+        FALSE,
+        conf->ttl,
+        conf->enable_loopback
+      };
+      SOCKET fetch_sock = setup_socket(&sock_conf);
 
       if(fetch_sock == SOCKET_ERROR) {
         PRINT_ERROR("fetch_custom_fields(); setup_socket(): (%d) %s", errno, strerror(errno));

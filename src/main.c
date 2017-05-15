@@ -449,20 +449,22 @@ int main(int argc, char **argv) {
 
     /* init sending socket */
     PRINT_DEBUG("setup_socket() request");
-    if ((notif_client_sock = setup_socket(conf.use_ipv6,  // BOOL is_ipv6
-              TRUE,       // BOOL is_udp
-              TRUE,       // BOOL is_multicast
-              conf.interface,  // char interface
-              conf.ip,
-              NULL,       // struct sockaddr_storage *sa
-              (conf.use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),  // const char *ip
-              SSDP_PORT,  // int port
-              FALSE,      // BOOL is_server
-              2,
-              FALSE,      // BOOL keepalive
-              conf.ttl,
-              conf.enable_loopback
-        )) == SOCKET_ERROR) {
+    socket_conf_s sock_conf = {
+      conf.use_ipv6,  // BOOL is_ipv6
+      TRUE,           // BOOL is_udp
+      TRUE,           // BOOL is_multicast
+      conf.interface, // char *interface
+      conf.ip,        // char *IP
+      NULL,           // struct sockaddr_storage *sa
+      (conf.use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),  // const char *ip
+      SSDP_PORT,      // int port
+      FALSE,          // BOOL is_server
+      2,              // int queue_len
+      FALSE,          // BOOL keepalive
+      conf.ttl,       // int ttl
+      conf.enable_loopback // BOOL loopback
+    };
+    if ((notif_client_sock = setup_socket(&sock_conf)) == SOCKET_ERROR) {
       PRINT_ERROR("Could not create socket");
       cleanup();
       exit(errno);
@@ -551,20 +553,16 @@ int main(int argc, char **argv) {
 
     /* init listening socket */
     PRINT_DEBUG("setup_socket() listening");
-    if ((notif_server_sock = setup_socket(conf.use_ipv6,  // BOOL is_ipv6
-              TRUE,       // BOOL is_udp
-              FALSE,       // BOOL is_multicast
-              conf.interface,  // char interface
-              conf.ip,
-              NULL,       // struct sockaddr_storage *sa
-              NULL,       // const char *ip
-              response_port,  // int port
-              TRUE,       // BOOL is_server
-              5,
-              FALSE,     // BOOL keepalive
-              conf.ttl,
-              conf.enable_loopback
-    )) == SOCKET_ERROR) {
+
+    /* Reuse last sock_conf for the listener */
+    sock_conf.is_udp = TRUE; /* BOOL is_udp */
+    sock_conf.is_multicast = FALSE; /* BOOL is_multicast */
+    sock_conf.ip = NULL; /* const char *ip */
+    sock_conf.port = response_port; /* int port */
+    sock_conf.is_server = TRUE; /* BOOL is_server */
+    sock_conf.queue_length = 5; /* int queue_len */
+
+    if ((notif_server_sock = setup_socket(&sock_conf)) == SOCKET_ERROR) {
       PRINT_ERROR("Could not create socket");
       cleanup();
       exit(errno);

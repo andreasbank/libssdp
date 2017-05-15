@@ -358,10 +358,7 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
  * Creates a connection to a given host
  * TODO: >>>TO BE DEPRECATED SOON<<<
  */
-SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
-    char *interface, char *if_ip, struct sockaddr_storage *sa,
-    const char *ip, int port, BOOL is_server, int queue_length, BOOL keepalive,
-    int ttl, BOOL loopback) {
+SOCKET setup_socket(socket_conf_s *conf) {
   SOCKET sock;
   int protocol;
   int ifindex = 0;
@@ -374,19 +371,23 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   memset(&mreq, 0, sizeof(mreq));
   memset(&mreq6, 0, sizeof(mreq6));
 
-  /* If 'sa' (sockaddr) given instead of 'if_ip' (char *)
-     then fill 'if_ip' with the IP from the sockaddr */
-  if(sa != NULL) {
-    inet_ntop(sa->ss_family, sa->ss_family == AF_INET ?
-        (void *)&((struct sockaddr_in *)sa)->sin_addr :
-        (void *)&((struct sockaddr_in6 *)sa)->sin6_addr, if_ip,
-        IPv6_STR_MAX_SIZE);
+  /* If 'conf->sa' (sockaddr) given instead of 'conf->if_ip' (char *)
+     then fill 'conf->if_ip' with the IP from the sockaddr */
+  if(conf->sa != NULL) {
+    void *sock_addr;
+    if (conf->sa->ss_family == AF_INET) {
+      sock_addr = (void *)&((struct sockaddr_in *)conf->sa)->sin_addr;
+    } else {
+      sock_addr = (void *)&((struct sockaddr_in6 *)conf->sa)->sin6_addr;
+    }
+    inet_ntop(conf->sa->ss_family, sock_addr, conf->if_ip, IPv6_STR_MAX_SIZE);
   }
 
   /* Find the index of the interface */
-  ifindex = find_interface(saddr, interface, if_ip);
+  ifindex = find_interface(saddr, conf->interface, conf->if_ip);
   if(ifindex < 0) {
-    PRINT_ERROR("The requested interface '%s' could not be found\n", interface);
+    PRINT_ERROR("The requested interface '%s' could not be found\n",
+        conf->interface);
     free(saddr);
     return SOCKET_ERROR;
   }
@@ -406,19 +407,20 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   #endif
 
   /* If muticast requested, check if it really is a multicast address */
-  if (is_multicast && (ip != NULL && strlen(ip) > 0)) {
-    if(!is_address_multicast(ip)) {
-      PRINT_ERROR("The specified IP (%s) is not a multicast address\n", ip);
+  if (conf->is_multicast && (conf->ip != NULL && strlen(conf->ip) > 0)) {
+    if(!is_address_multicast(conf->ip)) {
+      PRINT_ERROR("The specified IP (%s) is not a multicast address\n",
+          conf->ip);
       free(saddr);
-      if(sa != NULL) {
-        free(interface);
+      if(conf->sa != NULL) {
+        free(conf->interface);
       }
       return SOCKET_ERROR;
     }
   }
 
   /* Set protocol version */
-  if (is_ipv6) {
+  if (conf->is_ipv6) {
     saddr->ss_family = AF_INET6;
     protocol = IPPROTO_IPV6;
   }
@@ -428,60 +430,61 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   }
 
   /* init socket */
-  sock = socket(saddr->ss_family, is_udp ? SOCK_DGRAM : SOCK_STREAM, protocol);
+  sock = socket(saddr->ss_family, conf->is_udp ? SOCK_DGRAM : SOCK_STREAM,
+      protocol);
 
-  if(sock < 0) {
+  if (sock < 0) {
     PRINT_ERROR("Failed to create socket. (%d) %s", errno, strerror(errno));
     free(saddr);
-    if(sa != NULL) {
-      free(interface);
+    if (conf->sa != NULL) {
+      free(conf->interface);
     }
     return SOCKET_ERROR;
   }
 
   /* Set reuseaddr */
-  if(set_reuseaddr(sock)) {
+  if (set_reuseaddr(sock)) {
     free(saddr);
-    if(sa != NULL) {
-      free(interface);
+    if(conf->sa != NULL) {
+      free(conf->interface);
     }
     return SOCKET_ERROR;
   }
 
   /* Set keepalive */
-  if(set_keepalive(sock, keepalive)) {
+  if (set_keepalive(sock, conf->keepalive)) {
     free(saddr);
-    if(sa != NULL) {
-      free(interface);
+    if (conf->sa != NULL) {
+      free(conf->interface);
     }
     return SOCKET_ERROR;
   }
 
   /* Set TTL */
-  if(!is_server && is_multicast) {
-    if(set_ttl(sock, (is_ipv6 ? AF_INET6 : AF_INET), ttl) < 0) {
+  if (!conf->is_server && conf->is_multicast) {
+    if (set_ttl(sock, (conf->is_ipv6 ? AF_INET6 : AF_INET), conf->ttl) < 0) {
       free(saddr);
-      if(sa != NULL) {
-        free(interface);
+      if (conf->sa != NULL) {
+        free(conf->interface);
       }
       return SOCKET_ERROR;
     }
   }
 
   /* Setup address structure containing address information to use to connect */
-  if(is_ipv6) {
+  if (conf->is_ipv6) {
     PRINT_DEBUG("is_ipv6 == TRUE");
     struct sockaddr_in6 * saddr6 = (struct sockaddr_in6 *)saddr;
-    saddr6->sin6_port = htons(port);
-    if(is_udp && is_multicast) {
+    saddr6->sin6_port = htons(conf->port);
+    if(conf->is_udp && conf->is_multicast) {
       PRINT_DEBUG("  is_udp == TRUE && is_multicast == TRUE");
-      if(ip == NULL || strlen(ip) < 1) {
+      if (conf->ip == NULL || strlen(conf->ip) < 1) {
         inet_pton(saddr->ss_family, SSDP_ADDR6_LL, &mreq6.ipv6mr_multiaddr);
       }
       else {
-        inet_pton(saddr->ss_family, ip, &mreq6.ipv6mr_multiaddr);
+        inet_pton(saddr->ss_family, conf->ip, &mreq6.ipv6mr_multiaddr);
       }
-      if(interface != NULL && strlen(interface) > 0) {
+      if(conf->interface != NULL && strlen(conf->interface) > 0) {
         mreq6.ipv6mr_interface = (unsigned int)ifindex;
       }
       else {
@@ -491,7 +494,7 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
 
       #ifdef DEBUG___
       {
-        if(!is_server) {
+        if(!conf->is_server) {
           PRINT_DEBUG("    IPV6_MULTICAST_IF");
         }
         char a[100];
@@ -501,7 +504,7 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
       }
       #endif
 
-      if(!is_server && setsockopt(sock,
+      if(!conf->is_server && setsockopt(sock,
                                   protocol,
                                   IPV6_MULTICAST_IF,
                                   &mreq6.ipv6mr_interface,
@@ -509,8 +512,8 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
         PRINT_ERROR("setsockopt() IPV6_MULTICAST_IF: (%d) %s", errno,
             strerror(errno));
         free(saddr);
-        if(sa != NULL) {
-          free(interface);
+        if(conf->sa != NULL) {
+          free(conf->interface);
         }
         return SOCKET_ERROR;
       }
@@ -519,17 +522,17 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   else {
     PRINT_DEBUG("is_ipv6 == FALSE");
     struct sockaddr_in *saddr4 = (struct sockaddr_in *)saddr;
-    saddr4->sin_port = htons(port);
-    if(is_udp && is_multicast) {
+    saddr4->sin_port = htons(conf->port);
+    if (conf->is_udp && conf->is_multicast) {
       PRINT_DEBUG("  is_udp == TRUE && is_multicast == TRUE");
-      if(ip == NULL || strlen(ip) < 1) {
+      if (conf->ip == NULL || strlen(conf->ip) < 1) {
         inet_pton(saddr->ss_family, SSDP_ADDR, &mreq.imr_multiaddr);
       }
       else {
-        inet_pton(saddr->ss_family, ip, &mreq.imr_multiaddr);
+        inet_pton(saddr->ss_family, conf->ip, &mreq.imr_multiaddr);
       }
-      if((if_ip != NULL && strlen(if_ip) > 0) || 
-          (interface != NULL && strlen(interface) > 0)) {
+      if ((conf->if_ip != NULL && strlen(conf->if_ip) > 0) || 
+          (conf->interface != NULL && strlen(conf->interface) > 0)) {
          mreq.imr_interface.s_addr = saddr4->sin_addr.s_addr;
       }
       else {
@@ -538,7 +541,7 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
       //saddr4->sin_addr =  mreq.imr_multiaddr;
       #ifdef DEBUG___
       {
-        if(!is_server) {
+        if (!conf->is_server) {
           PRINT_DEBUG("    IP_MULTICAST_IF");
         }
         char a[100];
@@ -548,13 +551,13 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
         PRINT_DEBUG("    mreq->imr_multiaddr: %s", a);
       }
       #endif
-      if (!is_server && setsockopt(sock, protocol, IP_MULTICAST_IF,
+      if (!conf->is_server && setsockopt(sock, protocol, IP_MULTICAST_IF,
           &mreq.imr_interface, sizeof(mreq.imr_interface)) < 0) {
         PRINT_ERROR("setsockopt() IP_MULTICAST_IF: (%d) %s", errno,
             strerror(errno));
         free(saddr);
-        if(sa != NULL) {
-          free(interface);
+        if (conf->sa != NULL) {
+          free(conf->interface);
         }
         return SOCKET_ERROR;
       }
@@ -562,18 +565,18 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   }
 
   /* Enable/disable loopback multicast */
-  if(is_server && is_multicast && !loopback &&
+  if (conf->is_server && conf->is_multicast && !conf->loopback &&
      disable_multicast_loopback(sock, saddr->ss_family)) {
     free(saddr);
-    if(sa != NULL) {
-      free(interface);
+    if (conf->sa != NULL) {
+      free(conf->interface);
     }
     return SOCKET_ERROR;
   }
 
   /* If server requested, bind the socket to the given address and port*/
   // TODO: Fix for IPv6
-  if(is_server) {
+  if(conf->is_server) {
 
     struct sockaddr_in bindaddr;
     bindaddr.sin_family = saddr->ss_family;
@@ -591,25 +594,25 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
         ntohs(((struct sockaddr_in *)&bindaddr)->sin_port));
     #endif
 
-    if(bind(sock, (struct sockaddr *)&bindaddr,
+    if (bind(sock, (struct sockaddr *)&bindaddr,
         (bindaddr.sin_family == AF_INET ? sizeof(struct sockaddr_in) :
         sizeof(struct sockaddr_in6))) < 0) {
       PRINT_ERROR("setup_socket(); bind(): (%d) %s", errno, strerror(errno));
       free(saddr);
-      if(sa != NULL) {
-        free(interface);
+      if(conf->sa != NULL) {
+        free(conf->interface);
       }
       return SOCKET_ERROR;
     }
-    if(!is_udp) {
+    if (!conf->is_udp) {
       PRINT_DEBUG("  is_udp == FALSE");
-      if (listen(sock, queue_length) == SOCKET_ERROR) {
+      if (listen(sock, conf->queue_length) == SOCKET_ERROR) {
         PRINT_ERROR("setup_socket(); listen(): (%d) %s", errno,
             strerror(errno));
         close(sock);
         free(saddr);
-        if(sa != NULL) {
-          free(interface);
+        if(conf->sa != NULL) {
+          free(conf->interface);
         }
         return SOCKET_ERROR;
       }
@@ -619,27 +622,30 @@ SOCKET setup_socket(BOOL is_ipv6, BOOL is_udp, BOOL is_multicast,
   /* Make sure we have a string IP before joining multicast groups */
   /* NOTE: Workaround until refactoring is complete */
   char iface_ip[IPv6_STR_MAX_SIZE];
-  if(if_ip == NULL || strlen(if_ip) < 1) {
-    if(inet_ntop(is_ipv6 ? AF_INET6 :
-                           AF_INET,
-                 is_ipv6 ? (void *)&((struct sockaddr_in6 *)saddr)->sin6_addr :
-                           (void *)&((struct sockaddr_in *)saddr)->sin_addr,
-                 iface_ip,
-                 IPv6_STR_MAX_SIZE) == NULL) {
-      PRINT_ERROR("Failed to get string representation of the interface IP address: (%d) %s", errno, strerror(errno));
+  if (conf->if_ip == NULL || strlen(conf->if_ip) < 1) {
+    void *sock_addr;
+
+    if (conf->is_ipv6) {
+      sock_addr = (void *)&((struct sockaddr_in6 *)saddr)->sin6_addr;
+    } else {
+      sock_addr = (void *)&((struct sockaddr_in *)saddr)->sin_addr;
+    }
+
+    if (inet_ntop(conf->is_ipv6 ? AF_INET6 : AF_INET, sock_addr, iface_ip,
+        IPv6_STR_MAX_SIZE) == NULL) {
+      PRINT_ERROR("Failed to get string representation of the interface "
+          "IP address: (%d) %s", errno, strerror(errno));
       free(saddr);
       return SOCKET_ERROR;
     }
   }
   else {
-    strcpy(iface_ip, if_ip);
+    strcpy(iface_ip, conf->if_ip);
   }
 
   /* Join the multicast group on required interfaces */
-  if(is_server && is_multicast && join_multicast_group(sock,
-                          is_ipv6 ? SSDP_ADDR6_SL :
-                                    SSDP_ADDR,
-                          iface_ip)) {
+  if (conf->is_server && conf->is_multicast && join_multicast_group(sock,
+      conf->is_ipv6 ? SSDP_ADDR6_SL : SSDP_ADDR, iface_ip)) {
     PRINT_ERROR("Failed to join required multicast group");
     return SOCKET_ERROR;
   }

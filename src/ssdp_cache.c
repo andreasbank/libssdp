@@ -90,20 +90,24 @@ static int send_stuff(const char *url, const char *data,
 
   /* Create socket */
   PRINT_DEBUG("send_stuff(): creating socket");
-  SOCKET send_sock = setup_socket(conf->use_ipv6,
-            FALSE,
-            FALSE,
-            conf->interface,
-            conf->ip,
-            NULL,
-            NULL,
-            0,
-            FALSE,
-            0,
-            FALSE,
-            conf->ttl,
-            conf->enable_loopback);
 
+  socket_conf_s sock_conf = {
+    conf->use_ipv6,
+    FALSE,
+    FALSE,
+    conf->interface,
+    conf->ip,
+    NULL,
+    NULL,
+    0,
+    FALSE,
+    0,
+    FALSE,
+    conf->ttl,
+    conf->enable_loopback
+  };
+
+  SOCKET send_sock = setup_socket(&sock_conf);
   if(send_sock == SOCKET_ERROR) {
     PRINT_ERROR("send_stuff(): %d, %s", errno, strerror(errno));
     return 0;
