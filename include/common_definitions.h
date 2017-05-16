@@ -5,8 +5,11 @@
 #define ABUSED_VERSION "0.0.3"
 
 /* PORTABILITY */
+#ifndef TRUE
 #define TRUE             (1==1)
 #define FALSE            (!TRUE)
+#endif
+
 #define INVALID_SOCKET   -1
 #define SOCKET_ERROR     -1
 

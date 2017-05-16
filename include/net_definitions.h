@@ -1,7 +1,7 @@
 #ifndef __NET_DEFINITIONS__
 #define __NET_DEFINITIONS__
 
-#ifdef BSD
+#if defined BSD || defined __APPLE__
 #define IPV6_ADD_MEMBERSHIP IPV6_JOIN_GROUP
 #define IPV6_DROP_MEMBERSHIP IPV6_LEAVE_GROUP
 #endif

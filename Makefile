@@ -40,7 +40,7 @@ else
 endif
 
 $(OBJS): $(OBJS_DIR)/%.o : $(SRCS_DIR)/%.c $(DEPS)
-	$(CC) -c $(CFLAGS) $(LDFLAGS) $< $(LIBS) -o $@
+	$(CC) -c $(CFLAGS) $(LDFLAGS) $< -o $@
 
 install: all
 	$(INSTALL) -d $(BINDIR)

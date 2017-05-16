@@ -8,6 +8,15 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 
+#if defined BSD || defined __APPLE__
+#include <netinet/if_ether.h>
+#include <sys/sysctl.h>
+#include <net/if_dl.h>
+#include <net/if_types.h>
+#include <net/route.h>
+#include <sys/file.h>
+#endif
+
 #include "common_definitions.h"
 #include "log.h"
 #include "net_definitions.h"
@@ -334,7 +343,7 @@ char *get_mac_address_from_socket(const SOCKET sock,
   char *mac_string = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
   memset(mac_string, '\0', MAC_STR_MAX_SIZE);
 
-  #if defined BSD || defined APPLE
+  #if defined BSD || defined __APPLE__
   /* xxxBSD or MacOS solution */
   PRINT_DEBUG("Using BSD style MAC discovery (sysctl)");
   int sysctl_flags[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_LLINFO };

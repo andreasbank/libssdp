@@ -10,7 +10,7 @@
  *
  *  [A]bused is [B]anks [U]ber-[S]exy-[E]dition [D]aemon
  *
- *  Copyright(C) 2014-1017 by Andreas Bank, andreas.mikael.bank@gmail.com
+ *  Copyright(C) 2014-2017 by Andreas Bank, andreas.mikael.bank@gmail.com
  */
 
 /*
@@ -46,29 +46,15 @@
 #include <unistd.h>
 
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <netdb.h>
 #include <ifaddrs.h>
 
-#include <netinet/in.h>
-#include <netinet/if_ether.h>
-#include <arpa/nameser.h>
 #include <arpa/inet.h>
-#include <resolv.h>
 
-#include <net/if.h>
 #include <ctype.h>
 
 #include <errno.h>
 #include <signal.h>
-
-#ifdef BSD
-#include <sys/sysctl.h>
-#include <net/if_dl.h>
-#include <net/if_types.h>
-#include <net/route.h> //test if needed?
-#include <sys/file.h>
-#endif
 
 #include "configuration.h"
 #include "common_definitions.h"
@@ -241,17 +227,20 @@ int main(int argc, char **argv) {
   signal(SIGABRT, &exit_sig);
   signal(SIGINT, &exit_sig);
 
+  printf("HERE 1\n");
   #ifdef DEBUG___
   PRINT_DEBUG("%sDebug color%s", DEBUG_COLOR_BEGIN, DEBUG_COLOR_END);
   PRINT_DEBUG("%sError color%s", ERROR_COLOR_BEGIN, DEBUG_COLOR_END);
   #endif
 
+  printf("HERE 2\n");
   set_default_configuration(&conf);
   if (parse_args(argc, argv, &conf)) {
     cleanup();
     exit(EXIT_FAILURE);
   }
 
+  printf("HERE 3\n");
   print_forwarding_config(&conf, notif_recipient_addr);
 
   verify_running_states(&conf);

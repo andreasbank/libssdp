@@ -4,6 +4,6 @@
 /**
  * Prepares the process to run as a daemon.
  */
-void daemonize();
+void daemonize(void);
 
 #endif /* __DAEMON_H__ */

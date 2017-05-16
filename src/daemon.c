@@ -4,6 +4,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#if defined BSD || defined __APPLE__
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#endif
+
 #include "common_definitions.h"
 #include "log.h"
 
@@ -49,6 +54,7 @@ void daemonize() {
 
   /*  Get new PGID (not PG-leader and not zero) and free parent process
   so terminal can be used/closed */
+  printf("forking...\n");
   if(fork() != 0) {
 
     /* Exit parent */
@@ -56,7 +62,7 @@ void daemonize() {
 
   }
 
-  #ifdef BSD
+  #if defined BSD || defined __APPLE__
   PRINT_DEBUG("Using BSD daemon proccess");
   setpgrp();
 
