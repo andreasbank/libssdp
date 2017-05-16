@@ -15,7 +15,7 @@ INCLUDES  = -I$(INCL_DIR)
 
 CFLAGS   += -O3 -Wall -g $(INCLUDES)
 LDFLAGS  +=
-LIBS     += -lresolv
+LIBS     +=
 
 SRCS      = $(wildcard $(SRCS_DIR)/*.c)
 OBJS      = $(patsubst $(SRCS_DIR)/%.c,$(OBJS_DIR)/%.o,$(SRCS))

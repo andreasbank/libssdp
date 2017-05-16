@@ -227,20 +227,17 @@ int main(int argc, char **argv) {
   signal(SIGABRT, &exit_sig);
   signal(SIGINT, &exit_sig);
 
-  printf("HERE 1\n");
   #ifdef DEBUG___
   PRINT_DEBUG("%sDebug color%s", DEBUG_COLOR_BEGIN, DEBUG_COLOR_END);
   PRINT_DEBUG("%sError color%s", ERROR_COLOR_BEGIN, DEBUG_COLOR_END);
   #endif
 
-  printf("HERE 2\n");
   set_default_configuration(&conf);
   if (parse_args(argc, argv, &conf)) {
     cleanup();
     exit(EXIT_FAILURE);
   }
 
-  printf("HERE 3\n");
   print_forwarding_config(&conf, notif_recipient_addr);
 
   verify_running_states(&conf);

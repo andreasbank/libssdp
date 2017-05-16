@@ -54,7 +54,7 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
   char message[20480];
   int message_used = 0;
   char *from_pointer = va_format;
-  char header[50];
+  char header[100];
   char *to_pointer = va_format;
   int args_count = chr_count(va_format, '%');
   const char *no_memory = "Not enought memory in buffer to build debug message";
@@ -62,12 +62,9 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
   char c;
   int d;
 
-  printf("in log (%s)\n", va_format);
-
   /* Create a nice header for the output */
   sprintf(header, "%s[%d][%s:%04d] ", color, (int)getpid(), file, line);
 
-  printf("bullshit 0\n");
   if(!va_format) {
     fprintf(stderr, "%s[%d][%s:%d] Error, va_arg input format (va_format) "
         "not set%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__,
@@ -75,8 +72,6 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
     printf("some rror\n");
     return;
   }
-
-  printf("bullshit\n");
 
   int message_length = 20480;
   memset(message, '\0', sizeof(char) * message_length);
@@ -88,7 +83,6 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
 
   for (args_pos = 1; (from_pointer && *from_pointer != '\0'); from_pointer = to_pointer) {
 
-    printf("in log loop\n");
     to_pointer = strchr(from_pointer, '%');
 
     if(to_pointer && strlen(to_pointer) > 1) {
