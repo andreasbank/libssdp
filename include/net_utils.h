@@ -51,4 +51,17 @@ char *get_mac_address_from_socket(const SOCKET sock,
  */
 BOOL is_address_multicast(const char *address);
 
+/**
+ * Retrieve the IP in printable format from a socket address struct.
+ *
+ * @param saddr The socket addres struct.
+ * @param ip_buffer If set, the resulting IP will be stored in it and no new
+ *        allocation will be made. The returned pointer will equal this one.
+ *
+ * @return The IP address in printable format. If ip_buffer was NULL, the
+ *         returned value must be freed.
+ */
+char *get_ip_from_sock_address(struct sockaddr_storage *saddr,
+    char *ip_buffer);
+
 #endif /* __NET_UTILS_H__ */

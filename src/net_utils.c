@@ -578,7 +578,7 @@ BOOL is_address_multicast(const char *address) {
       struct in6_addr ip6_addr;
       inet_pton(AF_INET6, "ff02::c", &ip6_ll);
       inet_pton(AF_INET6, address, &ip6_addr);
-      if(ip6_ll.s6_addr == ip6_addr.s6_addr) {
+      if (ip6_ll.s6_addr == ip6_addr.s6_addr) {
         return TRUE;
       }
       return FALSE;
@@ -601,3 +601,37 @@ BOOL is_address_multicast(const char *address) {
   return FALSE;
 }
 
+char *get_ip_from_sock_address(struct sockaddr_storage *saddr,
+    char *ip_buffer) {
+  void *sock_addr;
+  size_t ip_size = IPv4_STR_MAX_SIZE;
+  char *ip = ip_buffer ? ip_buffer : NULL;
+
+  if (!saddr) {
+    PRINT_DEBUG("Socket address is empty");
+    goto err;
+  }
+
+  if (saddr->ss_family == AF_INET) {
+    sock_addr = (void *)&((struct sockaddr_in *)saddr)->sin_addr;
+  } else if (saddr->ss_family == AF_INET6) {
+    sock_addr = (void *)&((struct sockaddr_in6 *)saddr)->sin6_addr;
+    ip_size = IPv6_STR_MAX_SIZE;
+  } else {
+    PRINT_WARN("Not an IP socket address");
+    goto err;
+  }
+
+  if (!ip)
+    ip = malloc(ip_size);
+
+  if (inet_ntop(saddr->ss_family, sock_addr, ip, ip_size) == NULL) {
+    PRINT_ERROR("Erroneous sock address");
+    if (!ip_buffer)
+      free(ip);
+    ip = NULL;
+  }
+
+err:
+  return ip;
+}

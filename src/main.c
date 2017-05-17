@@ -303,12 +303,8 @@ int main(int argc, char **argv) {
              SSDP messages and empty the list*/
           if(conf.forward_enabled) {
             PRINT_DEBUG("Forwarding cached SSDP messages");
-            if(!flush_ssdp_cache(&conf,
-                                 &ssdp_cache,
-                                 "/abused/post.php",
-                                 notif_recipient_addr,
-                                 80,
-                                 1)) {
+            if(!flush_ssdp_cache(&conf, &ssdp_cache, "/abused/post.php",
+                notif_recipient_addr, 80, 1)) {
               PRINT_DEBUG("Failed flushing SSDP cache");
               continue;
             }
@@ -332,14 +328,7 @@ int main(int argc, char **argv) {
 
         /* Retrieve IP address from socket */
         char tmp_ip[IPv6_STR_MAX_SIZE];
-        void *sockaddr_ptr;
-        if (ssdp_client_addr.ss_family == AF_INET) {
-          sockaddr_ptr = &((struct sockaddr_in *)&ssdp_client_addr)->sin_addr;
-        } else {
-          sockaddr_ptr = &((struct sockaddr_in6 *)&ssdp_client_addr)->sin6_addr;
-        }
-        if(!inet_ntop(ssdp_client_addr.ss_family, sockaddr_ptr, tmp_ip,
-                      IPv6_STR_MAX_SIZE)) {
+        if (!get_ip_from_sock_address(&ssdp_client_addr, tmp_ip)) {
           PRINT_ERROR("Erroneous IP from sender");
           free_ssdp_message(&ssdp_message);
           continue;
@@ -355,7 +344,7 @@ int main(int argc, char **argv) {
             recvLen, ssdp_recv_buffer);
         free(tmp_mac);
 
-        if(!build_success) {
+        if (!build_success) {
           PRINT_ERROR("Failed to build the SSDP message");
           free_ssdp_message(&ssdp_message);
           continue;
@@ -365,8 +354,10 @@ int main(int argc, char **argv) {
 
         /* If -M is not set check if it is a M-SEARCH message
            and drop it */
-        if(conf.ignore_search_msgs && (strstr(ssdp_message->request, "M-SEARCH") != NULL)) {
-            PRINT_DEBUG("Message contains a M-SEARCH request, dropping message");
+        if (conf.ignore_search_msgs && (strstr(ssdp_message->request,
+            "M-SEARCH") != NULL)) {
+            PRINT_DEBUG("Message contains a M-SEARCH request, dropping "
+                "message");
             free_ssdp_message(&ssdp_message);
             continue;
         }

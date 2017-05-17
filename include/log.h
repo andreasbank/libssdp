@@ -12,16 +12,20 @@
 
 #define DEBUG_COLOR_BEGIN "\x1b[0;32m"
 #define ERROR_COLOR_BEGIN "\x1b[0;31m"
+#define WARNING_COLOR_BEGIN "\x1b[1;33m"
 #define DEBUG_COLOR_END "\x1b[0;0m"
 
 #ifdef DEBUG___
   #define PRINT_DEBUG(...)  print_debug(NULL, DEBUG_COLOR_BEGIN, __FILE__, \
       __LINE__, __VA_ARGS__)
+  #define PRINT_WARN(...)  print_debug(NULL, WARNING_COLOR_BEGIN, __FILE__, \
+      __LINE__, __VA_ARGS__)
   #define PRINT_ERROR(...)  print_debug(stderr, ERROR_COLOR_BEGIN, __FILE__, \
       __LINE__, __VA_ARGS__)
 #else
   #define PRINT_DEBUG(...)  do { } while (FALSE)
-  #define PRINT_ERROR(...)  fprintf(stderr, __VA_ARGS__)
+  #define PRINT_WARN(...)  fprintf(stderr, "[WARN] " __VA_ARGS__)
+  #define PRINT_ERROR(...)  fprintf(stderr, "[ERR] " __VA_ARGS__)
 #endif
 
 #define ANSI_COLOR_GREEN   "\x1b[1;32m"
