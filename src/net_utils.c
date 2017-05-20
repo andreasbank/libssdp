@@ -23,8 +23,8 @@
 #include "net_utils.h"
 #include "string_utils.h"
 
-BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address) {
-  char *ip;
+struct sockaddr_storage *parse_address(const char *raw_address) {
+  char *ip = NULL;
   struct sockaddr_storage *address = NULL;
   int colon_pos = 0;
   int port = 0;
@@ -32,29 +32,27 @@ BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address
 
   PRINT_DEBUG("parse:address()");
 
-  if(strlen(raw_address) < 1) {
+  if(!raw_address || strlen(raw_address) < 1) {
     PRINT_ERROR("No valid IP address specified");
-    return FALSE;
+    goto err;
   }
 
   /* Allocate the input address */
-  *pp_address = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
-
-  /* Get rid of the "pointer to a pointer" */
-  address = *pp_address;
+  address = malloc(sizeof(struct sockaddr_storage));
   memset(address, 0, sizeof(struct sockaddr_storage));
   colon_pos = strpos(raw_address, ":");
 
   if(colon_pos < 1) {
     PRINT_ERROR("No valid port specified (%s)\n", raw_address);
-    return FALSE;
+    goto err;
   }
 
   ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
   memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
 
   /* Get rid of [] if IPv6 */
-  strncpy(ip, strchr(raw_address, '[') + 1, strchr(raw_address, '[') - strchr(raw_address, ']'));
+  strncpy(ip, strchr(raw_address, '[') + 1,
+      strchr(raw_address, '[') - strchr(raw_address, ']'));
 
   is_ipv6 = inet_pton(AF_INET6, ip, address);
   PRINT_DEBUG("is_ipv6 == %s", is_ipv6 ? "TRUE" : "FALSE");
@@ -67,7 +65,7 @@ BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address
     strncpy(ip, raw_address, colon_pos);
     if(!inet_pton(AF_INET, ip, &(((struct sockaddr_in *)address)->sin_addr))) {
       PRINT_ERROR("No valid IP address specified (%s)\n", ip);
-      return FALSE;
+      goto err;
     }
     address->ss_family = AF_INET;
     port = atoi(raw_address + colon_pos + 1);
@@ -75,7 +73,7 @@ BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address
 
   if(port < 80 || port > PORT_MAX_NUMBER) {
     PRINT_ERROR("No valid port specified (%d)\n", port);
-    return FALSE;
+    goto err;
   }
 
   if(is_ipv6) {
@@ -85,9 +83,19 @@ BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address
     ((struct sockaddr_in *)address)->sin_port = htons(port);
   }
 
-  free(ip);
+  goto success;
 
-  return TRUE;
+err:
+  if (address) {
+    free(address);
+    address = NULL;
+  }
+
+success:
+  if (ip)
+    free(ip);
+
+  return address;
 }
 
 // TODO: remove ip_size ?
@@ -192,17 +200,17 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
               address);
 
   /* Make sure we have the buffers allocated */
-  if(interface == NULL) {
+  if (!interface) {
     PRINT_ERROR("No interface string-buffer available");
     return -1;
   }
 
-  if(address == NULL) {
+  if (!address) {
     PRINT_ERROR("No IP address string-buffer available");
     return -1;
   }
 
-  if(saddr == NULL) {
+  if (!saddr) {
     PRINT_ERROR("No address structure-buffer available");
     return -1;
   }
@@ -214,9 +222,9 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
 
   /* If address not set or is bind-on-all
      then set a bindall address in the struct */
-  if(((strlen(interface) == 0) && (strlen(address) == 0)) ||
+  if (((strlen(interface) == 0) && (strlen(address) == 0)) ||
     (strcmp("0.0.0.0", address) == 0) || (strcmp("::", address) == 0)) {
-    if(is_ipv6) {
+    if (is_ipv6) {
       saddr->ss_family = AF_INET6;
       saddr6->sin6_addr = in6addr_any;
       PRINT_DEBUG("find_interface(): Matched all addresses (::)\n");
@@ -230,15 +238,15 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
   }
 
   /* Try to query for all devices on the system */
-  if(getifaddrs(&interfaces) < 0) {
+  if (getifaddrs(&interfaces) < 0) {
     PRINT_ERROR("Could not find any interfaces\n");
     return -1;
   }
 
-  compare_address = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
+  compare_address = malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
 
   /* Loop through the interfaces*/
-  for(ifa=interfaces; ifa&&ifa->ifa_next; ifa=ifa->ifa_next) {
+  for (ifa = interfaces; ifa && ifa->ifa_next; ifa = ifa->ifa_next) {
 
     /* Helpers */
     struct sockaddr_in6 *ifaddr6 = (struct sockaddr_in6 *)ifa->ifa_addr;
@@ -248,29 +256,23 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
     memset(compare_address, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
 
     /* Extract the IP address in printable format */
-    if(is_ipv6 && ss_family == AF_INET6) {
-      PRINT_DEBUG("Extracting a IPv6 address");
-      if(inet_ntop(AF_INET6,
-                (void *)&ifaddr6->sin6_addr,
-                compare_address,
-                IPv6_STR_MAX_SIZE) == NULL) {
-        PRINT_ERROR("Could not extract printable IPv6 for the interface %s: (%d) %s",
-                    ifa->ifa_name,
-                    errno,
-                    strerror(errno));
+    if (is_ipv6 && ss_family == AF_INET6) {
+      PRINT_DEBUG("Extracting an IPv6 address");
+      get_ip_from_sock_address((struct sockaddr_storage *)ifaddr6,
+          compare_address);
+      if (compare_address[0] == '\0') {
+        PRINT_ERROR("Could not extract printable IPv6 for the interface %s: "
+            "(%d) %s", ifa->ifa_name, errno, strerror(errno));
         return -1;
       }
     }
-    else if(!is_ipv6 && ss_family == AF_INET) {
-      PRINT_DEBUG("Extracting a IPv4 address");
-      if(inet_ntop(AF_INET,
-                (void *)&ifaddr4->sin_addr,
-                compare_address,
-                IPv6_STR_MAX_SIZE) == NULL) {
-        PRINT_ERROR("Could not extract printable IPv4 for the interface %s: (%d) %s",
-                    ifa->ifa_name,
-                    errno,
-                    strerror(errno));
+    else if (!is_ipv6 && ss_family == AF_INET) {
+      PRINT_DEBUG("Extracting an IPv4 address");
+      get_ip_from_sock_address((struct sockaddr_storage *)ifaddr4,
+          compare_address);
+      if (compare_address[0] == '\0') {
+        PRINT_ERROR("Could not extract printable IPv4 for the interface %s: "
+            "(%d) %s", ifa->ifa_name, errno, strerror(errno));
         return -1;
       }
     }
@@ -292,24 +294,31 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
                             TRUE :
                             FALSE;
 
-    if((if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
-       addr_present && (strcmp(address, compare_address))) ||
-      (if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
-       addr_is_bindall) ||
-      (!if_present &&
-       addr_present && (strcmp(address, compare_address) == 0)) ||
-      (!if_present &&
-       addr_is_bindall)) {
+    PRINT_DEV("interface == ifa->ifa_name: '%s' == '%s'", interface, ifa->ifa_name);
+    PRINT_DEV("address == compare_addess: '%s' == '%s'", address, compare_address);
+    PRINT_DEV("if_present: %s", if_present ? "yes" : "no");
+    PRINT_DEV("addr_present: %s", addr_present ? "yes" : "no");
+    PRINT_DEV("addr_is_bindall: %s", addr_is_bindall ? "yes" : "no");
+    if ((if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
+        addr_present && (strcmp(address, compare_address))) ||
+        (if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
+        addr_is_bindall) ||
+        (!if_present &&
+        addr_present && (strcmp(address, compare_address) == 0)) ||
+        (!if_present &&
+        addr_is_bindall)) {
 
       /* Set the interface index to be returned*/
       ifindex = if_nametoindex(ifa->ifa_name);
 
-      PRINT_DEBUG("Matched interface (with index %d) name '%s' with %s address %s", ifindex, ifa->ifa_name, (ss_family == AF_INET ? "IPv4" : "IPv6"), compare_address);
+      PRINT_DEBUG("Matched interface (with index %d) name '%s' with %s "
+          "address %s", ifindex, ifa->ifa_name,
+          (ss_family == AF_INET ? "IPv4" : "IPv6"), compare_address);
 
       /* Set the appropriate address in the sockaddr struct */
       if(!is_ipv6 && ss_family == AF_INET) {
         saddr4->sin_addr = ifaddr4->sin_addr;
-        PRINT_DEBUG("Setting IPv4 saddr...");
+        PRINT_DEBUG("Setting IPv4 saddr");
       }
       else if(is_ipv6 && ss_family == AF_INET6){
         saddr6->sin6_addr = ifaddr6->sin6_addr;
@@ -320,6 +329,8 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
       saddr->ss_family = ss_family;
 
       break;
+    } else {
+      PRINT_DEBUG("Match failed, trying next interface (if any)");
     }
 
   }
@@ -629,6 +640,9 @@ char *get_ip_from_sock_address(struct sockaddr_storage *saddr,
     PRINT_ERROR("Erroneous sock address");
     if (!ip_buffer)
       free(ip);
+    else
+      ip_buffer[0] = '\0';
+
     ip = NULL;
   }
 

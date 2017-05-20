@@ -386,7 +386,7 @@ SOCKET setup_socket(socket_conf_s *conf) {
   /* Find the index of the interface */
   ifindex = find_interface(saddr, conf->interface, conf->if_ip);
   if(ifindex < 0) {
-    PRINT_ERROR("The requested interface '%s' could not be found\n",
+    PRINT_ERROR("The requested interface '%s' could not be found",
         conf->interface);
     free(saddr);
     return SOCKET_ERROR;

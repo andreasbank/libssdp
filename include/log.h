@@ -10,27 +10,33 @@
 /* Uncomment the line below to write to a to a file instead of stdout */
 #define DEBUG_TO_FILE___
 
-#define DEBUG_COLOR_BEGIN "\x1b[0;32m"
-#define ERROR_COLOR_BEGIN "\x1b[0;31m"
-#define WARNING_COLOR_BEGIN "\x1b[1;33m"
-#define DEBUG_COLOR_END "\x1b[0;0m"
+#define ANSI_COLOR_PURPLE  "\x1b[1;35m"
+#define ANSI_COLOR_GRAY    "\x1b[0;90m"
+#define ANSI_COLOR_GREEN   "\x1b[0;32m"
+#define ANSI_COLOR_DEFAULT "\x1b[0;39m"
+#define ANSI_COLOR_YELLOW  "\x1b[0;33m"
+#define ANSI_COLOR_RED     "\x1b[0;31m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
 
 #ifdef DEBUG___
-  #define PRINT_DEBUG(...)  print_debug(NULL, DEBUG_COLOR_BEGIN, __FILE__, \
+  #define PRINT_DEV(...)  print_debug(NULL, ANSI_COLOR_PURPLE, __FILE__, \
       __LINE__, __VA_ARGS__)
-  #define PRINT_WARN(...)  print_debug(NULL, WARNING_COLOR_BEGIN, __FILE__, \
+  #define PRINT_DEBUG(...)  print_debug(NULL, ANSI_COLOR_GRAY, __FILE__, \
       __LINE__, __VA_ARGS__)
-  #define PRINT_ERROR(...)  print_debug(stderr, ERROR_COLOR_BEGIN, __FILE__, \
+  #define PRINT_INFO(...)  print_debug(NULL, ANSI_COLOR_DEFAULT, __FILE__, \
+      __LINE__, __VA_ARGS__)
+  #define PRINT_WARN(...)  print_debug(NULL, ANSI_COLOR_YELLOW, __FILE__, \
+      __LINE__, __VA_ARGS__)
+  #define PRINT_ERROR(...)  print_debug(stderr, ANSI_COLOR_RED, __FILE__, \
       __LINE__, __VA_ARGS__)
 #else
+  #define PRINT_DEV(...)    do { } while (FALSE)
   #define PRINT_DEBUG(...)  do { } while (FALSE)
-  #define PRINT_WARN(...)  fprintf(stderr, "[WARN] " __VA_ARGS__)
+  #define PRINT_INFO(...)   fprintf(stderr, "[INFO] " __VA_ARGS__)
+  #define PRINT_WARN(...)   fprintf(stderr, "[WARN] " __VA_ARGS__)
   #define PRINT_ERROR(...)  fprintf(stderr, "[ERR] " __VA_ARGS__)
 #endif
 
-#define ANSI_COLOR_GREEN   "\x1b[1;32m"
-#define ANSI_COLOR_RED     "\x1b[1;31m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
 
 /**
  * Prints a debug message, mimicking printf-like function, supports only %d, %s and %c
@@ -43,6 +49,15 @@
  * @param ... Variable number of optional arguments that match with the
  *        va_format.
  */
-void print_debug(FILE *std, const char *color, const char* file, int line, char *va_format, ...);
+void print_debug(FILE *std, const char *color, const char* file, int line,
+    char *va_format, ...);
+
+/**
+ * Logs the command line arguments the process was started with.
+ *
+ * @param The argc passed to main.
+ * @param The argv passed to main.
+ */
+void log_start_args(int argc, char **argv);
 
 #endif /* __LOG_H__ */

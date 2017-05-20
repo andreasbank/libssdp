@@ -228,8 +228,11 @@ int main(int argc, char **argv) {
   signal(SIGINT, &exit_sig);
 
   #ifdef DEBUG___
-  PRINT_DEBUG("%sDebug color%s", DEBUG_COLOR_BEGIN, DEBUG_COLOR_END);
-  PRINT_DEBUG("%sError color%s", ERROR_COLOR_BEGIN, DEBUG_COLOR_END);
+  log_start_args(argc, argv);
+  PRINT_DEBUG("%sDeveloper color%s", ANSI_COLOR_PURPLE, ANSI_COLOR_RESET);
+  PRINT_DEBUG("%sDebug color%s", ANSI_COLOR_GRAY, ANSI_COLOR_RESET);
+  PRINT_DEBUG("%sWarning color%s", ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+  PRINT_DEBUG("%sError color%s", ANSI_COLOR_RED, ANSI_COLOR_RESET);
   #endif
 
   set_default_configuration(&conf);

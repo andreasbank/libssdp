@@ -58,17 +58,24 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
   char *to_pointer = va_format;
   int args_count = chr_count(va_format, '%');
   const char *no_memory = "Not enought memory in buffer to build debug message";
-  char *s = NULL;
+  char *s;
   char c;
   int d;
+
+  /* Remove path from file variable (borrowing 'c' for the task) */
+  s = strrchr(file, '/');
+  if (s) {
+    file = s + 1;
+    s = NULL;
+  }
 
   /* Create a nice header for the output */
   sprintf(header, "%s[%d][%s:%04d] ", color, (int)getpid(), file, line);
 
   if(!va_format) {
     fprintf(stderr, "%s[%d][%s:%d] Error, va_arg input format (va_format) "
-        "not set%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__,
-        DEBUG_COLOR_END);
+        "not set%s\n", ANSI_COLOR_RED, (int)getpid(), __FILE__, __LINE__,
+        ANSI_COLOR_RESET);
     printf("some rror\n");
     return;
   }
@@ -81,15 +88,17 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
   int copy_length = 0;
   int args_pos;
 
-  for (args_pos = 1; (from_pointer && *from_pointer != '\0'); from_pointer = to_pointer) {
+  for (args_pos = 1; (from_pointer && *from_pointer != '\0');
+      from_pointer = to_pointer) {
 
     to_pointer = strchr(from_pointer, '%');
 
-    if(to_pointer && strlen(to_pointer) > 1) {
+    if (to_pointer && strlen(to_pointer) > 1) {
       copy_length = to_pointer - from_pointer;
 
-      if(copy_length > message_length - message_used) {
-      fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
+      if (copy_length > message_length - message_used) {
+      fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ANSI_COLOR_RED, (int)getpid(),
+          __FILE__, __LINE__, no_memory, ANSI_COLOR_RESET);
         return;
       }
 
@@ -102,8 +111,9 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
       s = va_arg(va, char *);
       if(s) {
         copy_length = strlen(s);
-        if(copy_length > message_length - message_used) {
-          fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
+        if (copy_length > message_length - message_used) {
+          fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ANSI_COLOR_RED,
+              (int)getpid(), __FILE__, __LINE__, no_memory, ANSI_COLOR_RESET);
           return;
         }
         strncpy(message + message_used, s, copy_length);
@@ -119,8 +129,9 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
       /* character */
       c = (char)va_arg(va, int);
       copy_length = 1;
-      if(copy_length > message_length - message_used) {
-        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
+      if (copy_length > message_length - message_used) {
+        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ANSI_COLOR_RED, (int)getpid(),
+            __FILE__, __LINE__, no_memory, ANSI_COLOR_RESET);
         return;
       }
       strncpy(message + message_used, &c, copy_length);
@@ -133,8 +144,9 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
       memset(d_char, '\0', 10);
       sprintf(d_char, "%d", d);
       copy_length = strlen(d_char);
-      if(copy_length > message_length - message_used) {
-        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, no_memory, DEBUG_COLOR_END);
+      if (copy_length > message_length - message_used) {
+        fprintf(stderr, "%s[%d][%s:%d] %s%s\n", ANSI_COLOR_RED, (int)getpid(),
+            __FILE__, __LINE__, no_memory, ANSI_COLOR_RESET);
         free(d_char);
         return;
       }
@@ -159,7 +171,7 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
     args_pos++;
   }
 
-  if(!std) {
+  if (!std) {
     std = stdout;
   }
 
@@ -171,7 +183,7 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
   /* Max file size is 500 KB */
   int max_size = 512000;
   /* If file is larger than 500KB then trunkate it */
-  if(file_size > max_size) {
+  if (file_size > max_size) {
     fh = fopen(debug_file, "w");
   }
   /* Else continue writing to it */
@@ -179,17 +191,39 @@ void print_debug(FILE *std, const char *color, const char* file, int line,
     fh = fopen(debug_file, "a");
   }
 
-  if(NULL == fh) {
-    fprintf(stderr, "%s[%d][%s:%d] Failed to create debug file%s\n", ERROR_COLOR_BEGIN, (int)getpid(), __FILE__, __LINE__, DEBUG_COLOR_END);
+  if (NULL == fh) {
+    fprintf(stderr, "%s[%d][%s:%d] Failed to create debug file%s\n",
+        ANSI_COLOR_RED, (int)getpid(), __FILE__, __LINE__, ANSI_COLOR_RESET);
   }
   else {
-    fprintf(fh, "%s%s%s\n", header, message, DEBUG_COLOR_END);
+    fprintf(fh, "%s%s%s\n", header, message, ANSI_COLOR_RESET);
     fclose(fh);
   }
   #else
-  fprintf(std, "%s%s%s\n", header, message, DEBUG_COLOR_END);
+  fprintf(std, "%s%s%s\n", header, message, ANSI_COLOR_RESET);
   #endif
 
 }
 #endif
 
+void log_start_args(int argc, char **argv) {
+  char *cmdline;
+  int cmdline_len = 0;
+  int i;
+
+  for (i = 0; i < argc; ++i) {
+    cmdline_len += strlen(argv[i]) + 1;
+  }
+
+  cmdline = malloc(cmdline_len + 1);
+  cmdline[0] = '\0';
+
+  for (i = 0; i < argc; ++i) {
+    strcat(cmdline, argv[i]);
+    strcat (cmdline, " ");
+  }
+
+  PRINT_DEBUG("%s", cmdline);
+
+  free(cmdline);
+}

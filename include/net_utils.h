@@ -6,14 +6,13 @@
 #include "common_definitions.h"
 
 /**
- * Parse a given ip:port combination into an internet address structure
+ * Parse a string containing an IP address.
  *
- * @param char *raw_address The <ip>:<port> string combination to be parsed
- * @param sockaddr_storage ** The IP internet address structute to be allocated and filled
+ * @param raw_address The string containing the IP address.
  *
- * @return BOOL TRUE on success
+ * @return A socket address configured for the given IP (raw_address).
  */
-BOOL parse_address(const char *raw_address, struct sockaddr_storage **pp_address);
+struct sockaddr_storage *parse_address(const char *raw_address);
 
 BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *rest,
     int rest_size);

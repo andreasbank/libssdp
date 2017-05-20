@@ -128,7 +128,7 @@ int parse_args(const int argc, char * const *argv, configuration_s *conf) {
     case 'a':
       if(optarg != NULL && strlen(optarg) > 0) {
         PRINT_DEBUG("parse_address()");
-        if(!parse_address(optarg, &notif_recipient_addr)) {
+        if(!(notif_recipient_addr = parse_address(optarg))) {
           usage();
           //TODO: fix free_stuff();
           return 1;
