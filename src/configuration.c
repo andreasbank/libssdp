@@ -63,12 +63,12 @@ void usage(void) {
   printf("\t-a <ip>:<port>    Forward the events to the specified ip and port,\n");
   printf("\t                  also works in combination with -u.\n");
   printf("\t-F                Do not try to parse the \"Location\" header and fetch device info\n");
-  //printf("\t-j                Convert results to JSON before sending\n");
-  printf("\t-x                Convert results to XML before sending\n");
+  //printf("\t-j                Convert results to JSON\n");
+  printf("\t-x                Convert results to XML\n");
   //printf("\t-4                Force the use of the IPv4 protocol\n");
   //printf("\t-6                Force the use of the IPv6 protocol\n");
   printf("\t-q                Be quiet!\n");
-  printf("\t-T                The time to wait for a device to answer a query\n");
+  printf("\t-T                The time to wait for a devices answer a search query\n");
   printf("\t-L                Enable multicast loopback traffic\n");
 }
 

@@ -471,6 +471,26 @@ SOCKET setup_socket(socket_conf_s *conf) {
     }
   }
 
+  /* Set receive timeout */
+  if ((conf->recv_timeout > 0) &&
+      set_receive_timeout(sock, conf->recv_timeout)) {
+    free(saddr);
+    if (conf->sa != NULL) {
+      free(conf->interface);
+    }
+    return SOCKET_ERROR;
+  }
+
+  /* Set send timeout */
+  if ((conf->send_timeout > 0) &&
+      set_send_timeout(sock, conf->send_timeout)) {
+    free(saddr);
+    if (conf->sa != NULL) {
+      free(conf->interface);
+    }
+    return SOCKET_ERROR;
+  }
+
   /* Setup address structure containing address information to use to connect */
   if (conf->is_ipv6) {
     PRINT_DEBUG("is_ipv6 == TRUE");

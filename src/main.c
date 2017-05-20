@@ -67,15 +67,14 @@
 #include "socket_helpers.h"
 #include "ssdp_cache.h"
 #include "ssdp_cache_display.h"
-#include "ssdp_message.h"
 #include "ssdp_listener.h"
+#include "ssdp_message.h"
+#include "ssdp_prober.h"
 #include "ssdp_static_defs.h"
 #include "string_utils.h"
 
-#define SSDP_RECV_BUFFER_LEN 2048 /* 2KiB */
-
 /* The main socket for listening for UPnP (SSDP) devices (or device answers) */
-static SOCKET notif_server_sock = 0;
+//static SOCKET notif_server_sock = 0;
 static ssdp_listener_s *ssdp_listener = NULL;
 
 /* The sock that we want to ask/look for devices on (unicast) */
@@ -93,18 +92,15 @@ static filters_factory_s *filters_factory = NULL;
 /* The program configuration */
 static configuration_s conf;
 
-
-
-
 /**
  * Frees all global allocations.
  */
 static void cleanup() {
 
-  if (notif_server_sock != 0) {
-    close(notif_server_sock);
-    notif_server_sock = 0;
-  }
+  //if (notif_server_sock != 0) {
+  //  close(notif_server_sock);
+  //  notif_server_sock = 0;
+  //}
 
   if (ssdp_listener) {
     destroy_ssdp_listener(ssdp_listener);
@@ -206,23 +202,14 @@ static void print_forwarding_config(configuration_s *conf,
   if(!conf->quiet_mode && notif_recipient_addr) {
     char ip[IPv6_STR_MAX_SIZE];
     memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
-    inet_ntop(notif_recipient_addr->ss_family,
-        (notif_recipient_addr->ss_family == AF_INET ?
-        (void *)&(((struct sockaddr_in *)notif_recipient_addr)->sin_addr) :
-        (void *)&(((struct sockaddr_in6 *)notif_recipient_addr)->sin6_addr)),
-        ip, sizeof(char) * IPv6_STR_MAX_SIZE);
+    get_ip_from_sock_address(notif_recipient_addr, ip);
     printf("Forwarding is enabled, ");
     printf("forwarding to IP %s on port %d\n", ip,
-        ntohs((notif_recipient_addr->ss_family == AF_INET ?
-        ((struct sockaddr_in *)notif_recipient_addr)->sin_port :
-        ((struct sockaddr_in6 *)notif_recipient_addr)->sin6_port)));
+        get_port_from_sock_address(notif_recipient_addr));
   }
 }
 
 int main(int argc, char **argv) {
-  struct sockaddr_storage ssdp_client_addr;
-  int recvLen = 1;
-
   signal(SIGTERM, &exit_sig);
   signal(SIGABRT, &exit_sig);
   signal(SIGINT, &exit_sig);
@@ -251,13 +238,9 @@ int main(int argc, char **argv) {
        to do any other work the parent should be doing */
     PRINT_DEBUG("listen_for_upnp_notif start");
 
-    /* Init buffer for receiving messages */
-    //char notif_string[NOTIF_RECV_BUFFER];
-    char ssdp_recv_buffer[SSDP_RECV_BUFFER_LEN];
-
     /* init socket */
     PRINT_DEBUG("setup_socket for listening to upnp");
-    ssdp_listener = create_ssdp_listener(&conf);
+    ssdp_listener = create_ssdp_passive_listener(&conf);
     if (!ssdp_listener) {
       PRINT_ERROR("Could not create socket");
       cleanup();
@@ -276,27 +259,26 @@ int main(int argc, char **argv) {
     /* Create a list for keeping/caching SSDP messages */
     ssdp_cache_s *ssdp_cache = NULL;
 
-    while(TRUE) {
+    while (TRUE) {
+      ssdp_recv_node_s recv_node;
       drop_message = FALSE;
       ssdp_message = NULL;
 
-      memset(ssdp_recv_buffer, '\0', SSDP_RECV_BUFFER_LEN);
       PRINT_DEBUG("loop: ready to receive");
-
-      recvLen = read_ssdp_listener(ssdp_listener, ssdp_recv_buffer,
-          SSDP_RECV_BUFFER_LEN, &ssdp_client_addr);
+      read_ssdp_listener(ssdp_listener, &recv_node);
 
       #ifdef __DEBUG
-      if(recvLen > 0) {
-        PRINT_DEBUG("**** RECEIVED %d bytes ****\n%s", recvLen, notif_string);
+      if (recv_node.recv_bytes > 0) {
+        PRINT_DEBUG("**** RECEIVED %d bytes ****\n%s", recv_node.recv_bytes,
+            notif_string);
         PRINT_DEBUG("************************");
       }
       #endif
 
-      /* If timeout reached then go through the 
+      /* If timeout reached then go through the
         ssdp_cache list and see if anything needs
         to be sent */
-      if(recvLen < 1) {
+      if (recv_node.recv_bytes < 1) {
         PRINT_DEBUG("Timed-out waiting for a SSDP message");
         if(!ssdp_cache || *ssdp_cache->ssdp_messages_count == 0) {
           PRINT_DEBUG("No messages in the SSDP cache, continuing to listen");
@@ -329,25 +311,9 @@ int main(int argc, char **argv) {
           continue;
         }
 
-        /* Retrieve IP address from socket */
-        char tmp_ip[IPv6_STR_MAX_SIZE];
-        if (!get_ip_from_sock_address(&ssdp_client_addr, tmp_ip)) {
-          PRINT_ERROR("Erroneous IP from sender");
-          free_ssdp_message(&ssdp_message);
-          continue;
-        }
-
-        /* Retrieve MAC address from socket (if possible, else NULL) */
-        char *tmp_mac = NULL;
-        tmp_mac = get_mac_address_from_socket(notif_server_sock,
-            (struct sockaddr_storage *)&ssdp_client_addr, NULL);
-
         /* Build the ssdp message struct */
-        BOOL build_success = build_ssdp_message(ssdp_message, tmp_ip, tmp_mac,
-            recvLen, ssdp_recv_buffer);
-        free(tmp_mac);
-
-        if (!build_success) {
+        if (!build_ssdp_message(ssdp_message, recv_node.from_ip,
+            recv_node.from_mac, recv_node.recv_bytes, recv_node.recv_data)) {
           PRINT_ERROR("Failed to build the SSDP message");
           free_ssdp_message(&ssdp_message);
           continue;
@@ -424,9 +390,9 @@ int main(int argc, char **argv) {
   start scanning but never continue
   to do any other work the parent should be doing */
   if(conf.scan_for_upnp_devices) {
-    //TODO: TOO OLD CODE! REWRITE!
     PRINT_DEBUG("scan_for_upnp_devices begin");
 
+    // TODO: change to ssdp_prober!!!
     /* init sending socket */
     PRINT_DEBUG("setup_socket() request");
     socket_conf_s sock_conf = {
@@ -439,11 +405,14 @@ int main(int argc, char **argv) {
       (conf.use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),  // const char *ip
       SSDP_PORT,      // int port
       FALSE,          // BOOL is_server
-      2,              // int queue_len
+      1,              // int queue_len
       FALSE,          // BOOL keepalive
       conf.ttl,       // int ttl
-      conf.enable_loopback // BOOL loopback
+      conf.enable_loopback, // BOOL loopback
+      0,              // Receive timeout
+      0               // Send timeout
     };
+
     if ((notif_client_sock = setup_socket(&sock_conf)) == SOCKET_ERROR) {
       PRINT_ERROR("Could not create socket");
       cleanup();
@@ -454,19 +423,12 @@ int main(int argc, char **argv) {
     PRINT_DEBUG("parse_filters()");
     parse_filters(conf.filter, &filters_factory, TRUE & (~conf.quiet_mode));
 
-    char *response = (char *)malloc(sizeof(char) * SSDP_RECV_BUFFER_LEN);
-    char *request = (char *)malloc(sizeof(char) * 2048);
-    memset(request, '\0', sizeof(char) * 2048);
-    strcpy(request, "M-SEARCH * HTTP/1.1\r\n");
-    strcat(request, "Host:239.255.255.250:1900\r\n");
-    //strcat(request, "ST:urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n");
-    strcat(request, "ST:urn:axis-com:service:BasicService:1\r\n");
-    //strcat(request, "ST:urn:schemas-upnp-org:device:SwiftServer:1\r\n");
-    strcat(request, "Man:\"ssdp:discover\"\r\n");
-    strcat(request, "MX:0\r\n\r\n");
+    /* Create a SSDP probe message */
+    const char *request = create_ssdp_probe_message();
 
     BOOL drop_message;
 
+    // TODO: create ssdp_prober!!!
     /* Client (mcast group) address */
     PRINT_DEBUG("creating multicast address");
     struct addrinfo *addri;
@@ -481,12 +443,13 @@ int main(int argc, char **argv) {
     char *port_str = (char *)malloc(sizeof(char) * 6);
     memset(port_str, '\0', 6);
     sprintf(port_str, "%d", SSDP_PORT);
+
     int err = 0;
-    if((err = getaddrinfo((conf.use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR), port_str, &hint, &addri)) != 0) {
+
+    if ((err = getaddrinfo((conf.use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),
+        port_str, &hint, &addri)) != 0) {
       PRINT_ERROR("getaddrinfo(): %s\n", gai_strerror(err));
       free(port_str);
-      free(response);
-      free(request);
       cleanup();
       exit(EXIT_FAILURE);
     }
@@ -502,113 +465,69 @@ int main(int argc, char **argv) {
     sa.sin_port = htons(SSDP_PORT);
     inet_pton(AF_INET, SSDP_ADDR, &sa.sin_addr);
     /*****************/
-    //recvLen = sendto(notif_client_sock, request, strlen(request), 0, (struct sockaddr *)&addri->ai_addr, addri->ai_addrlen);
-    recvLen = sendto(notif_client_sock, request, strlen(request), 0, (struct sockaddr *)&sa, sizeof(sa));
-    size_t sento_addr_len = sizeof(struct sockaddr_storage);
-    struct sockaddr_storage *sendto_addr = (struct sockaddr_storage *)malloc(sento_addr_len);
-    memset(sendto_addr, 0, sento_addr_len);
-    int response_port = 0;
-    if(getsockname(notif_client_sock, (struct sockaddr *)sendto_addr, (socklen_t *)&sento_addr_len) < 0) {
-      PRINT_ERROR("Could not get sendto() port, going to miss the replies");
-    }
-    #ifdef DEBUG___
-    else {
-      response_port = ntohs(sendto_addr->ss_family == AF_INET ? ((struct sockaddr_in *)sendto_addr)->sin_port : ((struct sockaddr_in6 *)sendto_addr)->sin6_port);
-      PRINT_DEBUG("sendto() port is %d", response_port);
-    }
-    #endif
-    close(notif_client_sock);
-    PRINT_DEBUG("sent %d bytes", recvLen);
-    free(request);
-    freeaddrinfo(addri);
-    if(recvLen < 0) {
+    int sent_bytes;
+    //sent_bytes = sendto(notif_client_sock, request, strlen(request), 0,
+    //    (struct sockaddr *)&addri->ai_addr, addri->ai_addrlen);
+    sent_bytes = sendto(notif_client_sock, request, strlen(request),
+        0, (struct sockaddr *)&sa, sizeof(sa));
+    if (sent_bytes < 0) {
       cleanup();
       PRINT_ERROR("sendto(): Failed sending any data");
       exit(EXIT_FAILURE);
     }
 
-    drop_message = FALSE;
 
-    size_t size = sizeof(ssdp_client_addr);
+    size_t sento_addr_len = sizeof(struct sockaddr_storage);
+    struct sockaddr_storage *sendto_addr = malloc(sento_addr_len);
+    memset(sendto_addr, 0, sento_addr_len);
+    int response_port = 0;
+
+    if (getsockname(notif_client_sock, (struct sockaddr *)sendto_addr,
+        (socklen_t *)&sento_addr_len) < 0) {
+      PRINT_ERROR("Could not get sendto() port, going to miss the replies");
+    }
+    else {
+      response_port = get_port_from_sock_address(sendto_addr);
+      PRINT_DEBUG("sendto() port is %d", response_port);
+    }
+    close(notif_client_sock);
+    PRINT_DEBUG("sent %d bytes", sent_bytes);
+    freeaddrinfo(addri);
+    drop_message = FALSE;
 
     /* init listening socket */
     PRINT_DEBUG("setup_socket() listening");
 
-    /* Reuse last sock_conf for the listener */
-    sock_conf.is_udp = TRUE; /* BOOL is_udp */
-    sock_conf.is_multicast = FALSE; /* BOOL is_multicast */
-    sock_conf.ip = NULL; /* const char *ip */
-    sock_conf.port = response_port; /* int port */
-    sock_conf.is_server = TRUE; /* BOOL is_server */
-    sock_conf.queue_length = 5; /* int queue_len */
+    ssdp_listener_s *response_listener = create_ssdp_active_listener(&conf,
+        response_port);
 
-    if ((notif_server_sock = setup_socket(&sock_conf)) == SOCKET_ERROR) {
-      PRINT_ERROR("Could not create socket");
-      cleanup();
-      exit(errno);
-    }
-
-    /* Set socket timeout, to timeout 2 seconds after devices stop answering */
-    struct timeval rtimeout;
-    rtimeout.tv_sec = conf.upnp_timeout;
-    rtimeout.tv_usec = 0;
-
-    PRINT_DEBUG("setting socket receive-timeout to %d", (int)rtimeout.tv_sec);
-    if(setsockopt(notif_server_sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout, sizeof(rtimeout)) < 0) {
-      PRINT_ERROR("setsockopt() SO_RCVTIMEO: (%d) %s", errno, strerror(errno));
-      free(response);
-      cleanup();
-      exit(EXIT_FAILURE);
-    }
-    PRINT_DEBUG("reciving responses");
     ssdp_message_s *ssdp_message;
-    do {
-      /* Wait for an answer */
-      memset(response, '\0', SSDP_RECV_BUFFER_LEN);
-      recvLen = recvfrom(notif_server_sock, response, SSDP_RECV_BUFFER_LEN, 0,
-               (struct sockaddr *) &ssdp_client_addr, (socklen_t *)&size);
-      PRINT_DEBUG("Recived %d bytes%s", (recvLen < 0 ? 0 : recvLen),
-          (recvLen < 0 ? " (wait time limit reached)" : ""));
+    ssdp_recv_node_s recv_node;
 
-      if(recvLen < 0) {
+    do {
+      memset(&recv_node, 0, sizeof recv_node);
+
+      /* Wait for an answer */
+      PRINT_DEBUG("Waiting for a response");
+      read_ssdp_listener(response_listener, &recv_node);
+      PRINT_DEBUG("Recived %d bytes%s",
+          (recv_node.recv_bytes < 0 ? 0 : recv_node.recv_bytes),
+          (recv_node.recv_bytes < 0 ? " (wait time limit reached)" : ""));
+
+      if(recv_node.recv_bytes < 0) {
         continue;
       }
 
       ssdp_message = NULL;
 
-      /* init ssdp_message */
+      /* Initialize and build ssdp_message */
       if(!init_ssdp_message(&ssdp_message)) {
         PRINT_ERROR("Failed to initialize SSDP message holder structure");
         continue;
       }
 
-      /* Extract IP */
-      char *tmp_ip = (char*)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-      memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
-
-      void *sockaddr_ptr;
-      if (ssdp_client_addr.ss_family == AF_INET) {
-        sockaddr_ptr = &((struct sockaddr_in *)&ssdp_client_addr)->sin_addr;
-      } else {
-        sockaddr_ptr = &((struct sockaddr_in6 *)&ssdp_client_addr)->sin6_addr;
-      }
-
-      if(!inet_ntop(ssdp_client_addr.ss_family, sockaddr_ptr, tmp_ip,
-            IPv6_STR_MAX_SIZE)) {
-        PRINT_ERROR("inet_ntop(): (%d) %s", errno, strerror(errno));
-        free_ssdp_message(&ssdp_message);
-        cleanup();
-        exit(EXIT_FAILURE);
-      }
-
-      char *tmp_mac = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
-      memset(tmp_mac, '\0', MAC_STR_MAX_SIZE);
-      tmp_mac = get_mac_address_from_socket(notif_server_sock,
-          &ssdp_client_addr, NULL);
-
-      BOOL build_success = build_ssdp_message(ssdp_message, tmp_ip, tmp_mac,
-          recvLen, response);
-      if(!build_success) {
+      if (!build_ssdp_message(ssdp_message, recv_node.from_ip,
+          recv_node.from_mac, recv_node.recv_bytes, recv_node.recv_data)) {
         continue;
       }
 
@@ -616,16 +535,21 @@ int main(int argc, char **argv) {
       // TODO: add "request" string filtering
       /* Check if notification should be used (to print and possibly send to the given destination) */
       ssdp_header_s *ssdp_headers = ssdp_message->headers;
-      if(filters_factory != NULL) {
+      if (filters_factory != NULL) {
         int fc;
-        for(fc = 0; fc < filters_factory->filters_count; fc++) {
-          if(strcmp(filters_factory->filters[fc].header, "ip") == 0 && strstr(ssdp_message->ip, filters_factory->filters[fc].value) == NULL) {
+        for (fc = 0; fc < filters_factory->filters_count; fc++) {
+          if ((strcmp(filters_factory->filters[fc].header, "ip") == 0) &&
+              strstr(ssdp_message->ip,
+              filters_factory->filters[fc].value) == NULL) {
             drop_message = TRUE;
             break;
           }
 
-          while(ssdp_headers) {
-            if(strcmp(get_header_string(ssdp_headers->type, ssdp_headers), filters_factory->filters[fc].header) == 0 && strstr(ssdp_headers->contents, filters_factory->filters[fc].value) == NULL) {
+          while (ssdp_headers) {
+            if ((strcmp(get_header_string(ssdp_headers->type, ssdp_headers),
+                filters_factory->filters[fc].header) == 0) &&
+                strstr(ssdp_headers->contents,
+                filters_factory->filters[fc].value) == NULL) {
               drop_message = TRUE;
               break;
             }
@@ -633,16 +557,16 @@ int main(int argc, char **argv) {
           }
           ssdp_headers = ssdp_message->headers;
 
-          if(drop_message) {
+          if (drop_message) {
             break;;
           }
         }
       }
 
-      if(filters_factory == NULL || !drop_message) {
+      if (filters_factory == NULL || !drop_message) {
 
         /* Print the message */
-        if(conf.xml_output) {
+        if (conf.xml_output) {
           char *xml_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
           to_xml(ssdp_message, TRUE, xml_string, XML_BUFFER_SIZE);
           printf("%s\n", xml_string);
@@ -651,13 +575,18 @@ int main(int argc, char **argv) {
         else {
           printf("\n\n\n----------BEGIN NOTIFICATION------------\n");
           printf("Time received: %s\n", ssdp_message->datetime);
-          printf("Origin-MAC: %s\n", (ssdp_message->mac != NULL ? ssdp_message->mac : "(Could not be determined)"));
-          printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message->ip, ssdp_message->message_length);
-          printf("Request: %s\nProtocol: %s\n", ssdp_message->request, ssdp_message->protocol);
+          printf("Origin-MAC: %s\n", (ssdp_message->mac != NULL ?
+              ssdp_message->mac : "(Could not be determined)"));
+          printf("Origin-IP: %s\nMessage length: %d Bytes\n", ssdp_message->ip,
+              ssdp_message->message_length);
+          printf("Request: %s\nProtocol: %s\n", ssdp_message->request,
+              ssdp_message->protocol);
 
           int hc = 0;
-          while(ssdp_headers) {
-            printf("Header[%d][type:%d;%s]: %s\n", hc, ssdp_headers->type, get_header_string(ssdp_headers->type, ssdp_headers), ssdp_headers->contents);
+          while (ssdp_headers) {
+            printf("Header[%d][type:%d;%s]: %s\n", hc, ssdp_headers->type,
+                get_header_string(ssdp_headers->type, ssdp_headers),
+                ssdp_headers->contents);
             ssdp_headers = ssdp_headers->next;
             hc++;
           }
@@ -669,8 +598,7 @@ int main(int argc, char **argv) {
       }
 
       free_ssdp_message(&ssdp_message);
-    } while(recvLen > 0);
-    free(response);
+    } while(recv_node.recv_bytes > 0);
     cleanup();
     PRINT_DEBUG("scan_for_upnp_devices end");
     exit(EXIT_SUCCESS);

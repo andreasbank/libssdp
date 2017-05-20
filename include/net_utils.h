@@ -34,11 +34,14 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
  * Get the remote MAC address from a given sock.
  *
  * @param sock The socket to extract the MAC address from.
+ * @param sa_ip The socket address to extract for.
+ * @param ip The IP address to extract for. If sa_ip is set this will be
+ *        ignored.
  *
  * @return The remote MAC address as a string.
  */
 char *get_mac_address_from_socket(const SOCKET sock,
-    struct sockaddr_storage *sa_ip, char *ip);
+    struct sockaddr_storage *sa_ip, char *ip, char *mac_buffer);
 
 /**
  * Check whether a given IP is a multicast IP
@@ -114,5 +117,14 @@ BOOL is_address_ipv4_ex(const char *ip, struct sockaddr_in *saddr);
  */
 BOOL set_ip_and_port_in_sock_address(const char *ip, int port,
     struct sockaddr_storage *saddr);
+
+/**
+ * Retrieve the port from a socket address.
+ *
+ * @param The socket address to get the port from.
+ *
+ * @return The port number.
+ */
+int get_port_from_sock_address(const struct sockaddr_storage *saddr);
 
 #endif /* __NET_UTILS_H__ */

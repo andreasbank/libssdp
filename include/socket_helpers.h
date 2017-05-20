@@ -22,6 +22,8 @@ typedef struct socket_conf_s {
   BOOL keepalive; /* Is it a keep-alive connection */
   int ttl; /* TTL of sent packets */
   BOOL loopback; /* Listen on loopback (if multicast) */
+  int recv_timeout; /* Timeout for the listening */
+  int send_timeout; /* Timeout for sending */
 } socket_conf_s;
 
 int set_send_timeout(SOCKET sock, int timeout);
