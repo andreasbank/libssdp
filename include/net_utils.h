@@ -2,6 +2,7 @@
 #define __NET_UTILS_H__
 
 #include <sys/socket.h>
+#include <netinet/in.h>
 
 #include "common_definitions.h"
 
@@ -62,5 +63,56 @@ BOOL is_address_multicast(const char *address);
  */
 char *get_ip_from_sock_address(struct sockaddr_storage *saddr,
     char *ip_buffer);
+
+/**
+ * Check whether an IP address is of version 6.
+ *
+ * @param The IP address to check.
+ *
+ * @return TRUE if it is an IPv6 address, FALSE otherwise.
+ */
+inline BOOL is_address_ipv6(const char *ip);
+
+/**
+ * Check whether an IP address is of version 6. This function will also fill
+ * the given socket address structure with the network form of the IP address.
+ *
+ * @param The IP address to check.
+ *
+ * @return TRUE if it is an IPv6 address, FALSE otherwise.
+ */
+BOOL is_address_ipv6_ex(const char *ip, struct sockaddr_in6 *saddr6);
+
+/**
+ * Check whether an IP address is of version 4.
+ *
+ * @param The IP address to check.
+ *
+ * @return TRUE if it is an IPv4 address, FALSE otherwise.
+ */
+inline BOOL is_address_ipv4(const char *ip);
+
+/**
+ * Check whether an IP address is of version 4. This function will also fill
+ * the given socket address structure with the network form of the IP address.
+ *
+ * @param The IP address to check.
+ *
+ * @return TRUE if it is an IPv4 address, FALSE otherwise.
+ */
+BOOL is_address_ipv4_ex(const char *ip, struct sockaddr_in *saddr);
+
+/**
+ * Set the network form of the given IP address in the given socket address
+ * buffer.
+ *
+ * @param ip The IP to set.
+ * @param port The port to set.
+ * @param saddr The socket address buffer to set the IP in.
+ *
+ * @return TRUE on success, FALSE otherwise.
+ */
+BOOL set_ip_and_port_in_sock_address(const char *ip, int port,
+    struct sockaddr_storage *saddr);
 
 #endif /* __NET_UTILS_H__ */

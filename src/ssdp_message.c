@@ -521,7 +521,6 @@ BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac,
     PRINT_DEBUG("build_ssdp_message() failed: last_newline < 0");
     return FALSE;
   }
-  PRINT_DEBUG("last_newline: %d", last_newline);
 
   /* get past request string, point at first header row */
   last_newline += 2;

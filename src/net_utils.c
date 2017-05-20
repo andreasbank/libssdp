@@ -3,6 +3,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <net/if_arp.h>
+#include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -289,18 +290,10 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
     BOOL if_present = strlen(interface) > 0 ? TRUE : FALSE;
     BOOL addr_present = strlen(address) > 0 ? TRUE : FALSE;
     BOOL addr_is_bindall = ((strcmp("0.0.0.0", address) == 0) ||
-                            (strcmp("::", address) == 0) ||
-                            (strlen(address) == 0)) ?
-                            TRUE :
-                            FALSE;
+        (strcmp("::", address) == 0) || (strlen(address) == 0)) ? TRUE : FALSE;
 
-    PRINT_DEV("interface == ifa->ifa_name: '%s' == '%s'", interface, ifa->ifa_name);
-    PRINT_DEV("address == compare_addess: '%s' == '%s'", address, compare_address);
-    PRINT_DEV("if_present: %s", if_present ? "yes" : "no");
-    PRINT_DEV("addr_present: %s", addr_present ? "yes" : "no");
-    PRINT_DEV("addr_is_bindall: %s", addr_is_bindall ? "yes" : "no");
     if ((if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
-        addr_present && (strcmp(address, compare_address))) ||
+        addr_present && (strcmp(address, compare_address) == 0)) ||
         (if_present && (strcmp(interface, ifa->ifa_name) == 0) &&
         addr_is_bindall) ||
         (!if_present &&
@@ -316,11 +309,11 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
           (ss_family == AF_INET ? "IPv4" : "IPv6"), compare_address);
 
       /* Set the appropriate address in the sockaddr struct */
-      if(!is_ipv6 && ss_family == AF_INET) {
+      if (!is_ipv6 && ss_family == AF_INET) {
         saddr4->sin_addr = ifaddr4->sin_addr;
         PRINT_DEBUG("Setting IPv4 saddr");
       }
-      else if(is_ipv6 && ss_family == AF_INET6){
+      else if (is_ipv6 && ss_family == AF_INET6){
         saddr6->sin6_addr = ifaddr6->sin6_addr;
         PRINT_DEBUG("Setting IPv6 saddr");
       }
@@ -349,15 +342,17 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
 }
 
 // TODO: fix for IPv6
+#if defined BSD || defined __APPLE__
+/* MacOS X variant of the function */
 char *get_mac_address_from_socket(const SOCKET sock,
     struct sockaddr_storage *sa_ip, char *ip) {
-  char *mac_string = (char *)malloc(sizeof(char) * MAC_STR_MAX_SIZE);
+  char *mac_string = malloc(sizeof(char) * MAC_STR_MAX_SIZE);
   memset(mac_string, '\0', MAC_STR_MAX_SIZE);
 
-  #if defined BSD || defined __APPLE__
   /* xxxBSD or MacOS solution */
   PRINT_DEBUG("Using BSD style MAC discovery (sysctl)");
-  int sysctl_flags[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_LLINFO };
+  int sysctl_flags[] = { CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS,
+      RTF_LLINFO };
   char *arp_buffer = NULL;
   char *arp_buffer_end = NULL;
   char *arp_buffer_next = NULL;
@@ -369,57 +364,63 @@ char *get_mac_address_from_socket(const SOCKET sock,
   struct sockaddr_storage *tmp_sin = NULL;
 
   /* Sanity check, choose IP source */
-  if(NULL == sa_ip && NULL != ip) {
-    tmp_sin = (struct sockaddr_storage *)malloc(sizeof(struct sockaddr_storage));
-    memset(tmp_sin, '\0', sizeof(struct sockaddr_storage));
-    if(!inet_pton(sa_ip->ss_family, ip, (sa_ip->ss_family == AF_INET ? (void *)&((struct sockaddr_in *)sa_ip)->sin_addr : (void *)&((struct sockaddr_in6 *)sa_ip)->sin6_addr))) {
-      PRINT_ERROR("get_mac_address_from_socket(): Failed to get MAC from given IP (%s)", ip);
+  if(sa_ip && ip) {
+    tmp_sin = malloc(sizeof(struct sockaddr_storage));
+    memset(tmp_sin, 0, sizeof(struct sockaddr_storage));
+    if (!inet_pton(sa_ip->ss_family, ip, (sa_ip->ss_family == AF_INET ?
+          (void *)&((struct sockaddr_in *)sa_ip)->sin_addr :
+          (void *)&((struct sockaddr_in6 *)sa_ip)->sin6_addr))) {
+      PRINT_ERROR("get_mac_address_from_socket(): Failed to get MAC from given"
+          " IP (%s)", ip);
       free(mac_string);
       free(tmp_sin);
       return NULL;
     }
     sa_ip = tmp_sin;
-  }
-  else if(NULL == sa_ip) {
+  } else if (!sa_ip) {
     PRINT_ERROR("Neither IP nor SOCKADDR given, MAC not fetched");
     free(mac_string);
     return NULL;
   }
 
   /* See how much we need to allocate */
-  if(sysctl(sysctl_flags, 6, NULL, &arp_buffer_size, NULL, 0) < 0) {
-    PRINT_ERROR("get_mac_address_from_socket(): sysctl(): Could not determine neede size");
+  if (sysctl(sysctl_flags, 6, NULL, &arp_buffer_size, NULL, 0) < 0) {
+    PRINT_ERROR("get_mac_address_from_socket(): sysctl(): Could not determine "
+        "needed size");
     free(mac_string);
-    if(NULL != tmp_sin) {
+    if (tmp_sin)
       free(tmp_sin);
-    }
+
     return NULL;
   }
 
   /* Allocate needed memmory */
-  if((arp_buffer = malloc(arp_buffer_size)) == NULL) {
-    PRINT_ERROR("get_mac_address_from_socket(): Failed to allocate memory for the arp table buffer");
+  if ((arp_buffer = malloc(arp_buffer_size)) == NULL) {
+    PRINT_ERROR("get_mac_address_from_socket(): Failed to allocate memory for "
+        "the arp table buffer");
     free(mac_string);
-    if(NULL != tmp_sin) {
+    if (tmp_sin)
       free(tmp_sin);
-    }
+
     return NULL;
   }
 
   /* Fetch the arp table */
   if(sysctl(sysctl_flags, 6, arp_buffer, &arp_buffer_size, NULL, 0) < 0) {
-    PRINT_ERROR("get_mac_address_from_socket(): sysctl(): Could not retrieve arp table");
+    PRINT_ERROR("get_mac_address_from_socket(): sysctl(): Could not retrieve "
+        "arp table");
     free(arp_buffer);
     free(mac_string);
-    if(NULL != tmp_sin) {
+    if (tmp_sin)
       free(tmp_sin);
-    }
+
     return NULL;
   }
 
   /* Loop through the arp table/list */
   arp_buffer_end = arp_buffer + arp_buffer_size;
-  for(arp_buffer_next = arp_buffer; arp_buffer_next < arp_buffer_end; arp_buffer_next += rtm->rtm_msglen) {
+  for(arp_buffer_next = arp_buffer; arp_buffer_next < arp_buffer_end;
+      arp_buffer_next += rtm->rtm_msglen) {
 
     /* See it through another perspective */
     rtm = (struct rt_msghdr *)arp_buffer_next;
@@ -428,25 +429,37 @@ char *get_mac_address_from_socket(const SOCKET sock,
     sin_arp = (struct sockaddr_inarp *)(rtm + 1);
     sdl = (struct sockaddr_dl *)(sin_arp + 1);
 
-    /* Check if address is the one we are looking for */
-    if(((struct sockaddr_in *)sa_ip)->sin_addr.s_addr != sin_arp->sin_addr.s_addr) {
+    /* Check if this address is the one we are looking for */
+    if (((struct sockaddr_in *)sa_ip)->sin_addr.s_addr !=
+        sin_arp->sin_addr.s_addr) {
       continue;
     }
     found_arp = TRUE;
 
-    /* The proudly save the MAC to a string */
+    /* Then proudly save the MAC to a string */
     if (sdl->sdl_alen) {
       unsigned char *cp = (unsigned char *)LLADDR(sdl);
-      sprintf(mac_string, "%x:%x:%x:%x:%x:%x", cp[0], cp[1], cp[2], cp[3], cp[4], cp[5]);
+      sprintf(mac_string, "%x:%x:%x:%x:%x:%x", cp[0], cp[1], cp[2], cp[3],
+          cp[4], cp[5]);
     }
 
     free(arp_buffer);
 
-    if(NULL != tmp_sin) {
+    if(tmp_sin)
       free(tmp_sin);
-    }
   }
-  #else
+
+  PRINT_DEBUG("Determined MAC string: %s", mac_string);
+  return mac_string;
+}
+
+#else
+/* Linux variant of the function */
+char *get_mac_address_from_socket(const SOCKET sock,
+    struct sockaddr_storage *sa_ip, char *ip) {
+  char *mac_string = malloc(sizeof(char) * MAC_STR_MAX_SIZE);
+  memset(mac_string, '\0', MAC_STR_MAX_SIZE);
+
   /* Linux (and rest) solution */
   PRINT_DEBUG("Using Linux style MAC discovery (ioctl SIOCGARP)");
   struct arpreq arp;
@@ -466,22 +479,19 @@ char *get_mac_address_from_socket(const SOCKET sock,
   }
 
   /* Check if IPv6 */
-  struct sockaddr_in6 *tmp = (struct sockaddr_in6 *)malloc(sizeof(struct sockaddr_in6));
-  if((sa_ip != NULL && sa_ip->ss_family == AF_INET6)
-  || (ip != NULL && inet_pton(AF_INET6, ip, tmp))) {
+  if ((sa_ip && sa_ip->ss_family == AF_INET6)
+  || (ip && is_address_ipv6(ip))) {
     is_ipv6 = TRUE;
     ss_fam = AF_INET6;
     PRINT_DEBUG("Looking for IPv6-MAC association");
   }
-  else if((sa_ip != NULL && sa_ip->ss_family == AF_INET)
-  || (ip != NULL && inet_pton(AF_INET, ip, tmp))) {
+  else if ((sa_ip && sa_ip->ss_family == AF_INET)
+  || (ip && is_address_ipv4(ip))) {
     PRINT_DEBUG("Looking for IPv4-MAC association");
   }
   else {
     PRINT_ERROR("sa_ip or ip variable error");
   }
-  free(tmp);
-  tmp = NULL;
 
   /* Assign address family for arpreq */
   ((struct sockaddr_storage *)&arp.arp_pa)->ss_family = ss_fam;
@@ -505,8 +515,7 @@ char *get_mac_address_from_socket(const SOCKET sock,
   }
   else if(ip != NULL) {
 
-    if(!inet_pton(ss_fam,
-        ip,
+    if (!inet_pton(ss_fam, ip,
         (ss_fam == AF_INET ? (void *)sin_a: (void *)sin6_a))) {
     PRINT_ERROR("Failed to get MAC from given IP (%s)", ip);
     PRINT_ERROR("Error %d: %s", errno, strerror(errno));
@@ -518,8 +527,9 @@ char *get_mac_address_from_socket(const SOCKET sock,
   /* Go through all interfaces' arp-tables and search for the MAC */
   /* Possible explanation: Linux arp-tables are if-name specific */
   struct ifaddrs *interfaces = NULL, *ifa = NULL;
-  if(getifaddrs(&interfaces) < 0) {
-    PRINT_ERROR("get_mac_address_from_socket(): getifaddrs():Could not retrieve interfaces");
+  if (getifaddrs(&interfaces) < 0) {
+    PRINT_ERROR("get_mac_address_from_socket(): getifaddrs():Could not "
+        "retrieve interfaces");
     free(mac_string);
     return NULL;
   }
@@ -545,11 +555,13 @@ char *get_mac_address_from_socket(const SOCKET sock,
       /* Handle failure */
       if(errno == 6) {
         /* if error is "Unknown device or address" then continue/try next interface */
-        PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): (%d) %s", errno, strerror(errno));
+        PRINT_DEBUG("get_mac_address_from_socket(): ioctl(): (%d) %s", errno,
+            strerror(errno));
         continue;
       }
       else {
-        PRINT_ERROR("get_mac_address_from_socket(): ioctl(): (%d) %s", errno, strerror(errno));
+        PRINT_ERROR("get_mac_address_from_socket(): ioctl(): (%d) %s", errno,
+            strerror(errno));
         continue;
       }
     }
@@ -578,13 +590,10 @@ BOOL is_address_multicast(const char *address) {
   char *str_first = NULL;
   int int_first = 0;
   BOOL is_ipv6;
-  if(address != NULL) {
-    // TODO: Write a better IPv6 discovery mechanism
-    is_ipv6 = strchr(address, ':') != NULL ? TRUE : FALSE;
-    if(strcmp(address, "0.0.0.0") == 0) {
-      return TRUE;
-    }
-    if(is_ipv6) {
+  if (address != NULL) {
+    is_ipv6 = is_address_ipv6(address);
+
+    if (is_ipv6) {
       struct in6_addr ip6_ll;
       struct in6_addr ip6_addr;
       inet_pton(AF_INET6, "ff02::c", &ip6_ll);
@@ -595,12 +604,15 @@ BOOL is_address_multicast(const char *address) {
       return FALSE;
     }
     else {
-      str_first = (char *)malloc(sizeof(char) * 4);
-      memset(str_first, '\0', sizeof(char) * 4);
+      if (strcmp(address, "0.0.0.0") == 0)
+        return TRUE;
+
+      str_first = malloc(4);
+      memset(str_first, '\0', 4);
       strncpy(str_first, address, 3);
       int_first = atoi(str_first);
       free(str_first);
-      if(int_first > 223 && int_first < 240) {
+      if (int_first > 223 && int_first < 240) {
         return TRUE;
       }
       return FALSE;
@@ -648,4 +660,74 @@ char *get_ip_from_sock_address(struct sockaddr_storage *saddr,
 
 err:
   return ip;
+}
+
+inline BOOL is_address_ipv6(const char *ip) {
+  struct sockaddr_in6 saddr6;
+
+  return inet_pton(AF_INET6, ip, (void *)&saddr6) > 0;
+}
+
+BOOL is_address_ipv6_ex(const char *ip, struct sockaddr_in6 *saddr6) {
+  BOOL is_ipv6 = inet_pton(AF_INET6, ip, (void *)&saddr6->sin6_addr) > 0;
+
+  if (is_ipv6)
+    saddr6->sin6_family = AF_INET6;
+
+  return is_ipv6;
+}
+
+inline BOOL is_address_ipv4(const char *ip) {
+  struct in_addr saddr;
+
+  return inet_pton(AF_INET, ip, (void *)&saddr) > 0;
+}
+
+BOOL is_address_ipv4_ex(const char *ip, struct sockaddr_in *saddr) {
+  BOOL is_ipv4 = inet_pton(AF_INET, ip, (void *)&saddr->sin_addr) > 0;
+
+  if (is_ipv4)
+    saddr->sin_family = AF_INET;
+
+  return is_ipv4;
+}
+
+BOOL set_ip_and_port_in_sock_address(const char *ip, int port,
+    struct sockaddr_storage *saddr) {
+  int res = 0;
+  void *sock_addr;
+  in_port_t *sock_port;
+
+  if (!ip) {
+    PRINT_DEBUG("IP address is empty");
+    goto err;
+  }
+
+  if (port < 1 || port > 65535) {
+    PRINT_DEBUG("Invalid port number");
+    goto err;
+  }
+
+  if (!saddr) {
+    PRINT_DEBUG("Socket address is empty");
+    goto err;
+  }
+
+  if (is_address_ipv6_ex(ip, (struct sockaddr_in6 *)saddr)) {
+    sock_addr = (void *)&((struct sockaddr_in6 *)saddr)->sin6_addr;
+    sock_port = (in_port_t *)&((struct sockaddr_in6 *)saddr)->sin6_port;
+  } else if (is_address_ipv4_ex(ip, (struct sockaddr_in *)saddr)) {
+    sock_addr = (void *)&((struct sockaddr_in *)saddr)->sin_addr;
+    sock_port = (in_port_t *)&((struct sockaddr_in *)saddr)->sin_port;
+  } else {
+    PRINT_ERROR("Erroneous IP address");
+    goto err;
+  }
+
+  res = inet_pton(saddr->ss_family, ip, sock_addr);
+  if (res > 0)
+    *sock_port = htons(port);
+
+err:
+  return res > 0;
 }
