@@ -7,9 +7,15 @@
 #include "common_definitions.h"
 #include "configuration.h"
 #include "log.h"
+#include "net_definitions.h"
 #include "net_utils.h"
 #include "socket_helpers.h"
+#include "ssdp_filter.h"
+#include "ssdp_cache.h"
+#include "ssdp_cache_display.h"
+#include "ssdp_cache_output_format.h"
 #include "ssdp_listener.h"
+#include "ssdp_message.h"
 #include "ssdp_static_defs.h"
 
 #define LISTEN_QUEUE_LENGTH 5 /* The queue length for the listener */
@@ -101,3 +107,162 @@ void read_ssdp_listener(ssdp_listener_s *listener,
 SOCKET get_sock_from_listener(ssdp_listener_s *listener) {
   return listener->sock;
 }
+
+int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf) {
+  PRINT_DEBUG("listen_for_upnp_notif start");
+
+  /* init socket */
+  PRINT_DEBUG("setup_socket for listening to upnp");
+  listener = create_ssdp_passive_listener(conf);
+  if (!listener) {
+    PRINT_ERROR("Could not create socket");
+    return errno;
+  }
+
+  /* Parse the filters */
+  PRINT_DEBUG("parse_filters()");
+  parse_filters(conf->filter, &filters_factory, TRUE & (~conf->quiet_mode));
+
+  /* Child process server loop */
+  PRINT_DEBUG("Strating infinite loop");
+  ssdp_message_s *ssdp_message;
+  BOOL drop_message;
+
+  /* Create a list for keeping/caching SSDP messages */
+  ssdp_cache_s *ssdp_cache = NULL;
+
+  while (TRUE) {
+    ssdp_recv_node_s recv_node;
+    drop_message = FALSE;
+    ssdp_message = NULL;
+
+    PRINT_DEBUG("loop: ready to receive");
+    read_ssdp_listener(listener, &recv_node);
+
+    #ifdef __DEBUG
+    if (recv_node.recv_bytes > 0) {
+      PRINT_DEBUG("**** RECEIVED %d bytes ****\n%s", recv_node.recv_bytes,
+          notif_string);
+      PRINT_DEBUG("************************");
+    }
+    #endif
+
+    /* If timeout reached then go through the
+      ssdp_cache list and see if anything needs
+      to be sent */
+    if (recv_node.recv_bytes < 1) {
+      PRINT_DEBUG("Timed-out waiting for a SSDP message");
+      if(!ssdp_cache || *ssdp_cache->ssdp_messages_count == 0) {
+        PRINT_DEBUG("No messages in the SSDP cache, continuing to listen");
+      }
+      else {
+        /* If forwarding has been enabled, send the cached
+           SSDP messages and empty the list*/
+        if(conf->forward_enabled) {
+          PRINT_DEBUG("Forwarding cached SSDP messages");
+          if(!flush_ssdp_cache(conf, &ssdp_cache, "/abused/post.php",
+              notif_recipient_addr, 80, 1)) {
+            PRINT_DEBUG("Failed flushing SSDP cache");
+            continue;
+          }
+        }
+        /* Else just display the cached messages in a table */
+        else {
+          PRINT_DEBUG("Displaying cached SSDP messages");
+          display_ssdp_cache(ssdp_cache, FALSE);
+        }
+      }
+      continue;
+    }
+    /* Else a new ssdp message has been received */
+    else {
+
+      /* init ssdp_message */
+      if (!init_ssdp_message(&ssdp_message)) {
+        PRINT_ERROR("Failed to initialize the SSDP message buffer");
+        continue;
+      }
+
+      /* Build the ssdp message struct */
+      if (!build_ssdp_message(ssdp_message, recv_node.from_ip,
+          recv_node.from_mac, recv_node.recv_bytes, recv_node.recv_data)) {
+        PRINT_ERROR("Failed to build the SSDP message");
+        free_ssdp_message(&ssdp_message);
+        continue;
+      }
+
+      // TODO: Make it recognize both AND and OR (search for ; inside a ,)!!!
+
+      /* If -M is not set check if it is a M-SEARCH message
+         and drop it */
+      if (conf->ignore_search_msgs && (strstr(ssdp_message->request,
+          "M-SEARCH") != NULL)) {
+          PRINT_DEBUG("Message contains a M-SEARCH request, dropping "
+              "message");
+          free_ssdp_message(&ssdp_message);
+          continue;
+      }
+
+      /* Check if notification should be used (if any filters have been set) */
+      if (filters_factory != NULL) {
+        drop_message = filter(ssdp_message, filters_factory);
+      }
+
+      /* If message is not filtered then use it */
+      if (filters_factory == NULL || !drop_message) {
+
+        /* Add ssdp_message to ssdp_cache
+           (this internally checks for duplicates) */
+        if (!add_ssdp_message_to_cache(&ssdp_cache, &ssdp_message)) {
+          PRINT_ERROR("Failed adding SSDP message to SSDP cache, skipping");
+          continue;
+        }
+
+        /* Fetch custom fields */
+        if (conf->fetch_info && !fetch_custom_fields(conf, ssdp_message)) {
+          PRINT_DEBUG("Could not fetch custom fields");
+        }
+        ssdp_message = NULL;
+
+        /* Check if forwarding ('-a') is enabled */
+        if (conf->forward_enabled) {
+
+          /* If max ssdp cache size reached then it is time to flush */
+          if (*ssdp_cache->ssdp_messages_count >= conf->ssdp_cache_size) {
+            PRINT_DEBUG("Cache max size reached, sending and emptying");
+            if(!flush_ssdp_cache(conf, &ssdp_cache, "/abused/post.php",
+                notif_recipient_addr, 80, 1)) {
+              PRINT_DEBUG("Failed flushing SSDP cache");
+              continue;
+            }
+          }
+          else {
+            PRINT_DEBUG("Cache max size not reached, not sending yet");
+          }
+        }
+        else {
+          /* Display results on console */
+          PRINT_DEBUG("Displaying cached SSDP messages");
+          display_ssdp_cache(ssdp_cache, FALSE);
+        }
+      }
+    }
+
+    PRINT_DEBUG("scan loop: done");
+  }
+
+  return 0;
+}
+
+void print_forwarding_config(configuration_s *conf,
+    struct sockaddr_storage *sa) {
+  if(!conf->quiet_mode && notif_recipient_addr) {
+    char ip[IPv6_STR_MAX_SIZE];
+    memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
+    get_ip_from_sock_address(notif_recipient_addr, ip);
+    printf("Forwarding is enabled, ");
+    printf("forwarding to IP %s on port %d\n", ip,
+        get_port_from_sock_address(notif_recipient_addr));
+  }
+}
+

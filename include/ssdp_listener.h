@@ -66,4 +66,22 @@ void read_ssdp_listener(ssdp_listener_s *listener,
  */
 SOCKET get_sock_from_listener(ssdp_listener_s *listener);
 
+/**
+ * Tells the SSDP listener to start listening to SSDP messages.
+ *
+ * @param conf The global configuration to use.
+ *
+ * Non-0 value on error. This function does not return if no error ocurrs.
+ */
+int ssdp_listener_start(configuration_s *conf);
+
+/**
+ * Print forwarding status.
+ *
+ * @param conf The global configuration to use.
+ * @param sa The address of the forward recipient.
+ */
+void print_forwarding_config(configuration_s *conf,
+    struct sockaddr_storage *sa);
+
 #endif /* __SSDP_LISTENER_H__ */
