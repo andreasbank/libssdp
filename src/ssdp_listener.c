@@ -22,12 +22,30 @@
 
 typedef struct ssdp_listener_s {
   SOCKET sock;
+  struct sockaddr_storage forwarder;
 } ssdp_listener_s;
 
-static ssdp_listener_s *create_ssdp_listener(configuration_s *conf,
-    BOOL is_active, int port, int timeout) {
+/**
+ * //TOTO: write desc
+ */
+static int ssdp_listener_init(ssdp_listener_s *listener,
+    configuration_s *conf, BOOL is_active, int port, int timeout) {
   SOCKET sock = 0;
-  ssdp_listener_s *l = NULL;
+
+  if (!listener) {
+    PRINT_ERROR("No listener specified");
+    return 1;
+  }
+
+  memset (listener, 0 sizeof *listener);
+
+  // TODO: make parse_address take in stack alloc
+  struct sockaddr_storage *tmp_saddr = parse_address(conf->forward_address);
+  if (!tmp_saddr) {
+    PRINT_WARN("Errnoeous forward address");
+    return 1;
+  }
+  listener->forwarder = *tmp_saddr;
 
   socket_conf_s sock_conf = {
     conf->use_ipv6,       // BOOL is_ipv6
@@ -49,46 +67,45 @@ static ssdp_listener_s *create_ssdp_listener(configuration_s *conf,
   sock = setup_socket(&sock_conf);
   if (sock == SOCKET_ERROR) {
     PRINT_DEBUG("[%d] %s", errno, strerror(errno));
-    return NULL;
+    return errno;
   }
 
   /* Set a timeout limit when waiting for ssdp messages */
   if (set_receive_timeout(sock, timeout)) {
-    PRINT_ERROR("Failed to set the receive timeout");
+    PRINT_DEBUG("Failed to set the receive timeout");
     goto err;
   }
 
   l = malloc(sizeof (ssdp_listener_s));
   l->sock = sock;
 
-  return l;
+  return 0;
 
 err:
   close(sock);
 
-  return NULL;
+  return errno;
 }
 
-ssdp_listener_s *create_ssdp_passive_listener(configuration_s *conf) {
-  return create_ssdp_listener(conf, TRUE, SSDP_PORT, 10);
+int ssdp_passive_listener_init(ssdp_listener *listener, configuration_s *conf) {
+  return ssdp_listener_init(listener, conf, TRUE, SSDP_PORT, 10);
 }
 
-ssdp_listener_s *create_ssdp_active_listener(configuration_s *conf, int port) {
-  return create_ssdp_listener(conf, FALSE, port, 2);
+int ssdp_active_listener_init(ssdp_listener *listener,
+    configuration_s *conf, int port) {
+  return ssdp_listener_init(listener, conf, FALSE, port, 2);
 }
 
-void destroy_ssdp_listener(ssdp_listener_s *listener) {
+void ssdp_listener_close(ssdp_listener_s *listener) {
 
   if (!listener)
     return;
 
   if (listener->sock)
     close(listener->sock);
-
-  free(listener);
 }
 
-void read_ssdp_listener(ssdp_listener_s *listener,
+void ssdp_listener_read(ssdp_listener_s *listener,
     ssdp_recv_node_s *recv_node) {
   struct sockaddr_storage recv_addr;
   size_t addr_size = sizeof recv_addr;
@@ -111,14 +128,6 @@ SOCKET get_sock_from_listener(ssdp_listener_s *listener) {
 int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf) {
   PRINT_DEBUG("listen_for_upnp_notif start");
 
-  /* init socket */
-  PRINT_DEBUG("setup_socket for listening to upnp");
-  listener = create_ssdp_passive_listener(conf);
-  if (!listener) {
-    PRINT_ERROR("Could not create socket");
-    return errno;
-  }
-
   /* Parse the filters */
   PRINT_DEBUG("parse_filters()");
   parse_filters(conf->filter, &filters_factory, TRUE & (~conf->quiet_mode));
@@ -137,7 +146,7 @@ int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf) {
     ssdp_message = NULL;
 
     PRINT_DEBUG("loop: ready to receive");
-    read_ssdp_listener(listener, &recv_node);
+    ssdp_listener_read(listener, &recv_node);
 
     #ifdef __DEBUG
     if (recv_node.recv_bytes > 0) {
@@ -161,7 +170,7 @@ int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf) {
         if(conf->forward_enabled) {
           PRINT_DEBUG("Forwarding cached SSDP messages");
           if(!flush_ssdp_cache(conf, &ssdp_cache, "/abused/post.php",
-              notif_recipient_addr, 80, 1)) {
+              listener->notif_recipient_addr, 80, 1)) {
             PRINT_DEBUG("Failed flushing SSDP cache");
             continue;
           }
@@ -231,7 +240,7 @@ int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf) {
           if (*ssdp_cache->ssdp_messages_count >= conf->ssdp_cache_size) {
             PRINT_DEBUG("Cache max size reached, sending and emptying");
             if(!flush_ssdp_cache(conf, &ssdp_cache, "/abused/post.php",
-                notif_recipient_addr, 80, 1)) {
+                listener->notif_recipient_addr, 80, 1)) {
               PRINT_DEBUG("Failed flushing SSDP cache");
               continue;
             }
@@ -253,16 +262,3 @@ int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf) {
 
   return 0;
 }
-
-void print_forwarding_config(configuration_s *conf,
-    struct sockaddr_storage *sa) {
-  if(!conf->quiet_mode && notif_recipient_addr) {
-    char ip[IPv6_STR_MAX_SIZE];
-    memset(ip, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
-    get_ip_from_sock_address(notif_recipient_addr, ip);
-    printf("Forwarding is enabled, ");
-    printf("forwarding to IP %s on port %d\n", ip,
-        get_port_from_sock_address(notif_recipient_addr));
-  }
-}
-

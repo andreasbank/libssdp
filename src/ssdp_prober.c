@@ -1,4 +1,10 @@
 #include <stdlib.h>
+#include <netdb.h> /* struct addrinfo */
+#include <netinet/in.h>
+#include <unistd.h> /* close() */
+
+#include "common_definitions.h"
+#include "configuration.h"
 
 #define PROBE_MSG \
   "M-SEARCH * HTTP/1.1\r\n" \
@@ -9,21 +15,28 @@
 
 typedef struct ssdp_prober_s {
   SOCKET sock;
+  struct sockaddr_storage forwarder;
 } ssdp_prober_s;
-
-// TODO: change to prober and move outside scope
-/* The sock that we want to ask/look for devices on (unicast) */
-static SOCKET notif_client_sock = 0;
 
 const char *create_ssdp_probe_message(void) {
   return PROBE_MSG;
 }
 
-//TODO: remove notif_client_sock
-int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
-  PRINT_DEBUG("scan_for_upnp_devices begin");
+int ssdp_prober_init(ssdp_prober_s *prober, configuration_s *conf) {
+  if (!prober) {
+    PRINT_ERROR("Prober is empty");
+  }
 
-  // TODO: change to ssdp_prober!!!
+  memset(prober, 0, sizeof *prober);
+
+  // TODO: make parse_address take in stack alloc
+  struct sockaddr_storage *tmp_saddr = parse_address(conf->forward_address);
+  if (!tmp_saddr) {
+    PRINT_WARN("Errnoeous forward address");
+    return 1;
+  }
+  prober->forwarder = *tmp_saddr;
+
   /* init sending socket */
   PRINT_DEBUG("setup_socket() request");
   socket_conf_s sock_conf = {
@@ -44,7 +57,38 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
     0               // Send timeout
   };
 
-  if ((notif_client_sock = setup_socket(&sock_conf)) == SOCKET_ERROR) {
+  if ((prober->sock = setup_socket(&sock_conf)) == SOCKET_ERROR) {
+    PRINT_DEBUG("Could not create socket");
+    return errno;
+  }
+
+  return 0;
+}
+
+int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
+  PRINT_DEBUG("scan_for_upnp_devices begin");
+
+  /* init sending socket */
+  PRINT_DEBUG("setup_socket() request");
+  socket_conf_s sock_conf = {
+    conf->use_ipv6,  // BOOL is_ipv6
+    TRUE,           // BOOL is_udp
+    TRUE,           // BOOL is_multicast
+    conf->interface, // char *interface
+    conf->ip,        // char *IP
+    NULL,           // struct sockaddr_storage *sa
+    (conf->use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),  // const char *ip
+    SSDP_PORT,      // int port
+    FALSE,          // BOOL is_server
+    1,              // int queue_len
+    FALSE,          // BOOL keepalive
+    conf->ttl,       // int ttl
+    conf->enable_loopback, // BOOL loopback
+    0,              // Receive timeout
+    0               // Send timeout
+  };
+
+  if ((prober->sock = setup_socket(&sock_conf)) == SOCKET_ERROR) {
     PRINT_DEBUG("Could not create socket");
     return errno;
   }
@@ -58,47 +102,48 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
 
   BOOL drop_message;
 
-  // TODO: create ssdp_prober!!!
   /* Client (mcast group) address */
   PRINT_DEBUG("creating multicast address");
-  struct addrinfo *addri;
-  struct addrinfo hint;
-  memset(&hint, 0, sizeof(hint));
-  hint.ai_family = (conf->use_ipv6 ? AF_INET6 : AF_INET);
-  hint.ai_socktype = SOCK_DGRAM;
-  hint.ai_protocol = IPPROTO_UDP;
-  hint.ai_canonname = NULL;
-  hint.ai_addr = NULL;
-  hint.ai_next = NULL;
-  char *port_str = (char *)malloc(sizeof(char) * 6);
-  memset(port_str, '\0', 6);
-  sprintf(port_str, "%d", SSDP_PORT);
+  //struct addrinfo *addri;
+  //struct addrinfo hint;
+  //memset(&hint, 0, sizeof(hint));
+  //hint.ai_family = (conf->use_ipv6 ? AF_INET6 : AF_INET);
+  //hint.ai_socktype = SOCK_DGRAM;
+  //hint.ai_protocol = IPPROTO_UDP;
+  //hint.ai_canonname = NULL;
+  //hint.ai_addr = NULL;
+  //hint.ai_next = NULL;
+  //char *port_str = (char *)malloc(sizeof(char) * 6);
+  //memset(port_str, '\0', 6);
+  //sprintf(port_str, "%d", SSDP_PORT);
 
-  int err = 0;
+  //int err = 0;
 
-  if ((err = getaddrinfo((conf->use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),
-      port_str, &hint, &addri)) != 0) {
-    PRINT_ERROR("getaddrinfo(): %s\n", gai_strerror(err));
-    free(port_str);
-    return err;
-  }
-  free(port_str);
+  //if ((err = getaddrinfo((conf->use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),
+  //    port_str, &hint, &addri)) != 0) {
+  //  PRINT_ERROR("getaddrinfo(): %s\n", gai_strerror(err));
+  //  free(port_str);
+  //  return err;
+  //}
+  //free(port_str);
 
-  /* Send the UPnP request */
-  PRINT_DEBUG("sending request");
-  /*****************/
-  // This is the temp solution untill the
-  // commented-out sendto() code below is fixed
+  /*****************
+   This is the temp solution until the
+   commented-out sendto() code below (and above) is fixed */
   struct sockaddr_in sa;
   sa.sin_family = AF_INET;
   sa.sin_port = htons(SSDP_PORT);
   inet_pton(AF_INET, SSDP_ADDR, &sa.sin_addr);
   /*****************/
+
+  /* Send the UPnP request */
+  PRINT_DEBUG("sending request");
   int sent_bytes;
-  //sent_bytes = sendto(notif_client_sock, request, strlen(request), 0,
+  //sent_bytes = sendto(prober_sock, request, strlen(request), 0,
   //    (struct sockaddr *)&addri->ai_addr, addri->ai_addrlen);
-  sent_bytes = sendto(notif_client_sock, request, strlen(request),
-      0, (struct sockaddr *)&sa, sizeof(sa));
+  sent_bytes = sendto(prober_sock, request, strlen(request), 0,
+      (struct sockaddr *)&sa, sizeof(sa));
+
   if (sent_bytes < 0) {
     PRINT_DEBUG("sendto(): Failed sending any data");
     return errno;
@@ -110,7 +155,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
   memset(sendto_addr, 0, sento_addr_len);
   int response_port = 0;
 
-  if (getsockname(notif_client_sock, (struct sockaddr *)sendto_addr,
+  if (getsockname(prober_sock, (struct sockaddr *)sendto_addr,
       (socklen_t *)&sento_addr_len) < 0) {
     PRINT_ERROR("Could not get sendto() port, going to miss the replies");
   }
@@ -118,16 +163,16 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
     response_port = get_port_from_sock_address(sendto_addr);
     PRINT_DEBUG("sendto() port is %d", response_port);
   }
-  close(notif_client_sock);
+  close(prober_sock);
   PRINT_DEBUG("sent %d bytes", sent_bytes);
-  freeaddrinfo(addri);
+  //freeaddrinfo(addri);
   drop_message = FALSE;
 
   /* init listening socket */
   PRINT_DEBUG("setup_socket() listening");
 
-  ssdp_listener_s *response_listener = create_ssdp_active_listener(conf,
-      response_port);
+  ssdp_listener_s response_listener;
+  ssdp_active_listener_init(&response_listener, conf, response_port);
 
   ssdp_message_s *ssdp_message;
   ssdp_recv_node_s recv_node;
@@ -137,7 +182,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
 
     /* Wait for an answer */
     PRINT_DEBUG("Waiting for a response");
-    read_ssdp_listener(response_listener, &recv_node);
+    ssdp_listener_read(&response_listener, &recv_node);
     PRINT_DEBUG("Recived %d bytes%s",
         (recv_node.recv_bytes < 0 ? 0 : recv_node.recv_bytes),
         (recv_node.recv_bytes < 0 ? " (wait time limit reached)" : ""));
@@ -227,6 +272,8 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
 
     free_ssdp_message(&ssdp_message);
   } while(recv_node.recv_bytes > 0);
+
+  //TODO: ssdp_listener_close(&response_listener) ?
 
   PRINT_DEBUG("scan_for_upnp_devices end");
 

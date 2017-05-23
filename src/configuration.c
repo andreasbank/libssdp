@@ -25,12 +25,13 @@ void set_default_configuration(configuration_s *c) {
   c->run_as_server         = FALSE;
   c->listen_for_upnp_notif = FALSE;
   c->scan_for_upnp_devices = FALSE;
+  c->forward_address       = NULL;
   c->forward_enabled       = FALSE;
   c->ssdp_cache_size       = 10;
   c->fetch_info            = TRUE;
   c->json_output           = FALSE;
   c->xml_output            = FALSE;
-  c->ttl                   = 1;
+  c->ttl                   = 64;
   c->filter                = NULL;
   c->ignore_search_msgs    = TRUE;
   c->use_ipv4              = FALSE;
@@ -126,20 +127,19 @@ int parse_args(const int argc, char * const *argv, configuration_s *conf) {
       break;
 
     case 'a':
-      if(optarg != NULL && strlen(optarg) > 0) {
-        PRINT_DEBUG("parse_address()");
-        if(!(notif_recipient_addr = parse_address(optarg))) {
-          usage();
-          //TODO: fix free_stuff();
-          return 1;
-        }
-        conf->forward_enabled = TRUE;
-      }
+      // TODO: remove the need for BOOL forward_enabled
+      conf->forward_address = optarg;
+      conf->forward_enabled = TRUE;
+      //if(optarg != NULL && strlen(optarg) > 0) {
+      //  PRINT_DEBUG("parse_address()");
+      //  if(!(notif_recipient_addr = parse_address(optarg))) {
+      //    usage();
+      //    //TODO: fix free_stuff();
+      //    return 1;
+      //  }
+      //  conf->forward_enabled = TRUE;
+      //}
       break;
-
-    case 'm':
-      printf("         {\n      {   }\n       }_{ __{\n    .-{   }   }-.\n   (   }     {   )\n   |`-.._____..-'|\n   |             ;--.\n   |            (__  \\\n   |             | )  )\n   |   ABUSED    |/  /\n   |             /  /\n   |            (  /\n   \\             y'\n    `-.._____..-'\n");
-      return 1;
 
     case 'F':
       conf->fetch_info = FALSE;

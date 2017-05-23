@@ -65,13 +65,10 @@
 #include "string_utils.h"
 
 /* The SSDP listener */
-static ssdp_listener_s *ssdp_listener = NULL;
+static ssdp_listener_s ssdp_listener;
 
-/* Notification recipient socket, where the results will be forwarded */
-static SOCKET notif_recipient_sock = 0;
-
-/* The sockaddr where we store the recipient address */
-struct sockaddr_storage *notif_recipient_addr = NULL;
+/* The SSDP prober */
+static ssdp_prober_s ssdp_prober;
 
 /* The structure contining all the filters information */
 static filters_factory_s *filters_factory = NULL;
@@ -96,11 +93,6 @@ static void cleanup() {
   if (notif_client_sock != 0) {
     close(notif_client_sock);
     notif_client_sock = 0;
-  }
-
-  if (notif_recipient_sock != 0) {
-    close(notif_recipient_sock);
-    notif_recipient_sock = 0;
   }
 
   free_ssdp_filters_factory(filters_factory);
@@ -179,6 +171,8 @@ static void verify_running_states(configuration_s *conf) {
 }
 
 int main(int argc, char **argv) {
+  int ret = 0;
+
   signal(SIGTERM, &exit_sig);
   signal(SIGABRT, &exit_sig);
   signal(SIGINT, &exit_sig);
@@ -206,8 +200,15 @@ int main(int argc, char **argv) {
        start listening for notifications but never continue
        to do any other work the parent should be doing */
 
+    /* init socket */
+    if ((ret = ssdp_passive_listener_init(&listener, conf))) {
+      PRINT_ERROR("Could not create listener");
+      return ret;
+    }
+
     if (ssdp_listener_start(ssdp_listener, &conf)) {
       PRINT_ERROR("%s", strerror(errno));
+      return errno;
     }
 
   } else if(conf.scan_for_upnp_devices) {
@@ -215,8 +216,12 @@ int main(int argc, char **argv) {
        start scanning but never continue
        to do any other work the parent should be doing */
 
-    // TODO: add prober instead
-    if (ssdp_prober_start(notif_client_sock, NULL, &conf)) {
+    if ((ret = ssdp_prober_init(&prober, conf))) {
+      PRINT_ERROR("Could not create prober");
+      return ret;
+    }
+
+    if (ssdp_prober_start(prober, &conf)) {
       PRINT_ERROR("%s", strerror(errno));
     }
 

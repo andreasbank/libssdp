@@ -24,29 +24,33 @@ typedef struct ssdp_recv_node_s {
  * passively listen to SSDP messages sent over a network. Sets errno to the
  * error number on failure.
  *
+ * @param listener The listener to init.
  * @param conf the global configuration.
  *
  * @return A SSDP listener.
  */
-ssdp_listener_s *create_ssdp_passive_listener(configuration_s *conf);
+int ssdp_passive_listener_init(ssdp_listener_s *listener,
+    configuration_s *conf);
 
 /**
  * Create an active (unicast) SSDP listener. This type of listener is used to
  * listen to SSDP query responses. Sets errno to the error number on failure.
  *
+ * @param listener The listener to init.
  * @param conf The global configuration.
  * @param port The port to listen at.
  *
  * @return A SSDP listener.
  */
-ssdp_listener_s *create_ssdp_active_listener(configuration_s *conf, int port);
+int ssdp_active_listener_init(ssdp_listener_s *listener, configuration_s *conf,
+    int port);
 
 /**
  * Destroy the passed SSDP listener.
  *
  * @param listener The SSDP listener to destroy.
  */
-void destroy_ssdp_listener(ssdp_listener_s *listener);
+void ssdp_listener_close(ssdp_listener_s *listener);
 
 /**
  * Read from the listener. Blocks untill timeout if no data to read.
@@ -54,7 +58,7 @@ void destroy_ssdp_listener(ssdp_listener_s *listener);
  * @param listener The listener to read from.
  * @param recv_node Information about the node (client) that sent data.
  */
-void read_ssdp_listener(ssdp_listener_s *listener,
+void ssdp_listener_read(ssdp_listener_s *listener,
     ssdp_recv_node_s *recv_node);
 
 /**
@@ -74,14 +78,5 @@ SOCKET get_sock_from_listener(ssdp_listener_s *listener);
  * Non-0 value on error. This function does not return if no error ocurrs.
  */
 int ssdp_listener_start(configuration_s *conf);
-
-/**
- * Print forwarding status.
- *
- * @param conf The global configuration to use.
- * @param sa The address of the forward recipient.
- */
-void print_forwarding_config(configuration_s *conf,
-    struct sockaddr_storage *sa);
 
 #endif /* __SSDP_LISTENER_H__ */

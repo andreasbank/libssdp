@@ -11,6 +11,7 @@ typedef struct configuration_struct {
   BOOL                run_as_server;                  /* Run the program as a server, open a port and wait for incoming connection (requests) */
   BOOL                listen_for_upnp_notif;          /* Switch for enabling listening for UPnP (SSDP) notifications */
   BOOL                scan_for_upnp_devices;          /* Switch to perform an active UPnP (SSDP) scan */
+  char               *forward_address;                /* The address to forward the results to */
   BOOL                forward_enabled;                /* Switch to enable forwarding of the scan results */
   BOOL                fetch_info;                     /* Don't try to fetch device info from the url in the "Location" header */
   BOOL                ssdp_cache_size;                /* The size of the ssdp_cache list */
