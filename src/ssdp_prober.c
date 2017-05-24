@@ -1,10 +1,25 @@
-#include <stdlib.h>
+#include <arpa/inet.h> /* inet_pton() */
+#include <errno.h>
 #include <netdb.h> /* struct addrinfo */
 #include <netinet/in.h>
+#include <stdlib.h>
+#include <string.h> /* memset() */
+#include <sys/socket.h> /* struct sockaddr_storage */
 #include <unistd.h> /* close() */
 
 #include "common_definitions.h"
 #include "configuration.h"
+#include "log.h"
+#include "net_definitions.h"
+#include "net_utils.h"
+#include "socket_helpers.h"
+#include "ssdp_cache_output_format.h"
+#include "ssdp_common.h"
+#include "ssdp_filter.h"
+#include "ssdp_listener.h"
+#include "ssdp_message.h"
+#include "ssdp_prober.h"
+#include "ssdp_static_defs.h"
 
 #define PROBE_MSG \
   "M-SEARCH * HTTP/1.1\r\n" \
@@ -13,32 +28,26 @@
   "Man:\"ssdp:discover\"\r\n" \
   "MX:0\r\n\r\n"
 
-typedef struct ssdp_prober_s {
-  SOCKET sock;
-  struct sockaddr_storage forwarder;
-} ssdp_prober_s;
-
-const char *create_ssdp_probe_message(void) {
+const char *ssdp_probe_message_create(void) {
   return PROBE_MSG;
 }
 
 int ssdp_prober_init(ssdp_prober_s *prober, configuration_s *conf) {
+  PRINT_DEBUG("ssdp_prober_init()");
   if (!prober) {
     PRINT_ERROR("Prober is empty");
   }
 
   memset(prober, 0, sizeof *prober);
 
-  // TODO: make parse_address take in stack alloc
-  struct sockaddr_storage *tmp_saddr = parse_address(conf->forward_address);
-  if (!tmp_saddr) {
-    PRINT_WARN("Errnoeous forward address");
-    return 1;
+  if (conf->forward_address) {
+    if (parse_address(conf->forward_address, &prober->forwarder)) {
+      PRINT_WARN("Errnoeous forward address");
+      return 1;
+    }
   }
-  prober->forwarder = *tmp_saddr;
 
   /* init sending socket */
-  PRINT_DEBUG("setup_socket() request");
   socket_conf_s sock_conf = {
     conf->use_ipv6,  // BOOL is_ipv6
     TRUE,           // BOOL is_udp
@@ -61,44 +70,32 @@ int ssdp_prober_init(ssdp_prober_s *prober, configuration_s *conf) {
     PRINT_DEBUG("Could not create socket");
     return errno;
   }
+  PRINT_DEBUG("ssdp_prober has been initialized");
 
   return 0;
 }
 
+void ssdp_prober_close(ssdp_prober_s *prober) {
+  PRINT_DEBUG("ssdp_prober_close()");
+  if (!prober)
+    return;
+
+  if (prober->sock > 0)
+    close(prober->sock);
+}
+
 int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
-  PRINT_DEBUG("scan_for_upnp_devices begin");
+  PRINT_DEBUG("ssdp_prober_start()");
 
-  /* init sending socket */
-  PRINT_DEBUG("setup_socket() request");
-  socket_conf_s sock_conf = {
-    conf->use_ipv6,  // BOOL is_ipv6
-    TRUE,           // BOOL is_udp
-    TRUE,           // BOOL is_multicast
-    conf->interface, // char *interface
-    conf->ip,        // char *IP
-    NULL,           // struct sockaddr_storage *sa
-    (conf->use_ipv6 ? SSDP_ADDR6_LL : SSDP_ADDR),  // const char *ip
-    SSDP_PORT,      // int port
-    FALSE,          // BOOL is_server
-    1,              // int queue_len
-    FALSE,          // BOOL keepalive
-    conf->ttl,       // int ttl
-    conf->enable_loopback, // BOOL loopback
-    0,              // Receive timeout
-    0               // Send timeout
-  };
-
-  if ((prober->sock = setup_socket(&sock_conf)) == SOCKET_ERROR) {
-    PRINT_DEBUG("Could not create socket");
-    return errno;
-  }
+  /* The structure contining all the filters information */
+  filters_factory_s *filters_factory = NULL;
 
   /* Parse the filters */
   PRINT_DEBUG("parse_filters()");
   parse_filters(conf->filter, &filters_factory, TRUE & (~conf->quiet_mode));
 
   /* Create a SSDP probe message */
-  const char *request = create_ssdp_probe_message();
+  const char *request = ssdp_probe_message_create();
 
   BOOL drop_message;
 
@@ -139,9 +136,9 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
   /* Send the UPnP request */
   PRINT_DEBUG("sending request");
   int sent_bytes;
-  //sent_bytes = sendto(prober_sock, request, strlen(request), 0,
+  //sent_bytes = sendto(prober->sock, request, strlen(request), 0,
   //    (struct sockaddr *)&addri->ai_addr, addri->ai_addrlen);
-  sent_bytes = sendto(prober_sock, request, strlen(request), 0,
+  sent_bytes = sendto(prober->sock, request, strlen(request), 0,
       (struct sockaddr *)&sa, sizeof(sa));
 
   if (sent_bytes < 0) {
@@ -155,7 +152,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
   memset(sendto_addr, 0, sento_addr_len);
   int response_port = 0;
 
-  if (getsockname(prober_sock, (struct sockaddr *)sendto_addr,
+  if (getsockname(prober->sock, (struct sockaddr *)sendto_addr,
       (socklen_t *)&sento_addr_len) < 0) {
     PRINT_ERROR("Could not get sendto() port, going to miss the replies");
   }
@@ -163,7 +160,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
     response_port = get_port_from_sock_address(sendto_addr);
     PRINT_DEBUG("sendto() port is %d", response_port);
   }
-  close(prober_sock);
+  close(prober->sock);
   PRINT_DEBUG("sent %d bytes", sent_bytes);
   //freeaddrinfo(addri);
   drop_message = FALSE;
@@ -171,6 +168,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
   /* init listening socket */
   PRINT_DEBUG("setup_socket() listening");
 
+  // TODO: fix this listener, its acting weird
   ssdp_listener_s response_listener;
   ssdp_active_listener_init(&response_listener, conf, response_port);
 

@@ -1,23 +1,16 @@
 #ifndef __SSDP_LISTENER_H__
 #define __SSDP_LISTENER_H__
 
-#include <sys/socket.h>
+#include <sys/socket.h> /* struct sockaddr_storage */
 
 #include "common_definitions.h"
 #include "configuration.h"
 
-#define SSDP_RECV_DATA_LEN 2048 /* 2KiB */
-
-/* An opaque struct for the SSDP listener */
-typedef struct ssdp_listener_s ssdp_listener_s;
-
-/* Info about the node that we received a mesage from */
-typedef struct ssdp_recv_node_s {
-  char from_ip[IPv6_STR_MAX_SIZE];
-  char from_mac[MAC_STR_MAX_SIZE];
-  int recv_bytes;
-  char recv_data[SSDP_RECV_DATA_LEN];
-} ssdp_recv_node_s;
+/* A container struct for the SSDP listener */
+typedef struct ssdp_listener_s {
+  SOCKET sock;
+  struct sockaddr_storage forwarder;
+} ssdp_listener_s;
 
 /**
  * Create a passive (multicast) SSDP listener. This type of listener is used to
@@ -62,21 +55,31 @@ void ssdp_listener_read(ssdp_listener_s *listener,
     ssdp_recv_node_s *recv_node);
 
 /**
- * Return the socket from a listener.
+ * Return the underlaying socket from a SSDP listener.
  *
- * @param The listener.
+ * @param prober The listener to get the socket from.
  *
- * @return The listener's socket.
+ * @return The underlaying socket.
  */
-SOCKET get_sock_from_listener(ssdp_listener_s *listener);
+SOCKET ssdp_listener_get_sock(ssdp_listener_s *listener);
+
+/**
+ * Return the underlaying forwarder from a SSDP listener.
+ *
+ * @param prober The listener to get the forwarder from.
+ *
+ * @return The underlaying forwarder.
+ */
+struct sockaddr_storage *ssdp_listener_get_forwarder(ssdp_listener_s *listener);
 
 /**
  * Tells the SSDP listener to start listening to SSDP messages.
  *
+ * @param listener The SSDP listener to start.
  * @param conf The global configuration to use.
  *
  * Non-0 value on error. This function does not return if no error ocurrs.
  */
-int ssdp_listener_start(configuration_s *conf);
+int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf);
 
 #endif /* __SSDP_LISTENER_H__ */

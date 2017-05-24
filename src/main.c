@@ -60,6 +60,7 @@
 #include "common_definitions.h"
 #include "daemon.h"
 #include "log.h"
+#include "ssdp_common.h"
 #include "ssdp_listener.h"
 #include "ssdp_prober.h"
 #include "string_utils.h"
@@ -70,9 +71,6 @@ static ssdp_listener_s ssdp_listener;
 /* The SSDP prober */
 static ssdp_prober_s ssdp_prober;
 
-/* The structure contining all the filters information */
-static filters_factory_s *filters_factory = NULL;
-
 /* The program configuration */
 static configuration_s conf;
 
@@ -80,24 +78,9 @@ static configuration_s conf;
  * Frees all global allocations.
  */
 static void cleanup() {
-
-  //if (notif_server_sock != 0) {
-  //  close(notif_server_sock);
-  //  notif_server_sock = 0;
-  //}
-
-  if (ssdp_listener) {
-    destroy_ssdp_listener(ssdp_listener);
-  }
-
-  if (notif_client_sock != 0) {
-    close(notif_client_sock);
-    notif_client_sock = 0;
-  }
-
-  free_ssdp_filters_factory(filters_factory);
-
-  PRINT_DEBUG("\nCleaning up and exitting...\n");
+  ssdp_listener_close(&ssdp_listener);
+  ssdp_prober_close(&ssdp_prober);
+  PRINT_DEBUG("Cleaning up and exiting...\n");
 }
 
 /**
@@ -117,10 +100,9 @@ static void exit_sig(int param) {
  * @param conf The global configuration to use.
  */
 static void verify_running_states(configuration_s *conf) {
-
   if(conf->run_as_daemon &&
      !(conf->run_as_server ||
-       (conf->listen_for_upnp_notif && conf->forward_enabled) ||
+       (conf->listen_for_upnp_notif && conf->forward_address) ||
        conf->scan_for_upnp_devices)) {
     /* If missconfigured, stop and notify the user */
 
@@ -137,7 +119,7 @@ static void verify_running_states(configuration_s *conf) {
   /* If set to listen for UPnP notifications then
      fork() and live a separate life */
   if (conf->listen_for_upnp_notif &&
-     ((conf->run_as_daemon && conf->forward_enabled) ||
+     ((conf->run_as_daemon && conf->forward_address) ||
      conf->run_as_server)) {
     if (fork() != 0) {
       /* listen_for_upnp_notif went to the forked process,
@@ -191,37 +173,41 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-  print_forwarding_config(&conf, notif_recipient_addr);
-
   verify_running_states(&conf);
 
   if (conf.listen_for_upnp_notif) {
-    /* If set to listen for AXIS devices notifications then
+    /* If set to listen for devices notifications then
        start listening for notifications but never continue
        to do any other work the parent should be doing */
 
     /* init socket */
-    if ((ret = ssdp_passive_listener_init(&listener, conf))) {
-      PRINT_ERROR("Could not create listener");
+    if ((ret = ssdp_passive_listener_init(&ssdp_listener, &conf))) {
+      PRINT_ERROR("Could not create SSDP listener");
       return ret;
     }
 
-    if (ssdp_listener_start(ssdp_listener, &conf)) {
+    /* Display forwarding info */
+    print_forwarder(&conf, &ssdp_listener.forwarder);
+
+    if (ssdp_listener_start(&ssdp_listener, &conf)) {
       PRINT_ERROR("%s", strerror(errno));
       return errno;
     }
 
   } else if(conf.scan_for_upnp_devices) {
-    /* If set to scan for AXIS devices then
+    /* If set to scan for devices then
        start scanning but never continue
        to do any other work the parent should be doing */
 
-    if ((ret = ssdp_prober_init(&prober, conf))) {
-      PRINT_ERROR("Could not create prober");
+    if ((ret = ssdp_prober_init(&ssdp_prober, &conf))) {
+      PRINT_ERROR("Could not create SSDP prober");
       return ret;
     }
 
-    if (ssdp_prober_start(prober, &conf)) {
+    /* Display forwarding info */
+    print_forwarder(&conf, &ssdp_prober.forwarder);
+
+    if (ssdp_prober_start(&ssdp_prober, &conf)) {
       PRINT_ERROR("%s", strerror(errno));
     }
 
@@ -231,5 +217,5 @@ int main(int argc, char **argv) {
 
   cleanup();
   exit(EXIT_SUCCESS);
-} // main end
+}
 

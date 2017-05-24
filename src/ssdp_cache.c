@@ -7,6 +7,7 @@
 #include "common_definitions.h"
 #include "configuration.h"
 #include "log.h"
+#include "net_utils.h"
 #include "socket_helpers.h"
 #include "ssdp_message.h"
 #include "ssdp_cache.h"
@@ -76,8 +77,6 @@ static BOOL create_plain_text_message(char *results, int buffer_size,
   return TRUE;
 }
 
-// TODO: remove port, it is contained in **pp_address
-// TODO: make it not use global variables (conf->interface, conf->ip)
 // TODO: add doxygen
 static int send_stuff(const char *url, const char *data,
     const struct sockaddr_storage *da, int port, int timeout,
@@ -85,7 +84,7 @@ static int send_stuff(const char *url, const char *data,
 
   if(url == NULL || strlen(url) < 1) {
     PRINT_ERROR("send_stuff(): url not set");
-    return FALSE;
+    return 1;
   }
 
   /* Create socket */
@@ -104,27 +103,19 @@ static int send_stuff(const char *url, const char *data,
     0,
     FALSE,
     conf->ttl,
-    conf->enable_loopback
+    conf->enable_loopback,
+    timeout,
+    0
   };
 
   SOCKET send_sock = setup_socket(&sock_conf);
   if(send_sock == SOCKET_ERROR) {
-    PRINT_ERROR("send_stuff(): %d, %s", errno, strerror(errno));
-    return 0;
-  }
-
-  if(!set_receive_timeout(send_sock, timeout)) {
-    close(send_sock);
-    return 0;
-  }
-
-  if(!set_send_timeout(send_sock, 1)) {
-    close(send_sock);
-    return 0;
+    PRINT_ERROR("send_stuff(): %s", strerror(errno));
+    return errno;
   }
 
   /* Setup socket destination address */
-  PRINT_DEBUG("send_stuff(): setting up socket addresses");
+  PRINT_DEBUG("send_stuff(): setting up socket address");
 
   if(da->ss_family == AF_INET) {
     struct sockaddr_in *da_ipv4 = (struct sockaddr_in *)da;
@@ -135,25 +126,20 @@ static int send_stuff(const char *url, const char *data,
     da_ipv6->sin6_port = htons(port);
   }
 
-  /* Connect socket to destination */
   #ifdef DEBUG___
-  char *tmp_ip = (char *)malloc(sizeof(char) * IPv6_STR_MAX_SIZE);
-  memset(tmp_ip, '\0', IPv6_STR_MAX_SIZE);
-  inet_ntop(da->ss_family, (da->ss_family == AF_INET ?
-      (void *)&((struct sockaddr_in *)da)->sin_addr :
-      (void *)&((struct sockaddr_in6 *)da)->sin6_addr), tmp_ip,
-      IPv6_STR_MAX_SIZE);
+  char tmp_ip[IPv6_STR_MAX_SIZE];
+  get_ip_from_sock_address(da, tmp_ip);
   PRINT_DEBUG("send_stuff(): connecting to destination (%s; ss_family = "
       "%s [%d])", tmp_ip, (da->ss_family == AF_INET ? "AF_INET" : "AF_INET6"),
       da->ss_family);
-  free(tmp_ip);
-  tmp_ip = NULL;
   #endif
+
+  /* Connect socket to destination */
   if(connect(send_sock, (struct sockaddr*)da, sizeof(struct sockaddr)) ==
       SOCKET_ERROR) {
     PRINT_ERROR("send_stuff(): connect(): %d, %s", errno, strerror(errno));
     close(send_sock);
-    return 0;
+    return errno;
   }
 
   /*
@@ -200,14 +186,19 @@ static int send_stuff(const char *url, const char *data,
   int bytes = send(send_sock, request, strlen(request), 0);
   free(request);
   if(bytes < 1) {
-    PRINT_ERROR("Failed forwarding message");
+    PRINT_ERROR("send_stuff(): Failed forwarding message (%d bytes sent)",
+        bytes);
     close(send_sock);
-    return 0;
+    return 1;
   }
 
   PRINT_DEBUG("send_stuff(): sent %d bytes", bytes);
   int response_size = 10240; // 10KB
   char *response = (char *)malloc(sizeof(char) * response_size);
+  if (!response) {
+    PRINT_ERROR("Allocation failed: %s", strerror(errno));
+    return 1;
+  }
   memset(response, '\0', response_size);
 
   int all_bytes = 0;
@@ -216,13 +207,13 @@ static int send_stuff(const char *url, const char *data,
     all_bytes += bytes;
   } while(bytes > 0);
 
-  PRINT_DEBUG("send_stuff(): received %d bytes", all_bytes);
-  PRINT_DEBUG("send_stuff(): received:\n%s", response);
+  PRINT_DEBUG("send_stuff(): received %d bytes:\n%s", all_bytes, response);
 
   free(response);
   PRINT_DEBUG("send_stuff(): closing socket");
   close(send_sock);
-  return all_bytes;
+
+  return 0;
 }
 
 /**
@@ -388,34 +379,36 @@ BOOL flush_ssdp_cache(configuration_s *conf, ssdp_cache_s **ssdp_cache_pointer,
     const char *url, struct sockaddr_storage *sockaddr_recipient, int port,
     int timeout) {
   ssdp_cache_s *ssdp_cache = *ssdp_cache_pointer;
-  int results_size = *ssdp_cache->ssdp_messages_count * XML_BUFFER_SIZE;
-  char results[results_size];
+  int ssdp_list_size = *ssdp_cache->ssdp_messages_count * XML_BUFFER_SIZE;
+  char ssdp_list[ssdp_list_size];
 
   /* If -j then convert all messages to one JSON blob */
-  if(conf->json_output) {
-    if(1 > cache_to_json(ssdp_cache, results, results_size)) {
+  if (conf->json_output) {
+    if(cache_to_json(ssdp_cache, ssdp_list, ssdp_list_size) < 1) {
       PRINT_ERROR("Failed creating JSON blob from ssdp cache");
       return FALSE;
     }
   }
 
   /* If -x then convert all messages to one XML blob */
-  if(conf->xml_output) {
-    if(1 > cache_to_xml(ssdp_cache, results, results_size)) {
+  if (conf->xml_output) {
+    if(cache_to_xml(ssdp_cache, ssdp_list, ssdp_list_size) < 1) {
       PRINT_ERROR("Failed creating XML blob from ssdp cache");
       return FALSE;
     }
   }
 
   // TODO: make it create a list instead of single plain message
-  else if(!create_plain_text_message(results, XML_BUFFER_SIZE,
+  else if (!create_plain_text_message(ssdp_list, XML_BUFFER_SIZE,
       ssdp_cache->ssdp_message)) {
     PRINT_ERROR("Failed creating plain-text message");
     return FALSE;
   }
 
   /* Send the converted cache list to the recipient (-a) */
-  send_stuff(url, results, sockaddr_recipient, port, timeout, conf);
+  if (send_stuff(url, ssdp_list, sockaddr_recipient, port, timeout, conf)) {
+    PRINT_WARN("Failed to send SSDP list to the specified forward address");
+  }
 
   /* When the ssdp_cache has been sent
      then free/empty the cache list */

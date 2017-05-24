@@ -40,9 +40,9 @@ BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer,
  * @param port The port of the recipient address.
  * @param timeout The timeout for the request.
  *
- * @return TRUE on success, exits on failure.
+ * @return 0 on success, errno on failure.
  */
-BOOL flush_ssdp_cache(configuration_s *conf, ssdp_cache_s **ssdp_cache_pointer,
+int flush_ssdp_cache(configuration_s *conf, ssdp_cache_s **ssdp_cache_pointer,
     const char *url, struct sockaddr_storage *sockaddr_recipient, int port,
     int timeout);
 

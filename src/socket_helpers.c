@@ -1,11 +1,14 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <ifaddrs.h>
+#ifdef linux
+#include <linux/version.h>
+#endif
+#include <netinet/in.h>
+#include <net/if.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <net/if.h>
 #include <unistd.h>
 
 #include "log.h"
@@ -22,14 +25,12 @@ int set_send_timeout(SOCKET sock, int timeout) {
 
   PRINT_DEBUG("Setting send-timeout to %d", (int)stimeout.tv_sec);
 
-  if(setsockopt(sock,
-                SOL_SOCKET,
-                SO_SNDTIMEO,
-                (char *)&stimeout,
-                sizeof(stimeout)) < 0) {
-    PRINT_ERROR("(%d) %s", errno, strerror(errno));
+  if(setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&stimeout,
+     sizeof(stimeout)) < 0) {
+    PRINT_ERROR("Failed to set send-timeout: %s", strerror(errno));
     return 1;
   }
+
   return 0;
 }
 
@@ -41,35 +42,47 @@ int set_receive_timeout(SOCKET sock, int timeout) {
 
   PRINT_DEBUG("Setting receive-timeout to %d", (int)rtimeout.tv_sec);
 
-  if(setsockopt(sock,
-                SOL_SOCKET,
-                SO_RCVTIMEO,
-                (char *)&rtimeout,
-                sizeof(rtimeout)) < 0) {
-    PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return 1;
+  if(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&rtimeout,
+      sizeof(rtimeout)) < 0) {
+    PRINT_ERROR("Failed to set receive-timeout: %s", strerror(errno));
+    return errno;
+  }
+
+  return 0;
+}
+
+/**
+ * Enable socket to receive from an already used address
+ * (address and portlinux >= 3.9)
+ */
+int set_reuseaddr(SOCKET sock) {
+  int reuse = 1;
+  PRINT_DEBUG("Setting reuseaddr");
+  if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
+    PRINT_ERROR("Failed setting resuseaddr: %s", strerror(errno));
+    return errno;
   }
 
   return 0;
 }
 
 /* Enable socket to receive from an already used port */
-int set_reuseaddr(SOCKET sock) {
+int set_reuseport(SOCKET sock) {
   int reuse = 1;
-  PRINT_DEBUG("Setting reuseaddr");
-  if(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1) {
-    PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return 1;
-  }
-  /* linux >= 3.9
+  PRINT_DEBUG("Setting reuseport");
+#if defined(linux) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0)
   if(setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) == -1) {
-    PRINT_ERROR("(%d) %s", errno, strerror(errno));
-    return 1;
+    PRINT_ERROR("Failed setting resuseport: %s", strerror(errno));
+    return errno;
   }
-  */
+#else
+  PRINT_WARN("Not supported, falling back to reuseaddr.");
+  return set_reuseaddr(sock);
+#endif
 
   return 0;
 }
+
 
 /* Set socket keepalive */
 int set_keepalive(SOCKET sock, BOOL keepalive) {
@@ -444,6 +457,15 @@ SOCKET setup_socket(socket_conf_s *conf) {
 
   /* Set reuseaddr */
   if (set_reuseaddr(sock)) {
+    free(saddr);
+    if(conf->sa != NULL) {
+      free(conf->interface);
+    }
+    return SOCKET_ERROR;
+  }
+
+  /* Set reuseport */
+  if (set_reuseport(sock)) {
     free(saddr);
     if(conf->sa != NULL) {
       free(conf->interface);

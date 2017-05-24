@@ -26,7 +26,6 @@ void set_default_configuration(configuration_s *c) {
   c->listen_for_upnp_notif = FALSE;
   c->scan_for_upnp_devices = FALSE;
   c->forward_address       = NULL;
-  c->forward_enabled       = FALSE;
   c->ssdp_cache_size       = 10;
   c->fetch_info            = TRUE;
   c->json_output           = FALSE;
@@ -127,18 +126,7 @@ int parse_args(const int argc, char * const *argv, configuration_s *conf) {
       break;
 
     case 'a':
-      // TODO: remove the need for BOOL forward_enabled
       conf->forward_address = optarg;
-      conf->forward_enabled = TRUE;
-      //if(optarg != NULL && strlen(optarg) > 0) {
-      //  PRINT_DEBUG("parse_address()");
-      //  if(!(notif_recipient_addr = parse_address(optarg))) {
-      //    usage();
-      //    //TODO: fix free_stuff();
-      //    return 1;
-      //  }
-      //  conf->forward_enabled = TRUE;
-      //}
       break;
 
     case 'F':

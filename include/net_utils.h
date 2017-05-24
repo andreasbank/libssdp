@@ -10,10 +10,11 @@
  * Parse a string containing an IP address.
  *
  * @param raw_address The string containing the IP address.
+ * @param address The sockaddr_storage buffer to store the address.
  *
- * @return A socket address configured for the given IP (raw_address).
+ * @return 0 on success, 1 on error.
  */
-struct sockaddr_storage *parse_address(const char *raw_address);
+int parse_address(const char *raw_address, struct sockaddr_storage *address);
 
 BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *rest,
     int rest_size);
@@ -41,7 +42,7 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
  * @return The remote MAC address as a string.
  */
 char *get_mac_address_from_socket(const SOCKET sock,
-    struct sockaddr_storage *sa_ip, char *ip, char *mac_buffer);
+    const struct sockaddr_storage *sa_ip, const char *ip, char *mac_buffer);
 
 /**
  * Check whether a given IP is a multicast IP
@@ -64,7 +65,7 @@ BOOL is_address_multicast(const char *address);
  * @return The IP address in printable format. If ip_buffer was NULL, the
  *         returned value must be freed.
  */
-char *get_ip_from_sock_address(struct sockaddr_storage *saddr,
+char *get_ip_from_sock_address(const struct sockaddr_storage *saddr,
     char *ip_buffer);
 
 /**
