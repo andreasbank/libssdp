@@ -1,6 +1,7 @@
 *.[oa]
-abused
-!install/abused
+scanssdp
+libssdp.so
+!install/scanssdp
 dummy_device
 debug.log
 *~

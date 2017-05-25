@@ -1,7 +1,9 @@
 STRIP    ?= $(shell which strip)
 UPX      ?= $(shell which upx)
+UPX_LEVEL = -9
 
-PROG      = abused
+PROG      = scanssdp
+PROG_SO   = libssdp.so
 
 prefix    = /usr/bin
 BINDIR    = /usr/local/bin
@@ -19,9 +21,10 @@ LIBS     +=
 
 SRCS      = $(wildcard $(SRCS_DIR)/*.c)
 OBJS      = $(patsubst $(SRCS_DIR)/%.c,$(OBJS_DIR)/%.o,$(SRCS))
+OBJS_FPIC = $(patsubst $(OBJS_DIR)/%.o,$(OBJS_DIR)/%_fpic.o,$(OBJS))
 DEPS      = $(wildcard $(INCL_DIR)/*.h)
 
-all: makedirs $(PROG)
+all: makedirs $(PROG) $(PROG_SO)
 
 makedirs:
 	mkdir -p $(OBJS_DIR)
@@ -34,13 +37,29 @@ else
 	@echo -e '\e[1;33m*** NOTE: Not stripping binary ***\e[0m'
 endif
 ifneq ("$(UPX)","")
-	$(UPX) -9 $@
+	$(UPX) $(UPX_LEVEL) $@
 else
 	@echo -e '\e[1;33m*** NOTE: Not compressing binary ***\e[0m'
 endif
 
+$(PROG_SO): $(OBJS_FPIC)
+	$(CC) $(CFLAGS) -shared $(LDFLAGS) $^ $(LIBS) -o $@
+ifneq ("$(STRIP)","")
+	$(STRIP) $@
+else
+	@echo -e '\e[1;33m*** NOTE: Not stripping library ***\e[0m'
+endif
+ifneq ("$(UPX)","")
+	$(UPX) $(UPX_LEVEL) $@
+else
+	@echo -e '\e[1;33m*** NOTE: Not compressing library ***\e[0m'
+endif
+
 $(OBJS): $(OBJS_DIR)/%.o : $(SRCS_DIR)/%.c $(DEPS)
 	$(CC) -c $(CFLAGS) $(LDFLAGS) $< -o $@
+
+$(OBJS_FPIC): $(OBJS_DIR)/%_fpic.o : $(SRCS_DIR)/%.c $(DEPS)
+	$(CC) -c $(CFLAGS) -fPIC $(LDFLAGS) $< -o $@
 
 install: all
 	$(INSTALL) -d $(BINDIR)
