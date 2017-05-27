@@ -1,3 +1,9 @@
+/** \file ssdp_cache.c
+ * Functions for managing the SSDP cachein the program/lib.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -77,7 +83,18 @@ static BOOL create_plain_text_message(char *results, int buffer_size,
   return TRUE;
 }
 
-// TODO: add doxygen
+/**
+ * Send the SSDP cache to the given address (aka. forwarder).
+ *
+ * @param url The URL (without the protocol and IP) to send the data to.
+ * @param data The data to send.
+ * @param da The socket address to send to.
+ * @param port The port to send to.
+ * @param timeout The send-timeout to set.
+ * @param conf The configuration to use.
+ *
+ * @return 0 on success, errno otherwise.
+ */
 static int send_stuff(const char *url, const char *data,
     const struct sockaddr_storage *da, int port, int timeout,
     configuration_s *conf) {
@@ -372,9 +389,6 @@ BOOL add_ssdp_message_to_cache(ssdp_cache_s **ssdp_cache_pointer,
   return TRUE;
 }
 
-/**
- * Send and free the passed SSDP cache
- */
 BOOL flush_ssdp_cache(configuration_s *conf, ssdp_cache_s **ssdp_cache_pointer,
     const char *url, struct sockaddr_storage *sockaddr_recipient, int port,
     int timeout) {

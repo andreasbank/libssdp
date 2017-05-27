@@ -1,3 +1,9 @@
+/** \file string_utils.c
+ * Functions for manipulating character strings.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <string.h>
 
 #include "string_utils.h"

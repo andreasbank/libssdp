@@ -1,28 +1,32 @@
-STRIP    ?= $(shell which strip)
-UPX      ?= $(shell which upx)
-UPX_LEVEL = -9
+STRIP      ?= $(shell which strip)
+UPX        ?= $(shell which upx)
+UPX_LEVEL   = -9
+DOXYGEN    ?= $(shell which doxygen)
 
-PROG      = scanssdp
-PROG_SO   = libssdp.so
+PROG        = scanssdp
+PROG_SO     = libssdp.so
 
-prefix    = /usr/bin
-BINDIR    = /usr/local/bin
-INSTALL   = $(prefix)/install
-BASE_DIR  = $(shell pwd)
-SRCS_DIR  = $(BASE_DIR)/src
-OBJS_DIR  = $(BASE_DIR)/obj
-INCL_DIR  = $(BASE_DIR)/include
+prefix      = /usr/bin
+BINDIR      = /usr/local/bin
+INSTALL     = $(prefix)/install
+BASE_DIR    = $(shell pwd)
+SRCS_DIR    = $(BASE_DIR)/src
+OBJS_DIR    = $(BASE_DIR)/obj
+INCL_DIR    = $(BASE_DIR)/include
+DOXYGEN_DIRS= $(BASE_DIR)/html $(BASE_DIR)/latex
 
-INCLUDES  = -I$(INCL_DIR)
+INCLUDES    = -I$(INCL_DIR)
 
-CFLAGS   += -O3 -Wall -g $(INCLUDES)
-LDFLAGS  +=
-LIBS     +=
+CFLAGS     += -O3 -Wall -g $(INCLUDES)
+LDFLAGS    +=
+LIBS       +=
 
-SRCS      = $(wildcard $(SRCS_DIR)/*.c)
-OBJS      = $(patsubst $(SRCS_DIR)/%.c,$(OBJS_DIR)/%.o,$(SRCS))
-OBJS_FPIC = $(patsubst $(OBJS_DIR)/%.o,$(OBJS_DIR)/%_fpic.o,$(OBJS))
-DEPS      = $(wildcard $(INCL_DIR)/*.h)
+SRCS        = $(wildcard $(SRCS_DIR)/*.c)
+OBJS        = $(patsubst $(SRCS_DIR)/%.c,$(OBJS_DIR)/%.o,$(SRCS))
+OBJS_FPIC   = $(patsubst $(OBJS_DIR)/%.o,$(OBJS_DIR)/%_fpic.o,$(OBJS))
+DEPS        = $(wildcard $(INCL_DIR)/*.h)
+
+.PHONY: makedirs docs
 
 all: makedirs $(PROG) $(PROG_SO)
 
@@ -66,6 +70,16 @@ install: all
 	$(INSTALL) -m 0755 $(PROG) $(BINDIR)
 
 clean:
-	$(RM) $(PROG) $(OBJS_DIR)/*.o *~
+	$(RM) $(PROG) $(PROG_SO) $(OBJS_DIR)/*.o *~ doxyfile.inc doxygen_sqlite3.db
+	$(RM) -rf $(DOXYGEN_DIRS)
 
-.PHONY: makedirs
+doxyfile.inc: Makefile
+	echo INPUT = $(INCL_DIR) $(SRCS_DIR) > doxyfile.inc
+	echo FILE_PATTERNS = $(DEPS) $(SRCS) >> doxyfile.inc
+
+docs: doxyfile.inc $(SRCS)
+ifneq ("$(DOXYGEN)","")
+	$(DOXYGEN) doxyfile.mk
+else
+	$(info Error, doxygen does not seem to be installed on this system.)
+endif

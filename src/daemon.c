@@ -1,3 +1,9 @@
+/** \file daemon.c
+ * Functions for making the process a daemon.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <stdlib.h>
 #include <signal.h>
 #include <sys/stat.h>

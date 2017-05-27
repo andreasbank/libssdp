@@ -1,3 +1,9 @@
+/** \file net_utils.h
+ * Header file for net_utils.c
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #ifndef __NET_UTILS_H__
 #define __NET_UTILS_H__
 
@@ -16,11 +22,24 @@
  */
 int parse_address(const char *raw_address, struct sockaddr_storage *address);
 
+/**
+ * Parse a URL into an IP, port and rest. This function does not work with
+ * domain names, only with IP addresses.
+ *
+ * @param url The URL to parse.
+ * @param ip the IP in the URL.
+ * @param The size of the ip.
+ * @param port The port in the URL.
+ * @param rest The rest of the URL.
+ * @param rest_size The size of the rest data.
+ *
+ * @return TRUE on success, FALSE otherwise.
+ */
 BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *rest,
     int rest_size);
 
 /**
-* Tries to find a interface with the specified name or IP address
+* Tries to find an interface with the specified name or IP address
 *
 * @param saddr A pointer to the buffer of the address that should be updated.
 * @param interface The interface name we want to find.
@@ -38,8 +57,12 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
  * @param sa_ip The socket address to extract for.
  * @param ip The IP address to extract for. If sa_ip is set this will be
  *        ignored.
+ * @param mac_buffer A buffer to store the resulting MAC in. If empty a new
+ *        allocation will be returned as a return value, otherwise the
+ *        returned value will point to the mac_buffer.
  *
- * @return The remote MAC address as a string.
+ * @return The remote MAC address as a string. If mac_buffer was NULL, the
+ *         returned value must be freed.
  */
 char *get_mac_address_from_socket(const SOCKET sock,
     const struct sockaddr_storage *sa_ip, const char *ip, char *mac_buffer);
@@ -71,7 +94,7 @@ char *get_ip_from_sock_address(const struct sockaddr_storage *saddr,
 /**
  * Check whether an IP address is of version 6.
  *
- * @param The IP address to check.
+ * @param ip The IP address to check.
  *
  * @return TRUE if it is an IPv6 address, FALSE otherwise.
  */
@@ -81,7 +104,8 @@ inline BOOL is_address_ipv6(const char *ip);
  * Check whether an IP address is of version 6. This function will also fill
  * the given socket address structure with the network form of the IP address.
  *
- * @param The IP address to check.
+ * @param ip The IP address to check.
+ * @param saddr6 The socket address to fill.
  *
  * @return TRUE if it is an IPv6 address, FALSE otherwise.
  */
@@ -90,7 +114,7 @@ BOOL is_address_ipv6_ex(const char *ip, struct sockaddr_in6 *saddr6);
 /**
  * Check whether an IP address is of version 4.
  *
- * @param The IP address to check.
+ * @param ip The IP address to check.
  *
  * @return TRUE if it is an IPv4 address, FALSE otherwise.
  */
@@ -100,7 +124,8 @@ inline BOOL is_address_ipv4(const char *ip);
  * Check whether an IP address is of version 4. This function will also fill
  * the given socket address structure with the network form of the IP address.
  *
- * @param The IP address to check.
+ * @param ip The IP address to check.
+ * @param saddr The socket address to fill.
  *
  * @return TRUE if it is an IPv4 address, FALSE otherwise.
  */
@@ -122,7 +147,7 @@ BOOL set_ip_and_port_in_sock_address(const char *ip, int port,
 /**
  * Retrieve the port from a socket address.
  *
- * @param The socket address to get the port from.
+ * @param saddr The socket address to get the port from.
  *
  * @return The port number.
  */

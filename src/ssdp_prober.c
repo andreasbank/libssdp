@@ -1,3 +1,9 @@
+/** \file ssdp_prober.c
+ * Create, manage and delete a SSDP prober.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <arpa/inet.h> /* inet_pton() */
 #include <errno.h>
 #include <netdb.h> /* struct addrinfo */
@@ -21,6 +27,7 @@
 #include "ssdp_prober.h"
 #include "ssdp_static_defs.h"
 
+/** A default SSDP probe (SEARCH) message. */
 #define PROBE_MSG \
   "M-SEARCH * HTTP/1.1\r\n" \
   "Host:239.255.255.250:1900\r\n" \
@@ -264,7 +271,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
         ssdp_headers = NULL;
         printf("-----------END NOTIFICATION-------------\n");
       }
-      /* TODO: Send the message back to -a */
+      /* TODO: Send the message back to -a (or not support that for probing?)*/
 
     }
 

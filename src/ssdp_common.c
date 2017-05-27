@@ -1,3 +1,9 @@
+/** \file ssdp_common.c
+ * Functions common to all the SSDP entities.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <stdio.h>
 #include <string.h> /* memset() */
 #include <sys/socket.h> /* struct sockaddr_storage */

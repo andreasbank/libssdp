@@ -1,3 +1,7 @@
+/** \file ssdp_message.c
+ * SSDP message
+ */
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -424,11 +428,6 @@ const char *get_header_string(const unsigned int header_type,
   return header_strings[header_type];
 }
 
-/**
- * Initializes (allocates neccessary memory) for a SSDP message.
- *
- * @param message The message to initialize.
- */
 BOOL init_ssdp_message(ssdp_message_s **message_pointer) {
   if(NULL == *message_pointer) {
     *message_pointer = malloc(sizeof(ssdp_message_s));
@@ -606,11 +605,6 @@ BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac,
 
 }
 
-/**
- * Frees all neccessary allocations in a ssdp_message_s.
- *
- * @param ssdp_message_s *message The message to free allocations for.
- */
 void free_ssdp_message(ssdp_message_s **message_pointer) {
   ssdp_header_s *next_header = NULL;
   ssdp_custom_field_s *next_custom_field = NULL;

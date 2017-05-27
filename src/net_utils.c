@@ -1,3 +1,9 @@
+/** \file net_utils.c
+ * A collection of network utilities.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <ifaddrs.h>
@@ -97,6 +103,7 @@ success:
 }
 
 // TODO: remove ip_size ?
+// TODO: make work with dnames also.
 BOOL parse_url(const char *url, char *ip, int ip_size, int *port, char *rest,
     int rest_size) {
 

@@ -7,3 +7,7 @@ debug.log
 *~
 *.swp
 *~1
+doxyfile.inc
+doxygen_sqlite3.db
+html/
+latex/

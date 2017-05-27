@@ -1,3 +1,9 @@
+/** \file ssdp_cache_output_format.h
+ * Header file for ssdp_output_format.c.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #ifndef __OUTPUT_FORMAT_H__
 #define __OUTPUT_FORMAT_H__
 
@@ -32,27 +38,21 @@ unsigned int cache_to_xml(ssdp_cache_s *ssdp_cache, char *xml_buffer,
 *
 * @param ssdp_message The message to be converted
 * @param full_json Whether to contain the JSON opening hash
-* @param fetch_info Whether to follow the Location header to fetch additional
-*        data
-* @param hide_headers Whether to include the ssdp headers in the resulting JSON
-*        document
 * @param json_buffer The JSON buffer to write the JSON document to
 * @param json_size The size of the passed buffer (json_buffer)
 */
-unsigned int to_json(const ssdp_message_s *, BOOL, char *, int);
+unsigned int to_json(const ssdp_message_s *, BOOL full_json,
+    char *json_buffer, int json_buffer_size);
 
 /**
 * Converts a UPnP message to a XML string
 *
 * @param ssdp_message The message to be converted
 * @param full_xml Whether to contain the XML declaration and the root tag
-* @param fetch_info Whether to follow the Location header to fetch additional
-*        data
-* @param hide_headers Whether to include the ssdp headers in the resulting XML
-*        document
 * @param xml_buffer The XML buffer to write the XML document to
 * @param xml_buffer_size The size of the passed buffer (xml_buffer)
 */
-unsigned int to_xml(const ssdp_message_s *, BOOL, char *, int);
+unsigned int to_xml(const ssdp_message_s *ssdp_message, BOOL full_xml,
+    char *xml_buffer, int xml_buffer_size);
 
 #endif /* __OUTPUT_FORMAT_H__ */

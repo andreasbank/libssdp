@@ -1,3 +1,9 @@
+/** \file socket_helpers.c
+ * Helper functions for creating and configuring sockets.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <ifaddrs.h>
@@ -17,7 +23,6 @@
 #include "socket_helpers.h"
 #include "ssdp_static_defs.h"
 
-/* Set send timeout */
 int set_send_timeout(SOCKET sock, int timeout) {
   struct timeval stimeout;
   stimeout.tv_sec = timeout;
@@ -28,13 +33,12 @@ int set_send_timeout(SOCKET sock, int timeout) {
   if(setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&stimeout,
      sizeof(stimeout)) < 0) {
     PRINT_ERROR("Failed to set send-timeout: %s", strerror(errno));
-    return 1;
+    return errno;
   }
 
   return 0;
 }
 
-/* Set receive timeout */
 int set_receive_timeout(SOCKET sock, int timeout) {
   struct timeval rtimeout;
   rtimeout.tv_sec = timeout;
@@ -51,10 +55,6 @@ int set_receive_timeout(SOCKET sock, int timeout) {
   return 0;
 }
 
-/**
- * Enable socket to receive from an already used address
- * (address and portlinux >= 3.9)
- */
 int set_reuseaddr(SOCKET sock) {
   int reuse = 1;
   PRINT_DEBUG("Setting reuseaddr");
@@ -66,7 +66,6 @@ int set_reuseaddr(SOCKET sock) {
   return 0;
 }
 
-/* Enable socket to receive from an already used port */
 int set_reuseport(SOCKET sock) {
   int reuse = 1;
   PRINT_DEBUG("Setting reuseport");
@@ -84,7 +83,6 @@ int set_reuseport(SOCKET sock) {
 }
 
 
-/* Set socket keepalive */
 int set_keepalive(SOCKET sock, BOOL keepalive) {
   PRINT_DEBUG("Setting keepalive to %d", keepalive);
   if(setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char *)&keepalive, sizeof(BOOL)) < 0) {
@@ -95,7 +93,6 @@ int set_keepalive(SOCKET sock, BOOL keepalive) {
   return 0;
 }
 
-/* Set TTL */
 int set_ttl(SOCKET sock, int family, int ttl) {
     PRINT_DEBUG("Setting TTL to %d", ttl);
     if(setsockopt(sock,
@@ -110,7 +107,7 @@ int set_ttl(SOCKET sock, int family, int ttl) {
     return 0;
 }
 
-/* Disable multicast loopback traffic */
+// TODO: fix family to 'BOOL ipv6'
 int disable_multicast_loopback(SOCKET sock, int family) {
   unsigned char loop = FALSE;
   PRINT_DEBUG("Disabling loopback multicast traffic");
@@ -128,7 +125,6 @@ int disable_multicast_loopback(SOCKET sock, int family) {
   return 0;
 }
 
-/* Join the multicast group on required interfaces */
 int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip) {
   struct ifaddrs *ifa, *interfaces = NULL;
   BOOL is_bindall = FALSE;
@@ -320,7 +316,8 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
 
     #ifdef DEBUG___
     {
-      PRINT_DEBUG("%s", (is_ipv6 ? "IPV6_ADD_MEMBERSHIP" : "IP_ADD_MEMBERSHIP"));
+      PRINT_DEBUG("%s", (is_ipv6 ? "IPV6_ADD_MEMBERSHIP" :
+          "IP_ADD_MEMBERSHIP"));
       char a[IPv6_STR_MAX_SIZE];
       if(is_ipv6) {
         PRINT_DEBUG("mreq6.ipv6mr_interface: %d", mreq6.ipv6mr_interface);
@@ -338,7 +335,8 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
     }
     #endif
 
-    PRINT_DEBUG("Joining multicast group '%s' on interface IP '%s'", multicast_group, ip);
+    PRINT_DEBUG("Joining multicast group '%s' on interface IP '%s'",
+        multicast_group, ip);
 
     if(setsockopt(sock,
                   is_ipv6 ? IPPROTO_IPV6 :
@@ -367,10 +365,6 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
   return 0;
 }
 
-/**
- * Creates a connection to a given host
- * TODO: >>>TO BE DEPRECATED SOON<<<
- */
 SOCKET setup_socket(socket_conf_s *conf) {
   SOCKET sock;
   int protocol;
@@ -616,7 +610,7 @@ SOCKET setup_socket(socket_conf_s *conf) {
     return SOCKET_ERROR;
   }
 
-  /* If server requested, bind the socket to the given address and port*/
+  /* If server requested, bind the socket to the given address and port */
   // TODO: Fix for IPv6
   if(conf->is_server) {
 

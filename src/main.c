@@ -1,5 +1,10 @@
-/**
- *  ______  ____     __  __  ____    ____    ____
+/** \file main.c
+ * The main file for the 'ssdpscan' tool.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
+/*  ______  ____     __  __  ____    ____    ____
  * /\  _  \/\  _`\  /\ \/\ \/\  _`\ /\  _`\ /\  _`\
  * \ \ \L\ \ \ \L\ \\ \ \ \ \ \,\L\_\ \ \L\_\ \ \/\ \
  *  \ \  __ \ \  _ <'\ \ \ \ \/_\__ \\ \  _\L\ \ \ \ \
@@ -29,14 +34,14 @@
 /* Uncomment the line below to enable simulating notifs */
 //#define DEBUG_MSG___
 
-/* Set the frequency at which the messages will be received */
+/** Set the frequency at which the messages will be received */
 #define DEBUG_MSG_FREQ___ 0.5
 
-/* When using simulated messages it is mandatory to
-   specify a UPnP device url in DEBUG_MSG_DEVICE___.
-   This "UPnP device" can be emulated with a http server (e.g. Apache)
-   serving the UPnP-descriptive XML file included in the
-   abused repository (<repo>/udhisapi.xml) */
+/** When using simulated messages it is mandatory to
+    specify a UPnP device url in DEBUG_MSG_DEVICE___.
+    This "UPnP device" can be emulated with a http server (e.g. Apache)
+    serving the UPnP-descriptive XML file included in the
+    abused repository (<repo>/udhisapi.xml) */
 #define DEBUG_MSG_LOCATION_HEADER "http://127.0.0.1:80/udhisapi.xml"
 
 #include <stdio.h>
@@ -65,19 +70,19 @@
 #include "ssdp_prober.h"
 #include "string_utils.h"
 
-/* The SSDP listener */
+/** The SSDP listener */
 static ssdp_listener_s ssdp_listener;
 
-/* The SSDP prober */
+/** The SSDP prober */
 static ssdp_prober_s ssdp_prober;
 
-/* The program configuration */
+/** The program configuration */
 static configuration_s conf;
 
 /**
  * Frees all global allocations.
  */
-static void cleanup() {
+static void cleanup(void) {
   ssdp_listener_close(&ssdp_listener);
   ssdp_prober_close(&ssdp_prober);
   PRINT_DEBUG("Cleaning up and exiting...\n");

@@ -1,3 +1,9 @@
+/** \file ssdp_cache_display.h
+ * Header file for ssdp_cache_display.c.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #ifndef __SSDP_CACHE_DISPLAY_H__
 #define __SSDP_CACHE_DISPLAY_H__
 

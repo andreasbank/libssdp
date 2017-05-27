@@ -1,5 +1,7 @@
-/**
- * Copyright (C) 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+/** \file configuration.c
+ * The program/lib configuration
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
  */
 
 #include <stdlib.h>
@@ -12,9 +14,6 @@
 #include "net_utils.h"
 #include "ssdp_message.h"
 #include "string.h"
-
-//TODO: Fix globals!
-extern struct sockaddr_storage *notif_recipient_addr;
 
 void set_default_configuration(configuration_s *c) {
 
@@ -72,7 +71,6 @@ void usage(void) {
   printf("\t-L                Enable multicast loopback traffic\n");
 }
 
-/* Parse arguments */
 int parse_args(const int argc, char * const *argv, configuration_s *conf) {
   int opt;
 

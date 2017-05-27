@@ -1,3 +1,9 @@
+/** \file log.h
+ * The logging system header file.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #ifndef __LOG_H__
 #define __LOG_H__
 
@@ -5,17 +11,24 @@
 
 #include "common_definitions.h"
 
-/* Uncomment the line below to enable detailed debug information */
+/** Uncomment this line to enable detailed debug information */
 #define DEBUG___
-/* Uncomment the line below to write to a to a file instead of stdout */
+/** Uncomment this line to write to a to a file instead of stdout */
 #define DEBUG_TO_FILE___
 
+/** Terminal code for the purple color */
 #define ANSI_COLOR_PURPLE  "\x1b[1;35m"
+/** Terminal code for the color gray */
 #define ANSI_COLOR_GRAY    "\x1b[0;90m"
+/** Terminal code for the color green */
 #define ANSI_COLOR_GREEN   "\x1b[0;32m"
+/** Terminal code for the default color */
 #define ANSI_COLOR_DEFAULT "\x1b[0;39m"
+/** Terminal code for the color yellow */
 #define ANSI_COLOR_YELLOW  "\x1b[0;33m"
+/** Terminal code for the color red */
 #define ANSI_COLOR_RED     "\x1b[0;31m"
+/** Terminal code for resetting the color */
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
 #ifdef DEBUG___
@@ -37,9 +50,10 @@
   #define PRINT_ERROR(...)  fprintf(stderr, "[ERR] " __VA_ARGS__)
 #endif
 
-
+#ifdef DEBUG___
 /**
- * Prints a debug message, mimicking printf-like function, supports only %d, %s and %c
+ * Prints a debug message, mimicking printf-like function, supports
+ * only %d, %s and %c
  *
  * @param std Standard output to use.
  * @paran color Color to print the message in.
@@ -51,12 +65,13 @@
  */
 void print_debug(FILE *std, const char *color, const char* file, int line,
     char *va_format, ...);
+#endif
 
 /**
  * Logs the command line arguments the process was started with.
  *
- * @param The argc passed to main.
- * @param The argv passed to main.
+ * @param argc The argc passed to the program/lib.
+ * @param argv The argv passed to the program/lib.
  */
 void log_start_args(int argc, char **argv);
 

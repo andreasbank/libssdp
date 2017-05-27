@@ -1,3 +1,9 @@
+/** \file ssdp_listener.c
+ * Create, manage and delete a SSDP listener.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,15 +25,34 @@
 #include "ssdp_message.h"
 #include "ssdp_static_defs.h"
 
-#define LISTEN_QUEUE_LENGTH 5 /* The queue length for the listener */
+/** The queue length for the listener (how many queued connections) */
+#define LISTEN_QUEUE_LENGTH 5
+/**
+ * The timeout after which the passive SSDP listener will stop a
+ * connection to a discovered node when fetching ewxtra information.
+ */
 #define SSDP_PASSIVE_LISTENER_TIMEOUT 10
+/**
+ * The timeout after which the active SSDP listener will stop waiting for
+ * nodes to answer a SEARCH probe/message.
+ */
 #define SSDP_ACTIVE_LISTENER_TIMEOUT 2
 
 /**
- * //TOTO: write desc
+ * Initialize a SSDP listener. This parses and sets the forwarder address,
+ * creates a socket and sets all applicable configuration values to it.
+ *
+ * @param listener The listener to initialize.
+ * @param conf The configuration to use.
+ * @param active TRUE if an active SSDP listener is to be initialized.
+ * @param port The port to listen on. 0 will set the port to the SSDP port.
+ * @param recv_timeout The timeout to set for receiveing/waiting for SSDP
+ *        nodes to respond to a SEARCH query.
+ *
+ * @return 0 on success, errno otherwise.
  */
 static int ssdp_listener_init(ssdp_listener_s *listener,
-    configuration_s *conf, BOOL is_active, int port, int timeout) {
+    configuration_s *conf, BOOL is_active, int port, int recv_timeout) {
   PRINT_DEBUG("ssdp_listener_init()");
   SOCKET sock = SOCKET_ERROR;
 
@@ -60,7 +85,8 @@ static int ssdp_listener_init(ssdp_listener_s *listener,
     FALSE,                // BOOL keepalive
     conf->ttl,            // time to live (router hops)
     conf->enable_loopback,// see own messages on multicast
-    timeout               // set the receive timeout for the socket
+    0,                    // set the rend timeout for the socker (0 = default)
+    recv_timeout          // set the receive timeout for the socket
   };
 
   sock = setup_socket(&sock_conf);

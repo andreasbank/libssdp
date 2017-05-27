@@ -1,3 +1,9 @@
+/** \file ssdp_listener.h
+ * The SSDP listener header file.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #ifndef __SSDP_LISTENER_H__
 #define __SSDP_LISTENER_H__
 
@@ -6,9 +12,11 @@
 #include "common_definitions.h"
 #include "configuration.h"
 
-/* A container struct for the SSDP listener */
+/** A container struct for the SSDP listener. */
 typedef struct ssdp_listener_s {
+  /** The SSDP listener socket. */
   SOCKET sock;
+  /** The forward address where messages will be sent. */
   struct sockaddr_storage forwarder;
 } ssdp_listener_s;
 
@@ -64,16 +72,9 @@ void ssdp_listener_read(ssdp_listener_s *listener,
 SOCKET ssdp_listener_get_sock(ssdp_listener_s *listener);
 
 /**
- * Return the underlaying forwarder from a SSDP listener.
- *
- * @param prober The listener to get the forwarder from.
- *
- * @return The underlaying forwarder.
- */
-struct sockaddr_storage *ssdp_listener_get_forwarder(ssdp_listener_s *listener);
-
-/**
- * Tells the SSDP listener to start listening to SSDP messages.
+ * Tells the SSDP listener to start listening to SSDP messages. This function
+ * should not be called on an active SSDP listener (call ssdp_listener_read()
+ * after ssdp_active_listener_init() instead).
  *
  * @param listener The SSDP listener to start.
  * @param conf The global configuration to use.

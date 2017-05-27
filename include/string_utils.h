@@ -1,20 +1,29 @@
+/** \file string_utils.h
+ * Header file for string_utils.c.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #ifndef __STRING_UTILS_H__
 #define __STRING_UTILS_H__
 
 /**
- * Fins the position of a string in a string (or char in a string)
+ * Finds the position of a string in a string (or char in a string).
  *
- * @return int The position of the string/char in the searched string
+ * @param haystack The string to search in.
+ * @param needle The string to search for.
+ *
+ * @return The position of the needle-string in the haystack-string.
  */
 int strpos(const char *haystack, const char *needle);
 
 /**
- * Counts how many times a string is present in another string
+ * Counts how many times a string is present in another string.
  *
- * @param const char * haystack The string to be searched in
- * @param const char * needle The string to be searched for
+ * @param haystack The string to search in.
+ * @param needle The string to search for.
  *
- * @return unsigned char The number of times needle is preent in haystack
+ * @return The number of times needle is present in haystack.
  */
 unsigned char strcount(const char *haystack, const char *needle);
 

@@ -1,3 +1,9 @@
+/** \file ssdp_filter.c
+ * Functions managing the SSDP filters and filtering.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -106,12 +112,6 @@ void parse_filters(char *raw_filter, filters_factory_s **filters_factory,
   }
 }
 
-/**
- * Check if the SSDP message needs to be filtered-out (dropped)
- *
- * @param ssdp_message The SSDP message to be checked
- * @param filters_factory The filters to check against
- */
 BOOL filter(ssdp_message_s *ssdp_message, filters_factory_s *filters_factory) {
 
   PRINT_DEBUG("traversing filters");

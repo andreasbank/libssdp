@@ -1,12 +1,22 @@
+/** \file ssdp_message.h
+ * Header file for ssdp_message.c.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #ifndef __SSDP_MESSAGE_H__
 #define __SSDP_MESSAGE_H__
 
 #include "configuration.h"
 
 // TODO: move daemon port to daemon.h ?
-#define DAEMON_PORT           43210   // port the daemon will listen on
-#define XML_BUFFER_SIZE       2048 // XML buffer/container string
+/** Port the daemon will listen on. */
+#define DAEMON_PORT           43210
+/** XML buffer/container string. */
+#define XML_BUFFER_SIZE       2048
+/** Size of the extra device info buffer. */
 #define DEVICE_INFO_SIZE      16384
+/** Timeout when waiting for nodes to resond to a SEARCH message. */
 #define MULTICAST_TIMEOUT     2
 
 /* SSDP header types string representations */
@@ -25,6 +35,7 @@
 #define SSDP_HEADER_USN_STR         "usn"
 #define SSDP_HEADER_UNKNOWN_STR     "unknown"
 
+//TODO: make enum
 /* SSDP header types uchars */
 #define SSDP_HEADER_HOST            1
 #define SSDP_HEADER_ST              2
@@ -41,34 +52,63 @@
 #define SSDP_HEADER_USN             13
 #define SSDP_HEADER_UNKNOWN         0
 
-/* Structs */
+/** The SSDP message header. */
 typedef struct ssdp_header_struct {
+  /** The header type. Types are defined in this file. */
   unsigned char type;
+  /** If header type is non-standard type this is its type name. */
   char *unknown_type;
+  /** The contents (value) of the custom field. */
   char *contents;
+  /** The first header in the list. */
   struct ssdp_header_struct *first;
+  /** The next header in the list. */
   struct ssdp_header_struct *next;
 } ssdp_header_s;
 
+/** SSDP custom field. */
 typedef struct ssdp_custom_field_struct {
+  /** The name of the custom field. */
   char *name;
+  /** The contents (value) of the custom field. */
   char *contents;
+  /** The first custom field in the list. */
   struct ssdp_custom_field_struct *first;
+  /** The next custom field in the list. */
   struct ssdp_custom_field_struct *next;
 } ssdp_custom_field_s;
 
+/** SSDP message. */
 typedef struct ssdp_message_struct {
+  /** The MAC address of the sender (node). */
   char *mac;
+  /** The IP address of the sender (node). */
   char *ip;
+  /** The message length. */
   int  message_length;
+  /** The date and time when the message was received. */
   char *datetime;
+  /**
+   * The request (message) type. Eg. a search, an announcement (hello,
+   * alive or bye) or a response to a search.
+   */
   char *request;
+  /** The protocol used to send the message (HTTP) */
   char *protocol;
+  /** The answer to a SEARCH request (eg. OK 200, or other HTTP responses). */
   char *answer;
+  /**
+   * The fetched extra info from the sender/node. This can be NULL if
+   * fetching is disabled.
+   */
   char *info;
+  /** The number of headers in the list (excluding custom fields)). */
   unsigned char header_count;
+  /** The headers list. */
   struct ssdp_header_struct *headers;
+  /** The number of custom fields in the list. */
   unsigned char custom_field_count;
+  /** The custom fields list. */
   struct ssdp_custom_field_struct *custom_fields;
 } ssdp_message_s;
 
@@ -119,6 +159,8 @@ ssdp_custom_field_s *get_custom_field(ssdp_message_s *ssdp_message,
  * Initializes (allocates neccessary memory) for a SSDP message.
  *
  * @param message The message to initialize.
+ *
+ * @return TRUE on success, FALSE otherwise.
  */
 BOOL init_ssdp_message(ssdp_message_s **message_pointer);
 
@@ -130,6 +172,8 @@ BOOL init_ssdp_message(ssdp_message_s **message_pointer);
  * @param mac The MAC address of the sender.
  * @param int *message_length The message length.
  * @param raw_message The message string to be parsed.
+ *
+ * @return TRUE on success, FALSE otherwise.
  */
 BOOL build_ssdp_message(ssdp_message_s *message, char *ip, char *mac,
     int message_length, const char *raw_message);

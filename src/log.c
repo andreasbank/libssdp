@@ -1,3 +1,9 @@
+/** \file log.c
+ * The logging system.
+ *
+ * @copyright 2017 Andreas Bank, andreas.mikael.bank@gmail.com
+ */
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +13,9 @@
 #include <unistd.h>
 
 #include "log.h"
+
+/** The printed message's buffer size */
+#define MESSAGE_MAX_SIZE 20480
 
 #ifdef DEBUG___
 /**
@@ -51,13 +60,14 @@ static int fsize(const char *file) {
 void print_debug(FILE *std, const char *color, const char* file, int line,
     char *va_format, ...) {
   va_list va;
-  char message[20480];
+  char message[MESSAGE_MAX_SIZE];
   int message_used = 0;
   char *from_pointer = va_format;
   char header[100];
   char *to_pointer = va_format;
   int args_count = chr_count(va_format, '%');
-  const char *no_memory = "Not enought memory in buffer to build debug message";
+  const char *no_memory =
+      "Not enought memory in buffer to build debug message";
   char *s;
   char c;
   int d;
