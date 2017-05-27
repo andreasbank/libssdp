@@ -1,0 +1,9 @@
+var searchData=
+[
+  ['init_5fssdp_5fmessage',['init_ssdp_message',['../ssdp__message_8h.html#a877dbc1484d4b51f74ae551101c76266',1,'init_ssdp_message(ssdp_message_s **message_pointer):&#160;ssdp_message.c'],['../ssdp__message_8c.html#a877dbc1484d4b51f74ae551101c76266',1,'init_ssdp_message(ssdp_message_s **message_pointer):&#160;ssdp_message.c']]],
+  ['is_5faddress_5fipv4',['is_address_ipv4',['../net__utils_8h.html#ad7c9e3e191eac07051d5845f557605b4',1,'is_address_ipv4(const char *ip):&#160;net_utils.c'],['../net__utils_8c.html#ad7c9e3e191eac07051d5845f557605b4',1,'is_address_ipv4(const char *ip):&#160;net_utils.c']]],
+  ['is_5faddress_5fipv4_5fex',['is_address_ipv4_ex',['../net__utils_8h.html#ae9ed984d841a3e39b97c7c0bcb748001',1,'is_address_ipv4_ex(const char *ip, struct sockaddr_in *saddr):&#160;net_utils.c'],['../net__utils_8c.html#ae9ed984d841a3e39b97c7c0bcb748001',1,'is_address_ipv4_ex(const char *ip, struct sockaddr_in *saddr):&#160;net_utils.c']]],
+  ['is_5faddress_5fipv6',['is_address_ipv6',['../net__utils_8h.html#a510f90db63005cfa81b08aadad6678c6',1,'is_address_ipv6(const char *ip):&#160;net_utils.c'],['../net__utils_8c.html#a510f90db63005cfa81b08aadad6678c6',1,'is_address_ipv6(const char *ip):&#160;net_utils.c']]],
+  ['is_5faddress_5fipv6_5fex',['is_address_ipv6_ex',['../net__utils_8h.html#a2b645934d578e01039e6f2ae368c2992',1,'is_address_ipv6_ex(const char *ip, struct sockaddr_in6 *saddr6):&#160;net_utils.c'],['../net__utils_8c.html#a2b645934d578e01039e6f2ae368c2992',1,'is_address_ipv6_ex(const char *ip, struct sockaddr_in6 *saddr6):&#160;net_utils.c']]],
+  ['is_5faddress_5fmulticast',['is_address_multicast',['../net__utils_8h.html#aa4b81962781e4865bad1dc4f5da6c970',1,'is_address_multicast(const char *address):&#160;net_utils.c'],['../net__utils_8c.html#aa4b81962781e4865bad1dc4f5da6c970',1,'is_address_multicast(const char *address):&#160;net_utils.c']]]
+];

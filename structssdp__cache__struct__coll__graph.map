@@ -1,0 +1,5 @@
+<map id="ssdp_cache_struct" name="ssdp_cache_struct">
+<area shape="rect" id="node2" href="$structssdp__message__struct.html" title="ssdp_message_struct" alt="" coords="130,97,281,124"/>
+<area shape="rect" id="node3" href="$structssdp__custom__field__struct.html" title="ssdp_custom_field_struct" alt="" coords="5,7,176,33"/>
+<area shape="rect" id="node4" href="$structssdp__header__struct.html" title="ssdp_header_struct" alt="" coords="253,7,389,33"/>
+</map>

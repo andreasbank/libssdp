@@ -1,0 +1,15 @@
+<map id="include/log.h" name="include/log.h">
+<area shape="rect" id="node2" href="$configuration_8c.html" title="src/configuration.c" alt="" coords="5,87,135,114"/>
+<area shape="rect" id="node3" href="$daemon_8c.html" title="src/daemon.c" alt="" coords="159,87,261,114"/>
+<area shape="rect" id="node4" href="$log_8c.html" title="src/log.c" alt="" coords="285,87,357,114"/>
+<area shape="rect" id="node5" href="$main_8c.html" title="src/main.c" alt="" coords="381,87,463,114"/>
+<area shape="rect" id="node6" href="$net__utils_8c.html" title="src/net_utils.c" alt="" coords="487,87,591,114"/>
+<area shape="rect" id="node7" href="$socket__helpers_8c.html" title="src/socket_helpers.c" alt="" coords="616,87,759,114"/>
+<area shape="rect" id="node8" href="$ssdp__cache_8c.html" title="src/ssdp_cache.c" alt="" coords="783,87,909,114"/>
+<area shape="rect" id="node9" href="$ssdp__cache__display_8c.html" title="src/ssdp_cache_display.c" alt="" coords="933,87,1106,114"/>
+<area shape="rect" id="node10" href="$ssdp__cache__output__format_8c.html" title="src/ssdp_cache_output\l_format.c" alt="" coords="1130,80,1287,121"/>
+<area shape="rect" id="node11" href="$ssdp__filter_8c.html" title="src/ssdp_filter.c" alt="" coords="1311,87,1426,114"/>
+<area shape="rect" id="node12" href="$ssdp__listener_8c.html" title="src/ssdp_listener.c" alt="" coords="1451,87,1583,114"/>
+<area shape="rect" id="node13" href="$ssdp__message_8c.html" title="src/ssdp_message.c" alt="" coords="1607,87,1749,114"/>
+<area shape="rect" id="node14" href="$ssdp__prober_8c.html" title="src/ssdp_prober.c" alt="" coords="1773,87,1900,114"/>
+</map>

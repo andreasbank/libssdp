@@ -1,0 +1,11 @@
+<map id="src/main.c" name="src/main.c">
+<area shape="rect" id="node14" href="$configuration_8h.html" title="configuration.h" alt="" coords="459,155,565,181"/>
+<area shape="rect" id="node15" href="$common__definitions_8h.html" title="common_definitions.h" alt="" coords="173,229,323,256"/>
+<area shape="rect" id="node17" href="$daemon_8h.html" title="daemon.h" alt="" coords="1697,80,1775,107"/>
+<area shape="rect" id="node18" href="$log_8h.html" title="log.h" alt="" coords="72,80,123,107"/>
+<area shape="rect" id="node19" href="$ssdp__common_8h.html" title="ssdp_common.h" alt="" coords="462,80,581,107"/>
+<area shape="rect" id="node21" href="$ssdp__listener_8h.html" title="ssdp_listener.h" alt="" coords="198,80,309,107"/>
+<area shape="rect" id="node22" href="$ssdp__prober_8h.html" title="ssdp_prober.h" alt="" coords="333,80,437,107"/>
+<area shape="rect" id="node23" href="$string__utils_8h.html" title="string_utils.h" alt="" coords="1800,80,1896,107"/>
+<area shape="rect" id="node16" href="$net__definitions_8h.html" title="net_definitions.h" alt="" coords="453,229,571,256"/>
+</map>
