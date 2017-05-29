@@ -77,10 +77,141 @@ var searchBox = new SearchBox("searchBox", "search",false,'Search');
 <div class="title">LIBSSDP Documentation</div>  </div>
 </div><!--header-->
 <div class="contents">
-</div><!-- contents -->
+<div class="textblock"><div style="text-align:center;"> <div class="image">
+<img src="http://www.andreasbank.com/libssdp/libssdp.png"  width="128" height="128"/>
+</div>
+ <h1 align="center">libSSDP</h1>
+</div><div style="text-align:center;"> <div style="text-align:center;"> libSSDP - SSDP (UPnP) scanner library and tool (Linux &amp; MacOS X) <br />
+ <a href="https://www.andreasbank.com"><b>Visit author page &raquo;</b></a> </div> </div><p><br />
+</p>
+<h2>Table of contents</h2>
+<ul>
+<li><a href="#get-up-and-running">Get up and running</a></li>
+<li><a href="#repository-contents">Repository contents</a></li>
+<li><a href="#bugs-and-feature-requests">Bugs and feature requests</a></li>
+<li><a href="#documentation">Documentation</a></li>
+<li><a href="#creators">Creators</a></li>
+<li><a href="#copyright-and-license">Copyright and license</a></li>
+</ul>
+<h2>Get up and running</h2>
+<p>Get up and running in no time:</p>
+<ul>
+<li>Clone the repo: <code>git clone <a href="https://github.com/andreasbank/libssdp.git">https://github.com/andreasbank/libssdp.git</a></code></li>
+<li>Enter the directory <code>cd libssdp</code></li>
+<li>Build <code>make</code></li>
+<li>Run <code>./ssdpscan -U</code> and get results</li>
+</ul>
+<h2>Repository contents</h2>
+<p>The download contains the following: </p><pre class="fragment">libssdp/
+├── axis_adaptation/
+│   ├── sql/
+│   │   ├── abused.vpp
+│   │   ├── database_UML.png
+│   │   ├── install.php
+│   │   ├── sql.txt
+│   │   └── uninstall.php
+│   ├── www/
+│   │   ├── capability_icons/
+│   │   │   ├── audio.png
+│   │   │   ├── capability_icons.psd
+│   │   │   ├── dpts.png
+│   │   │   ├── ir.png
+│   │   │   ├── light_control.png
+│   │   │   ├── local_storage.png
+│   │   │   ├── mic.png
+│   │   │   ├── nas.png
+│   │   │   ├── pir.png
+│   │   │   ├── ptz.png
+│   │   │   ├── sd_disk.png
+│   │   │   ├── sd_disk_gray.png
+│   │   │   ├── speaker.png
+│   │   │   ├── status_led.png
+│   │   │   ├── stsnas.png
+│   │   │   └── wlan.png
+│   │   ├── AbusedResult.php
+│   │   ├── AxisFtp.php
+│   │   ├── AxisSyslog.php
+│   │   ├── AxisTelnet.php
+│   │   ├── CapabilityManager.php
+│   │   ├── Controller.php
+│   │   ├── SqlConnection.php
+│   │   ├── SshClient.php
+│   │   ├── down_right_arrow.phg
+│   │   ├── gui.css
+│   │   ├── gui.js
+│   │   ├── gui_list.php
+│   │   ├── index.php
+│   │   ├── post.php
+│   │   └── search_button.png
+│   └── README.txt
+├── include/
+│   ├── common_definitions.h
+│   ├── configuration.h
+│   ├── daemon.h
+│   ├── log.h
+│   ├── net_definitions.h
+│   ├── net_utils.h
+│   ├── socket_helpers.h
+│   ├── ssdp_cache.h
+│   ├── ssdp_cache_display.h
+│   ├── ssdp_cache_output_format.h
+│   ├── ssdp_common.h
+│   ├── ssdp_filter.h
+│   ├── ssdp_listener.h
+│   ├── ssdp_message.h
+│   ├── ssdp_prober.h
+│   ├── ssdp_static_defs.h
+│   └── string_utils.h
+├── install/
+│   ├── install.sh
+│   ├── README
+│   └── scanssdp
+├── src/
+│   ├── configuration.c
+│   ├── daemon.c
+│   ├── log.c
+│   ├── main.c
+│   ├── net_utils.c
+│   ├── socket_helpers.c
+│   ├── ssdp_cache.c
+│   ├── ssdp_cache_display.c
+│   ├── ssdp_cache_output_format.c
+│   ├── ssdp_common.c
+│   ├── ssdp_filter.c
+│   ├── ssdp_listener.c
+│   ├── ssdp_message.c
+│   ├── ssdp_prober.c
+│   └── string_utils.c
+├── .gitignore
+├── LICENSE
+├── Makefile
+├── README.md
+├── README.txt
+├── doxyfile.mk
+├── dummy_device.c
+├── test.php
+└── udhisapi.xml
+</pre><h2>Bugs, feature requests and contributions</h2>
+<p>Feel free to write an email! I would be glad to help, or get help :).</p>
+<h2>Documentation</h2>
+<p>libSSDP's documentation is embedded in all the source and header files as doxygen comments and also available as html here <a href="http://andreasbank.github.io/libssdp">documentation</a>.</p>
+<h3>Build the documentation locally</h3>
+<p>You can even build the documentation yourself. The prerequisites are <code>doxygen</code> and <code>dot</code>. Once this is in place simply run <code>make docs</code>. This is recommended since the online documentation might be outdated or in the process of being rebuilt.</p>
+<h2>Creators</h2>
+<p><b>Andreas Bank</b></p>
+<ul>
+<li><a href="https://github.com/andreasbank">https://github.com/andreasbank</a></li>
+</ul>
+<h2>Copyright and license</h2>
+<ul>
+<li>Code and documentation copyright 2017 by Andreas Bank.</li>
+<li>Code released under the <a href="https://github.com/andreasbank/libssdp/blob/master/LICENSE">GPL3 License</a> (will change to MIT soon).</li>
+<li>Docs released under <a href="https://github.com/andreasbank/libssdp/blob/master/DOCS_LICENSE">Creative Commons</a>. </li>
+</ul>
+</div></div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Sat May 27 2017 12:33:41 for LIBSSDP by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Mon May 29 2017 11:08:52 for LIBSSDP by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.8
 </small></address>
