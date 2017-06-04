@@ -1,14 +1,10 @@
-<div style="text-align:center;">
-  <img src="http://www.andreasbank.com/libssdp/libssdp.png" width=128 height=128>
-  <h1 align="center">libSSDP</h1>
-  <div style="text-align:center;">
-    libSSDP - SSDP (UPnP) scanner library and tool (Linux &amp; MacOS X)
-    <br />
-    <a href="https://www.andreasbank.com"><strong>Visit author page &raquo;</strong></a>
-  </div>
-</div>
+![logo](http://www.andreasbank.com/libssdp/libssdp.png "libSSDP")
 
-<br>
+# libSSDP
+
+SSDP (UPnP) scanner library and tool (Linux &amp; MacOS X)
+
+<a href="https://www.andreasbank.com"><strong>Visit author page &raquo;</strong></a>
 
 ## Table of contents
 

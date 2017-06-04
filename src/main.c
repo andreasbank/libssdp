@@ -31,17 +31,19 @@
  *  - Fix IPv6!
  */
 
-/* Uncomment the line below to enable simulating notifs */
+/* Uncomment the line below to enable simulating SSDP notifications */
 //#define DEBUG_MSG___
 
 /** Set the frequency at which the messages will be received */
 #define DEBUG_MSG_FREQ___ 0.5
 
-/** When using simulated messages it is mandatory to
-    specify a UPnP device url in DEBUG_MSG_DEVICE___.
-    This "UPnP device" can be emulated with a http server (e.g. Apache)
-    serving the UPnP-descriptive XML file included in the
-    abused repository (<repo>/udhisapi.xml) */
+/**
+ * When using simulated messages it is mandatory to
+ * specify a UPnP device url in DEBUG_MSG_DEVICE___.
+ * This "UPnP device" can be emulated with a http server (e.g. Apache)
+ * serving the UPnP-descriptive XML file included in the
+ * abused repository (<repo>/udhisapi.xml)
+ */
 #define DEBUG_MSG_LOCATION_HEADER "http://127.0.0.1:80/udhisapi.xml"
 
 #include <stdio.h>
@@ -49,12 +51,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include <sys/types.h>
-#include <netdb.h>
-#include <ifaddrs.h>
-
-#include <arpa/inet.h>
 
 #include <ctype.h>
 
