@@ -41,10 +41,10 @@ typedef struct socket_conf_s {
   int ttl;
   /** Listen on loopback (if multicast). */
   BOOL loopback;
-  /** Timeout for the listening. */
-  int recv_timeout;
   /** Timeout for sending. */
   int send_timeout;
+  /** Timeout for the listening. */
+  int recv_timeout;
 } socket_conf_s;
 
 /**

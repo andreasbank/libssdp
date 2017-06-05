@@ -167,6 +167,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
     response_port = get_port_from_sock_address(sendto_addr);
     PRINT_DEBUG("sendto() port is %d", response_port);
   }
+  free(sendto_addr);
   close(prober->sock);
   PRINT_DEBUG("sent %d bytes", sent_bytes);
   //freeaddrinfo(addri);
@@ -279,6 +280,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
   } while(recv_node.recv_bytes > 0);
 
   //TODO: ssdp_listener_close(&response_listener) ?
+  free_ssdp_filters_factory(filters_factory);
 
   PRINT_DEBUG("scan_for_upnp_devices end");
 

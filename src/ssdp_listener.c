@@ -159,7 +159,7 @@ int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf) {
   /* Create a list for keeping/caching SSDP messages */
   ssdp_cache_s *ssdp_cache = NULL;
 
-  while (TRUE) {
+  while (!listener->stop) {
     ssdp_recv_node_s recv_node;
     drop_message = FALSE;
     ssdp_message = NULL;
@@ -282,4 +282,8 @@ int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf) {
 
 
   return 0;
+}
+
+void ssdp_listener_stop(ssdp_listener_s *listener) {
+  listener->stop = TRUE;
 }

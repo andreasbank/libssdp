@@ -47,12 +47,9 @@
 #define DEBUG_MSG_LOCATION_HEADER "http://127.0.0.1:80/udhisapi.xml"
 
 #include <stdio.h>
-#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include <ctype.h>
 
 #include <errno.h>
 #include <signal.h>
@@ -90,8 +87,7 @@ static void cleanup(void) {
  * @param param The signal handler parameter (ignored).
  */
 static void exit_sig(int param) {
-  cleanup();
-  exit(EXIT_SUCCESS);
+  ssdp_listener_stop(&ssdp_listener);
 }
 
 /**

@@ -18,6 +18,8 @@ typedef struct ssdp_listener_s {
   SOCKET sock;
   /** The forward address where messages will be sent. */
   struct sockaddr_storage forwarder;
+  /** Indicates the state of the listener. */
+  BOOL stop;
 } ssdp_listener_s;
 
 /**
@@ -82,5 +84,12 @@ SOCKET ssdp_listener_get_sock(ssdp_listener_s *listener);
  * Non-0 value on error. This function does not return if no error ocurrs.
  */
 int ssdp_listener_start(ssdp_listener_s *listener, configuration_s *conf);
+
+/**
+ * Tells the SSDP listener to stop listening.
+ *
+ * @param The listener to stop.
+ */
+void ssdp_listener_stop(ssdp_listener_s *listener);
 
 #endif /* __SSDP_LISTENER_H__ */

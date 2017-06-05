@@ -122,7 +122,7 @@ static int send_stuff(const char *url, const char *data,
     conf->ttl,
     conf->enable_loopback,
     timeout,
-    0
+    timeout
   };
 
   SOCKET send_sock = setup_socket(&sock_conf);
