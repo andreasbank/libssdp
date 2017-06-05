@@ -12,6 +12,11 @@
 #include "ssdp_cache_output_format.h"
 #include "ssdp_message.h"
 
+#define SSDP_CUSTOM_FIELD_SERIALNUMBER "serialNumber"
+#define SSDP_CUSTOM_FIELD_FRIENDLYNAME "friendlyName"
+#define ONELINE_ANSI_COLOR_GREEN   "\x1b[1;32m"
+#define ONELINE_ANSI_COLOR_RESET   "\x1b[0m"
+
 unsigned int cache_to_json(ssdp_cache_s *ssdp_cache, char *json_buffer,
     unsigned int json_buffer_size) {
   unsigned int used_buffer = 0;
@@ -200,7 +205,7 @@ unsigned int to_xml(const ssdp_message_s *ssdp_message, BOOL full_xml,
     }
     h = ssdp_message->headers->first;
 
-    /* Check if buffer has enought room */
+    /* Check if buffer has enought space */
     PRINT_DEBUG("buffer left: %d, buffer needed: %d",
         (xml_buffer_size - used_length), needed_size);
     if ((xml_buffer_size - used_length) < needed_size) {
@@ -241,3 +246,41 @@ unsigned int to_xml(const ssdp_message_s *ssdp_message, BOOL full_xml,
   return used_length;
 }
 
+char *to_oneline(const ssdp_message_s *message, BOOL monochrome) {
+  const ssdp_custom_field_s *custom_field_id = NULL;
+  const ssdp_custom_field_s *custom_field_model = NULL;
+  char *oneline = NULL;
+
+  if (!message)
+    return NULL;
+
+  custom_field_id = get_custom_field(message, SSDP_CUSTOM_FIELD_SERIALNUMBER);
+  /* 7 is the needed characters for "(no id)" in the sprintf() below */
+  int id_size =
+      custom_field_id ? strlen(custom_field_id->contents) : 7;
+
+  /* 8 is the needed characters for "(no MAC)" in the sprintf() below */
+  int mac_size = message->mac ? strlen(message->mac) : 8;
+
+  custom_field_model = get_custom_field(message,
+      SSDP_CUSTOM_FIELD_FRIENDLYNAME);
+  /* 10 is the needed characters for "(no model)" in the sprintf() below */
+  int model_size =
+      custom_field_model ? strlen(custom_field_model->contents) : 10;
+
+  /* 10 is the extra characters in the sprintf() below plus a null-term */
+  int oneline_size =
+      id_size + strlen(message->ip) + mac_size + model_size + 10;
+  oneline = malloc(oneline_size + 1);
+
+  const char* start_color = monochrome ? "" : ONELINE_ANSI_COLOR_GREEN;
+  const char* end_color = monochrome ? "" : ONELINE_ANSI_COLOR_RESET;
+
+  sprintf(oneline, "%s%s%s - %s - %s - %s", start_color,
+      custom_field_id->contents ? custom_field_id->contents : "(no ID)",
+      end_color, message->ip, message->mac ? message->mac : "(no MAC)",
+      custom_field_model->contents ? custom_field_model->contents :
+      "(no model)");
+
+  return oneline;
+}

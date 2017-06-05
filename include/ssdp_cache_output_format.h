@@ -8,6 +8,7 @@
 #define __OUTPUT_FORMAT_H__
 
 #include "ssdp_cache.h"
+#include "ssdp_message.h"
 
 /**
  * Convert a ssdp cache list (multiple ssdp_messages) to a single JSON blob
@@ -54,5 +55,16 @@ unsigned int to_json(const ssdp_message_s *, BOOL full_json,
 */
 unsigned int to_xml(const ssdp_message_s *ssdp_message, BOOL full_xml,
     char *xml_buffer, int xml_buffer_size);
+
+/**
+ * Return an oneline string with the message ID, IP and (if present) the model.
+ *
+ * @param message The ssdp message to convert.
+ * @param monochrome Use monochrome (no color) when generating onelines.
+ *
+ * @return An oneline string with the message ID, IP and
+ *         (if present) the model.
+ */
+char *to_oneline(const ssdp_message_s *message, BOOL monochrome);
 
 #endif /* __OUTPUT_FORMAT_H__ */

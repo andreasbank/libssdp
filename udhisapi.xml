@@ -5,21 +5,21 @@
 		<minor>0</minor>
 	</specVersion>
 	<device>
-		<deviceType>urn:abused-com:device:SyncServer:1</deviceType>
-		<friendlyName>ABUSED-TEST</friendlyName>
+		<deviceType>urn:libssdp-com:device:SyncServer:1</deviceType>
+		<friendlyName>libSSDP-TEST</friendlyName>
 		<manufacturer>AndreasBank-Electronics</manufacturer>
 		<manufacturerURL>http://www.andreasbank.com</manufacturerURL>
-		<modelDescription>Abused UPnP scanner</modelDescription>
-		<modelName>ABUSED</modelName>
+		<modelDescription>libSSDP scanner</modelDescription>
+		<modelName>libSSDP</modelName>
 		<modelNumber>0.1</modelNumber>
-		<modelURL>http://www.andreasbank.com/abused</modelURL>
+		<modelURL>http://www.andreasbank.com/libssdp</modelURL>
 		<UDN>uuid:6c70db20-2476-45ca-b158-efe5dd3c473f</UDN>
 		<serviceList>
 			<service>
-				<serviceType>urn:abused-com:service:SyncManager:1</serviceType>
-				<serviceId>urn:abused-com:serviceId:SyncManager</serviceId>
-				<controlURL>/udhisapi.xml?control=uuid:6c70db20-2476-45ca-b158-efe5dd3c473f+urn:abused-com:serviceId:SyncManager</controlURL>
-				<eventSubURL>/udhisapi.xml?event=uuid:6c70db20-2476-45ca-b158-efe5dd3c473f+urn:abused-com:serviceId:SyncManager</eventSubURL>
+				<serviceType>urn:libssdp-com:service:SyncManager:1</serviceType>
+				<serviceId>urn:libssdp-com:serviceId:SyncManager</serviceId>
+				<controlURL>/udhisapi.xml?control=uuid:6c70db20-2476-45ca-b158-efe5dd3c473f+urn:libssdp-com:serviceId:SyncManager</controlURL>
+				<eventSubURL>/udhisapi.xml?event=uuid:6c70db20-2476-45ca-b158-efe5dd3c473f+urn:libssdp-com:serviceId:SyncManager</eventSubURL>
 				<SCPDURL>/udhisapi.xml?content=uuid:28996da8-c99c-4e0b-b863-40eb81d72896</SCPDURL>
 			</service>
 		</serviceList>

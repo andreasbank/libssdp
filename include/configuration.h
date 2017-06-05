@@ -37,8 +37,12 @@ typedef struct configuration_struct {
   BOOL                ssdp_cache_size;
   /** Convert to JSON before forwarding. */
   BOOL                json_output;
-  /** Convert to XML before forwarding. */
+  /** Convert to XML before outputting/forwarding. */
   BOOL                xml_output;
+  /** Mopnochrome mode, disable all colors */
+  BOOL                monochrome;
+  /** Convert to oneline before outputting/forwarding. */
+  BOOL                oneline_output;
   /**
    * Time-To-Live value, how many routers the multicast shall propagate
    * through.

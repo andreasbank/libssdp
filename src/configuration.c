@@ -29,6 +29,8 @@ void set_default_configuration(configuration_s *c) {
   c->fetch_info            = TRUE;
   c->json_output           = FALSE;
   c->xml_output            = FALSE;
+  c->oneline_output        = TRUE;
+  c->monochrome            = FALSE;
   c->ttl                   = 64;
   c->filter                = NULL;
   c->ignore_search_msgs    = TRUE;
@@ -64,17 +66,19 @@ void usage(void) {
   printf("\t-F                Do not try to parse the \"Location\" header and fetch device info\n");
   //printf("\t-j                Convert results to JSON\n");
   printf("\t-x                Convert results to XML\n");
+  printf("\t-m                Monochrome mode (disable all colors)\n");
   //printf("\t-4                Force the use of the IPv4 protocol\n");
   //printf("\t-6                Force the use of the IPv6 protocol\n");
   printf("\t-q                Be quiet!\n");
   printf("\t-T                The time to wait for a devices answer a search query\n");
   printf("\t-L                Enable multicast loopback traffic\n");
+  printf("\t-R                Print full SSDP messagesd (Rich mode)\n");
 }
 
 int parse_args(const int argc, char * const *argv, configuration_s *conf) {
   int opt;
 
-  while ((opt = getopt(argc, argv, "C:i:I:t:f:MSduUma:RFc:jx64qT:L")) > 0) {
+  while ((opt = getopt(argc, argv, "C:i:I:t:f:MSduUma:RFc:jx64qT:LR")) > 0) {
     char *pend = NULL;
 
     switch (opt) {
@@ -147,6 +151,10 @@ int parse_args(const int argc, char * const *argv, configuration_s *conf) {
       conf->xml_output = TRUE;
       break;
 
+    case 'm':
+      conf->monochrome = TRUE;
+      break;
+
     case '4':
       conf->use_ipv6 = FALSE;
       conf->use_ipv4 = TRUE;
@@ -168,6 +176,11 @@ int parse_args(const int argc, char * const *argv, configuration_s *conf) {
 
     case 'L':
       conf->enable_loopback = TRUE;
+      break;
+
+    case 'R':
+      conf->xml_output = FALSE;
+      conf->oneline_output = FALSE;
       break;
 
     default:

@@ -131,7 +131,7 @@ static void build_ssdp_header(ssdp_header_s *header, const char *raw_header) {
   free(header_name);
 }
 
-ssdp_custom_field_s *get_custom_field(ssdp_message_s *ssdp_message,
+ssdp_custom_field_s *get_custom_field(const ssdp_message_s *ssdp_message,
     const char *custom_field) {
   ssdp_custom_field_s *cf = NULL;
 

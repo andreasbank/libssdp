@@ -120,7 +120,7 @@ typedef struct ssdp_message_struct {
  *
  * @return Returns the found custom-field or NULL
  */
-ssdp_custom_field_s *get_custom_field(ssdp_message_s *ssdp_message,
+ssdp_custom_field_s *get_custom_field(const ssdp_message_s *ssdp_message,
     const char *custom_field);
 
 /**
@@ -143,17 +143,6 @@ int fetch_custom_fields(configuration_s *conf, ssdp_message_s *ssdp_message);
  */
 const char *get_header_string(const unsigned int header_type,
     const ssdp_header_s *header);
-
-/**
- * Searches the SSDP message custom-fields for the given custom-field name
- *
- * @param ssdp_message The SSDP message to search in
- * @param custom_field The Custom Field to search for
- *
- * @return Returns the found custom-field or NULL
- */
-ssdp_custom_field_s *get_custom_field(ssdp_message_s *ssdp_message,
-    const char *custom_field);
 
 /**
  * Initializes (allocates neccessary memory) for a SSDP message.

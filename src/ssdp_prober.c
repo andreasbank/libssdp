@@ -244,14 +244,24 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
 
     if (filters_factory == NULL || !drop_message) {
 
+      /* Fetch custom fields */
+      if (conf->fetch_info && !fetch_custom_fields(conf, ssdp_message)) {
+        PRINT_DEBUG("Could not fetch custom fields");
+      }
+
       /* Print the message */
       if (conf->xml_output) {
         char *xml_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
         to_xml(ssdp_message, TRUE, xml_string, XML_BUFFER_SIZE);
         printf("%s\n", xml_string);
         free(xml_string);
-      }
-      else {
+      } else if (conf->oneline_output) {
+        char *oneline_string = to_oneline(ssdp_message, conf->monochrome);
+        if (oneline_string) {
+          printf("%s\n", oneline_string);
+          free(oneline_string);
+        }
+      } else {
         printf("\n\n\n----------BEGIN NOTIFICATION------------\n");
         printf("Time received: %s\n", ssdp_message->datetime);
         printf("Origin-MAC: %s\n", (ssdp_message->mac != NULL ?
