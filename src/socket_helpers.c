@@ -23,6 +23,12 @@
 #include "socket_helpers.h"
 #include "ssdp_static_defs.h"
 
+#if defined BSD || defined __APPLE__
+#define CHECK_KERNEL_VERSION(...) TRUE
+#else
+#define CHECK_KERNEL_VERSION(...) LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0)
+#endif
+
 int set_send_timeout(SOCKET sock, int timeout) {
   struct timeval stimeout;
   stimeout.tv_sec = timeout;
@@ -69,7 +75,8 @@ int set_reuseaddr(SOCKET sock) {
 int set_reuseport(SOCKET sock) {
   int reuse = 1;
   PRINT_DEBUG("Setting reuseport");
-#if defined(linux) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0)
+#if (defined(linux) && CHECK_KERNEL_VERSION()) || \
+defined BSD || defined __APPLE__
   if(setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) == -1) {
     PRINT_ERROR("Failed setting resuseport: %s", strerror(errno));
     return errno;

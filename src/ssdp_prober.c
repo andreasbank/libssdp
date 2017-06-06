@@ -251,7 +251,7 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
 
       /* Print the message */
       if (conf->xml_output) {
-        char *xml_string = (char *)malloc(sizeof(char) * XML_BUFFER_SIZE);
+        char *xml_string = malloc(sizeof(char) * XML_BUFFER_SIZE);
         to_xml(ssdp_message, TRUE, xml_string, XML_BUFFER_SIZE);
         printf("%s\n", xml_string);
         free(xml_string);
@@ -286,7 +286,8 @@ int ssdp_prober_start(ssdp_prober_s *prober, configuration_s *conf) {
 
     }
 
-    free_ssdp_message(&ssdp_message);
+    if (ssdp_message)
+      free_ssdp_message(&ssdp_message);
   } while(recv_node.recv_bytes > 0);
 
   //TODO: ssdp_listener_close(&response_listener) ?

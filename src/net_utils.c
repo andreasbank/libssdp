@@ -369,7 +369,7 @@ char *get_mac_address_from_socket(const SOCKET sock,
 
   /* Choose IP source */
   if (ss_ip) {
-    local_ss_ip = ss_ip;
+    local_ss_ip = (struct sockaddr_storage *)ss_ip;
   } else if (ip) {
     local_ss_ip = malloc(sizeof *local_ss_ip);
     memset(local_ss_ip, 0, sizeof *local_ss_ip);
@@ -378,7 +378,7 @@ char *get_mac_address_from_socket(const SOCKET sock,
           " IP (%s)", ip);
       goto err;
     }
-  } esle {
+  } else {
     PRINT_ERROR("Neither IP nor SOCKADDR given, MAC not fetched");
     goto err;
   }
@@ -430,11 +430,11 @@ char *get_mac_address_from_socket(const SOCKET sock,
           cp[4], cp[5]);
     }
 
-    free(arp_buffer);
-
-    if(local_ss_ip && !ss_ip)
-      free(local_ss_ip);
   }
+
+  free(arp_buffer);
+  if(local_ss_ip && !ss_ip)
+    free(local_ss_ip);
 
   PRINT_DEBUG("Determined MAC string: %s", mac_string);
   return mac_string;
@@ -574,11 +574,11 @@ char *get_mac_address_from_socket(const SOCKET sock,
   sprintf(mac_string, "%x:%x:%x:%x:%x:%x", *mac, *(mac + 1), *(mac + 2),
       *(mac + 3), *(mac + 4), *(mac + 5));
   mac = NULL;
-  #endif
 
   PRINT_DEBUG("Determined MAC string: %s", mac_string);
   return mac_string;
 }
+#endif
 
 BOOL is_address_multicast(const char *address) {
   char *str_first = NULL;

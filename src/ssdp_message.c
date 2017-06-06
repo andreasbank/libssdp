@@ -615,6 +615,7 @@ void free_ssdp_message(ssdp_message_s **message_pointer) {
   }
 
   ssdp_message_s *message = *message_pointer;
+  *message_pointer = NULL;
 
   if(message->mac != NULL) {
     free(message->mac);
@@ -668,16 +669,16 @@ void free_ssdp_message(ssdp_message_s **message_pointer) {
     message->headers = next_header;
     next_header = NULL;
 
-  } while(message->headers);
+  } while (message->headers);
 
-  while(message->custom_fields) {
+  while (message->custom_fields) {
 
-    if(message->custom_fields->name != NULL) {
+    if (message->custom_fields->name != NULL) {
       free(message->custom_fields->name);
       message->custom_fields->name = NULL;
     }
 
-    if(message->custom_fields->contents != NULL) {
+    if (message->custom_fields->contents != NULL) {
       free(message->custom_fields->contents);
       message->custom_fields->contents = NULL;
     }
@@ -690,6 +691,5 @@ void free_ssdp_message(ssdp_message_s **message_pointer) {
   };
 
   free(message);
-  *message_pointer = NULL;
 }
 

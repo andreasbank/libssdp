@@ -15,7 +15,9 @@
 #define SSDP_CUSTOM_FIELD_SERIALNUMBER "serialNumber"
 #define SSDP_CUSTOM_FIELD_FRIENDLYNAME "friendlyName"
 #define ONELINE_ANSI_COLOR_GREEN   "\x1b[1;32m"
+#define ONELINE_ANSI_COLOR_GREEN_SIZE 10
 #define ONELINE_ANSI_COLOR_RESET   "\x1b[0m"
+#define ONELINE_ANSI_COLOR_RESET_SIZE 7
 
 unsigned int cache_to_json(ssdp_cache_s *ssdp_cache, char *json_buffer,
     unsigned int json_buffer_size) {
@@ -268,18 +270,21 @@ char *to_oneline(const ssdp_message_s *message, BOOL monochrome) {
   int model_size =
       custom_field_model ? strlen(custom_field_model->contents) : 10;
 
-  /* 10 is the extra characters in the sprintf() below plus a null-term */
-  int oneline_size =
-      id_size + strlen(message->ip) + mac_size + model_size + 10;
-  oneline = malloc(oneline_size + 1);
-
+  /* Set color control-codes  */
   const char* start_color = monochrome ? "" : ONELINE_ANSI_COLOR_GREEN;
   const char* end_color = monochrome ? "" : ONELINE_ANSI_COLOR_RESET;
+  int start_color_size = monochrome ? 0 : ONELINE_ANSI_COLOR_GREEN_SIZE;
+  int end_color_size = monochrome ? 0 : ONELINE_ANSI_COLOR_RESET_SIZE;
+
+  /* 10 is the extra characters in the sprintf() below plus a null-term */
+  int oneline_size = start_color_size + id_size + end_color_size +
+      strlen(message->ip) + mac_size + model_size + 10;
+  oneline = malloc(oneline_size + 1);
 
   sprintf(oneline, "%s%s%s - %s - %s - %s", start_color,
-      custom_field_id->contents ? custom_field_id->contents : "(no ID)",
+      custom_field_id ? custom_field_id->contents : "(no ID)",
       end_color, message->ip, message->mac ? message->mac : "(no MAC)",
-      custom_field_model->contents ? custom_field_model->contents :
+      custom_field_model ? custom_field_model->contents :
       "(no model)");
 
   return oneline;
