@@ -1,12 +1,10 @@
 var searchData=
 [
-  ['sa',['sa',['../structsocket__conf__s.html#a2df91c35e54f6b0ad7b948abeaeb12c0',1,'socket_conf_s']]],
-  ['scan_5ffor_5fupnp_5fdevices',['scan_for_upnp_devices',['../structconfiguration__struct.html#abc97cb77a704118f3f727609ddf3d446',1,'configuration_struct']]],
-  ['send_5ftimeout',['send_timeout',['../structsocket__conf__s.html#a6752e9ac49bdb95de87d9671b581b236',1,'socket_conf_s']]],
-  ['sock',['sock',['../structssdp__listener__s.html#a5d471744b14c0063b0cd7208cf137d90',1,'ssdp_listener_s']]],
-  ['ssdp_5fcache_5fsize',['ssdp_cache_size',['../structconfiguration__struct.html#a679be94b18063df961d9034c6a846d82',1,'configuration_struct']]],
-  ['ssdp_5flistener',['ssdp_listener',['../main_8c.html#a09112c7a436887d7cc43d0794bceb61a',1,'main.c']]],
-  ['ssdp_5fmessage',['ssdp_message',['../structssdp__cache__struct.html#a701f8f1b90e707fbbac428a1defbc2da',1,'ssdp_cache_struct']]],
-  ['ssdp_5fmessages_5fcount',['ssdp_messages_count',['../structssdp__cache__struct.html#a05475e1356094416d6e699918cce87af',1,'ssdp_cache_struct']]],
-  ['ssdp_5fprober',['ssdp_prober',['../main_8c.html#a26656a057f6bb8b4dab9985e14ef212a',1,'main.c']]]
+  ['raw_5ffilters',['raw_filters',['../structfilters__factory__struct.html#a4b37300cd20c7bdfbc723c54af144c1f',1,'filters_factory_struct']]],
+  ['recv_5fbytes',['recv_bytes',['../structssdp__recv__node__s.html#ae07471ef2f6724612659410ec8330832',1,'ssdp_recv_node_s']]],
+  ['recv_5fdata',['recv_data',['../structssdp__recv__node__s.html#a78315abc81a09d878bc0b5bba91c0114',1,'ssdp_recv_node_s']]],
+  ['recv_5ftimeout',['recv_timeout',['../structsocket__conf__s.html#a2e7693390f64caff2a27b77cf8f114f4',1,'socket_conf_s']]],
+  ['request',['request',['../structssdp__message__struct.html#af916e6762ec538f65ad5f7b91986a580',1,'ssdp_message_struct']]],
+  ['run_5fas_5fdaemon',['run_as_daemon',['../structconfiguration__struct.html#a2893f151e2ff5f01e25ffa812feaebb7',1,'configuration_struct']]],
+  ['run_5fas_5fserver',['run_as_server',['../structconfiguration__struct.html#a49a1ee090b93538c100ac34b52a23296',1,'configuration_struct']]]
 ];

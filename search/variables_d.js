@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['queue_5flength',['queue_length',['../structsocket__conf__s.html#a13040bfc07ff8c48863a2dcaa31733e4',1,'socket_conf_s']]],
-  ['quiet_5fmode',['quiet_mode',['../structconfiguration__struct.html#a2f2c66fd50113550b973f19e9e219f02',1,'configuration_struct']]]
+  ['port',['port',['../structsocket__conf__s.html#a632fc82e2c82f4fce43d8a2e08dfb578',1,'socket_conf_s']]],
+  ['protocol',['protocol',['../structssdp__message__struct.html#a81a79288b8fc362de5a08f5d6d4afd3b',1,'ssdp_message_struct']]]
 ];

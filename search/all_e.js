@@ -1,13 +1,4 @@
 var searchData=
 [
-  ['parse_5faddress',['parse_address',['../net__utils_8h.html#a5854f92be6e2700fa91249045d685af2',1,'parse_address(const char *raw_address, struct sockaddr_storage *address):&#160;net_utils.c'],['../net__utils_8c.html#a5854f92be6e2700fa91249045d685af2',1,'parse_address(const char *raw_address, struct sockaddr_storage *address):&#160;net_utils.c']]],
-  ['parse_5fargs',['parse_args',['../configuration_8h.html#af4ebc57fdf891ec9ee0c4aab484c2cd4',1,'parse_args(int argc, char *const *argv, configuration_s *conf):&#160;configuration.c'],['../configuration_8c.html#ad788d1e393d0c713d06cd66826337dd6',1,'parse_args(const int argc, char *const *argv, configuration_s *conf):&#160;configuration.c']]],
-  ['parse_5ffilters',['parse_filters',['../ssdp__filter_8h.html#a24e93509e573003244c8147cf758dce1',1,'parse_filters(char *raw_filter, filters_factory_s **filters_factory, BOOL print_filters):&#160;ssdp_filter.c'],['../ssdp__filter_8c.html#a24e93509e573003244c8147cf758dce1',1,'parse_filters(char *raw_filter, filters_factory_s **filters_factory, BOOL print_filters):&#160;ssdp_filter.c']]],
-  ['parse_5furl',['parse_url',['../net__utils_8h.html#a2cb6b92702bc2b334130b43a1662fc67',1,'parse_url(const char *url, char *ip, int ip_size, int *port, char *rest, int rest_size):&#160;net_utils.c'],['../net__utils_8c.html#a2cb6b92702bc2b334130b43a1662fc67',1,'parse_url(const char *url, char *ip, int ip_size, int *port, char *rest, int rest_size):&#160;net_utils.c']]],
-  ['port',['port',['../structsocket__conf__s.html#a632fc82e2c82f4fce43d8a2e08dfb578',1,'socket_conf_s']]],
-  ['port_5fmax_5fnumber',['PORT_MAX_NUMBER',['../net__definitions_8h.html#ac1e49564a19039e191d24fddb5ad1ed8',1,'net_definitions.h']]],
-  ['print_5fdebug',['print_debug',['../log_8h.html#a97ff87c020a3cd56c4a8e2c2440227fc',1,'print_debug(FILE *std, const char *color, const char *file, int line, char *va_format,...):&#160;log.c'],['../log_8c.html#a97ff87c020a3cd56c4a8e2c2440227fc',1,'print_debug(FILE *std, const char *color, const char *file, int line, char *va_format,...):&#160;log.c']]],
-  ['print_5fforwarder',['print_forwarder',['../ssdp__common_8h.html#a07986f2b0377532932d258e2548d4ce2',1,'print_forwarder(configuration_s *conf, struct sockaddr_storage *forwarder):&#160;ssdp_common.c'],['../ssdp__common_8c.html#a07986f2b0377532932d258e2548d4ce2',1,'print_forwarder(configuration_s *conf, struct sockaddr_storage *forwarder):&#160;ssdp_common.c']]],
-  ['probe_5fmsg',['PROBE_MSG',['../ssdp__prober_8c.html#a0b80b68220441100d9ff87e3229c3810',1,'ssdp_prober.c']]],
-  ['protocol',['protocol',['../structssdp__message__struct.html#a81a79288b8fc362de5a08f5d6d4afd3b',1,'ssdp_message_struct']]]
+  ['oneline_5foutput',['oneline_output',['../structconfiguration__struct.html#a2e36b110139e1722494fca1655975d2e',1,'configuration_struct']]]
 ];

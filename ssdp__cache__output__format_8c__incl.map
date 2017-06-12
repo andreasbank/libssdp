@@ -1,8 +1,8 @@
 <map id="src/ssdp_cache_output_format.c" name="src/ssdp_cache_output_format.c">
 <area shape="rect" id="node4" href="$common__definitions_8h.html" title="common_definitions.h" alt="" coords="148,393,297,420"/>
 <area shape="rect" id="node5" href="$log_8h.html" title="log.h" alt="" coords="235,95,285,121"/>
-<area shape="rect" id="node7" href="$ssdp__cache__output__format_8h.html" title="ssdp_cache_output_format.h" alt="" coords="314,95,505,121"/>
-<area shape="rect" id="node11" href="$ssdp__message_8h.html" title="ssdp_message.h" alt="" coords="493,244,614,271"/>
+<area shape="rect" id="node7" href="$ssdp__cache__output__format_8h.html" title="ssdp_cache_output_format.h" alt="" coords="327,95,518,121"/>
+<area shape="rect" id="node11" href="$ssdp__message_8h.html" title="ssdp_message.h" alt="" coords="495,244,617,271"/>
 <area shape="rect" id="node8" href="$ssdp__cache_8h.html" title="ssdp_cache.h" alt="" coords="371,169,474,196"/>
 <area shape="rect" id="node9" href="$configuration_8h.html" title="configuration.h" alt="" coords="293,319,400,345"/>
 <area shape="rect" id="node10" href="$net__definitions_8h.html" title="net_definitions.h" alt="" coords="321,393,439,420"/>
