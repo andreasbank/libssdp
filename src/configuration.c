@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "common_definitions.h"
@@ -13,7 +14,6 @@
 #include "log.h"
 #include "net_utils.h"
 #include "ssdp_message.h"
-#include "string.h"
 
 void set_default_configuration(configuration_s *c) {
 
