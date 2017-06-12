@@ -23,7 +23,7 @@ void set_default_configuration(configuration_s *c) {
   c->run_as_daemon         = FALSE;
   c->run_as_server         = FALSE;
   c->listen_for_upnp_notif = FALSE;
-  c->scan_for_upnp_devices = FALSE;
+  c->scan_for_upnp_devices = TRUE;
   c->forward_address       = NULL;
   c->ssdp_cache_size       = 10;
   c->fetch_info            = TRUE;
