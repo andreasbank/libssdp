@@ -27,7 +27,7 @@ typedef struct socket_conf_s {
   char *if_ip;
   /** TODO: remove! */
   struct sockaddr_storage *sa;
-  /** The actual IP it got bound to (after bind()). */
+  /** The IP address we want send to. */
   const char *ip;
   /** The port to bind to. */
   int port;

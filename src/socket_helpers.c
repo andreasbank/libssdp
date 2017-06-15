@@ -216,6 +216,7 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
   }
 
   /* DEBUG BEGIN */
+  #ifdef DEBUG___
   PRINT_DEBUG("List of available interfaces and IPs:");
   PRINT_DEBUG("********************");
   for (ifa = interfaces; ifa != NULL; ifa = ifa->ifa_next) {
@@ -242,6 +243,7 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
     PRINT_DEBUG("IF: %s; IP: %s", ifa->ifa_name, ip);
   }
   PRINT_DEBUG("********************");
+  #endif
   /* DEBUG END */
 
   PRINT_DEBUG("Start looping through available interfaces and IPs");
@@ -262,7 +264,7 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
         (struct in6_addr *)&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
     int ss_family = ifa->ifa_addr->sa_family;
 
-    /* Skip if not a required type of IP address */
+    /* Skip if not the right address family */
     if((!is_ipv6 && ss_family != AF_INET) ||
        (is_ipv6 && ss_family != AF_INET6)) {
       PRINT_DEBUG("Skipping interface (%s) address, wrong type (%d)",
@@ -284,7 +286,7 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
     }
 
     /* If not using a bindall IP then skip all
-       IP that do not match the desired IP */
+       IPs that do not match the desired IP */
     if(!is_bindall && strcmp(ip, interface_ip) != 0) {
       PRINT_DEBUG("Skipping interface (%s) address, wrong IP (%s != %s)",
                   ifa->ifa_name,
@@ -574,7 +576,7 @@ SOCKET setup_socket(socket_conf_s *conf) {
       else {
         inet_pton(saddr->ss_family, conf->ip, &mreq.imr_multiaddr);
       }
-      if ((conf->if_ip != NULL && strlen(conf->if_ip) > 0) || 
+      if ((conf->if_ip != NULL && strlen(conf->if_ip) > 0) ||
           (conf->interface != NULL && strlen(conf->interface) > 0)) {
          mreq.imr_interface.s_addr = saddr4->sin_addr.s_addr;
       }

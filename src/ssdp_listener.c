@@ -78,8 +78,8 @@ static int ssdp_listener_init(ssdp_listener_s *listener,
     conf->interface,      // char interface
     conf->ip,             // the IP we want to bind to
     NULL,                 // struct sockaddr_storage *sa
-    SSDP_ADDR,            // const char *ip
-    port,                 // int port
+    SSDP_ADDR,            // The IP we wnat to send to
+    port,                 // The port we want to send to (?)
     TRUE,                 // BOOL is_server
     LISTEN_QUEUE_LENGTH,  // the length of the listen queue
     FALSE,                // BOOL keepalive
