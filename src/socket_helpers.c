@@ -157,7 +157,7 @@ int join_multicast_group(SOCKET sock, char *multicast_group, char *interface_ip)
         PRINT_ERROR("interface_ip is NULL");
       } else {
         PRINT_ERROR("Given multicast group address '%s' is neither an IPv4 nor"
-            " IPv6, cannot continue (%d)", interface_ip);
+            " IPv6, cannot continue (%d)", interface_ip, res);
       }
       return 1;
     }
