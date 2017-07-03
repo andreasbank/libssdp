@@ -33,8 +33,8 @@
   "Host:239.255.255.250:1900\r\n" \
   "ST:ssdp:all\r\n" \
   "Man:\"ssdp:discover\"\r\n" \
-  "MX:0\r\n\r\n"
-// For axis devices: "ST:urn:axis-com:service:BasicService:1\r\n" \
+  "MX:5\r\n\r\n"
+// For axis devices: "ST:urn:axis-com:service:BasicService:1\r\n"
 
 const char *ssdp_probe_message_create(void) {
   return PROBE_MSG;

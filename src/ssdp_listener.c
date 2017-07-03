@@ -37,7 +37,7 @@
  * The timeout after which the active SSDP listener will stop waiting for
  * nodes to answer a SEARCH probe/message.
  */
-#define SSDP_ACTIVE_LISTENER_TIMEOUT 2
+#define SSDP_ACTIVE_LISTENER_TIMEOUT 5
 
 /**
  * Initialize a SSDP listener. This parses and sets the forwarder address,
