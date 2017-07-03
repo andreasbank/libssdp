@@ -26,10 +26,11 @@
 #include "ssdp_static_defs.h"
 
 /** The queue length for the listener (how many queued connections) */
-#define LISTEN_QUEUE_LENGTH 5
+#define PASSIVE_LISTEN_QUEUE_LENGTH 5
+#define ACTIVE_LISTEN_QUEUE_LENGTH 500
 /**
  * The timeout after which the passive SSDP listener will stop a
- * connection to a discovered node when fetching ewxtra information.
+ * connection to a discovered node when fetching extra information.
  */
 #define SSDP_PASSIVE_LISTENER_TIMEOUT 10
 /**
@@ -71,6 +72,9 @@ static int ssdp_listener_init(ssdp_listener_s *listener,
     }
   }
 
+  int listen_queue_len = is_active ? ACTIVE_LISTEN_QUEUE_LENGTH :
+      PASSIVE_LISTEN_QUEUE_LENGTH;
+
   socket_conf_s sock_conf = {
     conf->use_ipv6,       // BOOL is_ipv6
     TRUE,                 // BOOL is_udp
@@ -81,11 +85,11 @@ static int ssdp_listener_init(ssdp_listener_s *listener,
     SSDP_ADDR,            // The IP we wnat to send to
     port,                 // The port we want to send to (?)
     TRUE,                 // BOOL is_server
-    LISTEN_QUEUE_LENGTH,  // the length of the listen queue
+    listen_queue_len,  // the length of the listen queue
     FALSE,                // BOOL keepalive
     conf->ttl,            // time to live (router hops)
     conf->enable_loopback,// see own messages on multicast
-    0,                    // set the rend timeout for the socker (0 = default)
+    0,                    // set the send timeout for the socket (0 = default)
     recv_timeout          // set the receive timeout for the socket
   };
 

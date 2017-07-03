@@ -12,7 +12,7 @@
 #include "common_definitions.h"
 
 /** Uncomment this line to enable detailed debug information */
-#define DEBUG___
+//#define DEBUG___
 /** Uncomment this line to write to a to a file instead of stdout */
 #define DEBUG_TO_FILE___
 
