@@ -30,7 +30,8 @@ try {
   $sqlconnection = new SqlConnection($host, $database, $username, $password);
 }
 catch(Exception $e) {
-  printf("Error: [%d] %s", $e->getCode(), $e->getMessage());
+  $err_msg = sprintf("Error: [%d] %s", $e->getCode(), $e->getMessage());
+  error_log($err_msg);
   exit(1);
 }
 
@@ -77,11 +78,11 @@ foreach($abused_results as $abused_result) {
          of ssdp message (ssdp::[hello|alive|bye]) */
       /* Split 'ssdp::<type>' into 'ssdp::' and '<type>'
          and only use the latter */
-      
       $ssdp_message_type = explode(':', $ssdp_message_type)[1];
     } catch(Exception $e) {
       /* If message doesn't contain the ssdp type
          then it is broken, skip to next message */
+      error_log('Message is broken, skipping');
       continue;
     }
 
@@ -95,7 +96,7 @@ foreach($abused_results as $abused_result) {
     if(!(false === stripos($model_name, 'TwonkyMedia Server')) &&
        !(false === stripos($abused_result->get_custom_field_manufacturer(), 'PacketVideo')) &&
        (false === stripos($abused_result->get_custom_field_modelNumber(), '6.0.34'))) {
-  
+
       /* Fetch the firmware version from the device */
       $firmware_version = $abused_result->get_custom_field_modelNumber();
 
@@ -103,7 +104,7 @@ foreach($abused_results as $abused_result) {
       $model_firmware_id = $sqlconnection->call(sprintf("call add_model_firmware_if_not_exist('%s', '%s')",
                                    $model_name,
                                    $firmware_version))[0][0]['id'];
-  
+
       /* See if model-firmware combination has
          been probed for capabilities */
       $is_probed = $sqlconnection->call(sprintf("call is_model_firmware_probed('%s')", 
@@ -124,7 +125,7 @@ foreach($abused_results as $abused_result) {
     // TODO: Remove when AVHS 2.24 is EOLd
     else if((!(false === stripos($model_name, 'lenovo ix')) ||
              !(false === stripos($model_name, 'iomega storcenter')))) { // TODO: test iomega NAS
-  
+
       /* Fetch the firmware version from the device */
       $firmware_version = $abused_result->get_custom_field_modelNumber();
 
@@ -132,7 +133,7 @@ foreach($abused_results as $abused_result) {
       $model_firmware_id = $sqlconnection->call(sprintf("call add_model_firmware_if_not_exist('%s', '%s')",
                                    $model_name,
                                    $firmware_version))[0][0]['id'];
-  
+
       /* See if model-firmware combination has
          been probed for capabilities */
       $is_probed = $sqlconnection->call(sprintf("call is_model_firmware_probed('%s')", 
@@ -155,7 +156,7 @@ foreach($abused_results as $abused_result) {
       $cm = new CapabilityManager(($ipv4 ? $ipv4 : $ipv6),
                                   null,
                                   $axis_device_credentials);
-  
+
       /* Fetch the firmware version from the device */
       try {
         $firmware_version = $cm->get_firmware_version();
@@ -170,12 +171,12 @@ foreach($abused_results as $abused_result) {
           throw $e;
         }
       }
-  
+
       /* Create or retrieve existing ID for the model-firmware combination */
       $model_firmware_id = $sqlconnection->call(sprintf("call add_model_firmware_if_not_exist('%s', '%s')",
                                    $model_name,
                                    $firmware_version))[0][0]['id'];
-  
+
       /* See if model-firmware combination has
          been probed for capabilities */
       $is_probed = $sqlconnection->call(sprintf("call is_model_firmware_probed('%s')", 
@@ -279,7 +280,7 @@ foreach($abused_results as $abused_result) {
         $sqlconnection->call(sprintf("call add_capability_to_model_firmware('%s', '%s');",
                                      $model_firmware_id,
                                      $capability_id));
-    
+
         $capability_state = $cm->get_sd_disk_status();
         $query = sprintf("call add_or_update_device_capability_state('%s', '%s', '%s');",
                          $id,
@@ -291,7 +292,10 @@ foreach($abused_results as $abused_result) {
 
   } catch(Exception $e) {
     /* Print and continue */
-    printf("Error: [%d] %s", $e->getCode(), $e->getMessage());
+    if ($e->getCode() != 401 && false == strpos($e->getMessage(), 'does not exist')) {
+      $err_msg = sprintf("Error: [%d] %s", $e->getCode(), $e->getMessage());
+      error_log($err_msg);
+    }
     continue;
   }
 }
