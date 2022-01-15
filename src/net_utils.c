@@ -256,6 +256,9 @@ int find_interface(struct sockaddr_storage *saddr, const char *interface,
     /* Helpers */
     struct sockaddr_in6 *ifaddr6 = (struct sockaddr_in6 *)ifa->ifa_addr;
     struct sockaddr_in *ifaddr4 = (struct sockaddr_in *)ifa->ifa_addr;
+    if (!ifaddr4) {
+      continue;
+    }
     int ss_family = ifa->ifa_addr->sa_family;
 
     memset(compare_address, '\0', sizeof(char) * IPv6_STR_MAX_SIZE);
