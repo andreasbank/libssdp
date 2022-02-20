@@ -98,7 +98,7 @@ char *get_ip_from_sock_address(const struct sockaddr_storage *saddr,
  *
  * @return TRUE if it is an IPv6 address, FALSE otherwise.
  */
-inline BOOL is_address_ipv6(const char *ip);
+BOOL is_address_ipv6(const char *ip);
 
 /**
  * Check whether an IP address is of version 6. This function will also fill
@@ -118,7 +118,7 @@ BOOL is_address_ipv6_ex(const char *ip, struct sockaddr_in6 *saddr6);
  *
  * @return TRUE if it is an IPv4 address, FALSE otherwise.
  */
-inline BOOL is_address_ipv4(const char *ip);
+BOOL is_address_ipv4(const char *ip);
 
 /**
  * Check whether an IP address is of version 4. This function will also fill

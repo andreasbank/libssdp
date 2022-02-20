@@ -90,11 +90,11 @@ int parse_args(const int argc, char * const *argv, configuration_s *conf) {
       break;
 
     case 'i':
-      strncpy(conf->interface, optarg, IPv6_STR_MAX_SIZE);
+      strncpy(conf->interface, optarg, IPv6_STR_MAX_SIZE - 1);
       break;
 
     case 'I':
-      strncpy(conf->ip, optarg, IPv6_STR_MAX_SIZE);
+      strncpy(conf->ip, optarg, IPv6_STR_MAX_SIZE - 1);
       break;
 
     case 't':

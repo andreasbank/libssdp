@@ -598,7 +598,6 @@ BOOL is_address_multicast(const char *address) {
       if (ip6_ll.s6_addr == ip6_addr.s6_addr) {
         return TRUE;
       }
-      return FALSE;
     }
     else {
       if (strcmp(address, "0.0.0.0") == 0)
@@ -612,7 +611,6 @@ BOOL is_address_multicast(const char *address) {
       if (int_first > 223 && int_first < 240) {
         return TRUE;
       }
-      return FALSE;
     }
   }
 
